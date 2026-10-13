@@ -1,0 +1,16 @@
+{
+  "schema": "mhwi-direct-export-adapter-v1",
+  "blender_versions": [
+    [5, 1, 2]
+  ],
+  "sources": {
+    "mod3/blender_mod3.py": "fbad29f8c6200b1f44089308ef7e7a801756cfc0fc3a00d3125d27efa12c5e43",
+    "mod3/mod3_functions.py": "652dd9850130410fb0b4cf79bcd5c9873b2c34ad7d578c1d2551022147c58fb2",
+    "mod3/mod3_parser.py": "67e3bcf7bb3a1bce9ca39ef7606a523fb7ac41722599bff02417e32358a5af6d",
+    "mod3/file_mod3.py": "b0f9ddc4820806e2b19c0a250eda6e70fa4749a73329d14217f27d1671c56844",
+    "common/blender_functions.py": "77361cf7bb2f1c2878e7dce0e2d1ea2b2b7ee4829875d0105c421b06c62de087",
+    "common/rw_functions.py": "fa7dcc7e2a7b035338a400b13be83f97b8ad0be5c86b34eb9979a4a8e3f365c3",
+    "mrl3/mrl3_dicts.py": "a2bd5a431dca9887a207d0be872e7645d4a03a20ec47393c6ea27f7c98b8df05",
+    "mrl3/dict/block_format_dict.json": "3d0a66b78303926b35584f91c8b1c89980078434ff316b5bdc960e3eeea0f24a"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schema": "mhwi-format-provenance-without-geometry-v1",
+  "source_model_sha256": "be0b63556201198c79f6bd43dee230354a947249d150e4372cea72cec7b0b561",
+  "source_capture_sha256": "2c2c3928019a83250d04b54080e49d1bd1192e61689a3dfcf663abf7b5d42210",
+  "historical_row_count": 26,
+  "format_pairs": [
+    {
+      "disk_format": "0x366995a7",
+      "native_format": 10,
+      "stride": 44,
+      "observed_mesh_rows": 1
+    },
+    {
+      "disk_format": "0x3c730760",
+      "native_format": 6,
+      "stride": 36,
+      "observed_mesh_rows": 5
+    },
+    {
+      "disk_format": "0xf637401c",
+      "native_format": 4,
+      "stride": 32,
+      "observed_mesh_rows": 20
+    }
+  ],
+  "contains_geometry_or_mesh_table": false,
+  "historical_normalized_mesh_sha256": "99a65ef7a1f105fe4d9a7aa85dc784ee839f29c386f32b7085d84f049483d790",
+  "measured_evidence_not_new_game_verification": true
+}

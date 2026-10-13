@@ -1,0 +1,220 @@
+"""Paired export through the installed, pinned MHW Model Editor 0.12.
+
+Source indices are attached ONLY to exporter clones before UV/sharp splitting.
+The mapping is taken from the serializer's mesh order, never geometric matching.
+"""
+import importlib
+import json
+from pathlib import Path
+import shutil
+import struct
+import sys
+import tempfile
+import numpy as np
+from .authoring import pin,write
+from .backend.equipment_morph_export_pipeline import digest,load_job
+from .backend.equipment_morph_package_pipeline import export_pipeline,package_id,PARTS
+from .backend.map_equipment_morph_job import model_meshes
+from .output_files import model_resource_id,retarget_model,publish
+
+TAG='mhwi_em_source_vertex'
+
+def editor_module():
+    import bpy
+    candidates=[m for n,m in sys.modules.items() if n.endswith('.modules.mod3.blender_mod3')]
+    if len(candidates)!=1:raise ValueError('请启用已验证的 MHW Model Editor 0.12')
+    module=candidates[0];root=importlib.import_module(module.__name__.split('.addons.')[0])
+    if root.bl_info['version']!=(0,12):raise ValueError('MHW Model Editor 版本尚未验证')
+    receipt=json.loads(Path(__file__).with_name('direct_export_adapter.json').read_bytes())
+    if list(bpy.app.version) not in receipt['blender_versions']:raise ValueError('当前Blender版本尚未通过联合导出验证')
+    base=Path(module.__file__).parents[1]
+    for name,expected in receipt['sources'].items():
+        if digest((base/name).read_bytes())!=expected:raise ValueError('导出器源码已改变，需要重新验证：'+name)
+    return module
+
+def preflight(asset):
+    import bpy
+    collection=asset['collection']
+    if asset['part'] not in PARTS:raise ValueError('无效装备部位')
+    if not collection or collection.library:raise ValueError('请选择本地 MOD3 集合')
+    if asset['shading'] not in ('BASELINE','GEOMETRIC'):raise ValueError('联合导出支持基准法线或逐键几何法线')
+    model_resource_id(asset['model_id'])
+    package_id(asset['package'])
+    load_job_validation={'schema':'mhw-equipment-morph-export-job-v2','parts':[dict(part=asset['part'],keys=asset['keys'])]}
+    # Same key/part validator used by the existing package pipeline.
+    if not asset['keys'] or len(asset['keys'])>64:raise ValueError('请选择1至64个动态键')
+    names=[k['source_key'] for k in asset['keys']]
+    if len(set(names))!=len(names):raise ValueError('源形态键重复')
+    if any(k.get('author_shading') for k in asset['keys']):raise ValueError('联合导出不使用共享作者旋转数据')
+    objects=[o for o in collection.all_objects if o.type=='MESH'];controlled=[]
+    if not objects:raise ValueError('集合没有网格')
+    for obj in objects:
+        mesh=obj.data;shape=mesh.shape_keys
+        if obj.library or mesh.library or obj.animation_data or mesh.animation_data or obj.constraints or (shape and shape.animation_data):
+            raise ValueError('动画、约束或链接对象需要专门适配：'+obj.name)
+        if obj.show_only_shape_key or (shape and not shape.use_relative):raise ValueError('需要相对形态键和正常混合显示：'+obj.name)
+        if any(m.show_viewport and m.type!='ARMATURE' for m in obj.modifiers):raise ValueError('活动修改器仅支持静止骨架：'+obj.name)
+        for mod in obj.modifiers:
+            if mod.show_viewport and mod.type=='ARMATURE':
+                rig=mod.object
+                if not rig or rig.animation_data or rig.constraints or any(b.constraints for b in rig.pose.bones):raise ValueError('骨架动画或约束不受支持')
+                if any(max(abs(b.matrix[r][c]-b.bone.matrix_local[r][c]) for r in range(4) for c in range(4))>1e-7 for b in rig.pose.bones):raise ValueError('骨架必须处于静止姿态')
+        selected=[shape.key_blocks.get(n) for n in names] if shape else []
+        selected=[k for k in selected if k]
+        for key in selected:
+            if key.value!=0 or key.mute or key.vertex_group or key.relative_key!=shape.reference_key:raise ValueError('动态键须为零、未静音、相对Basis且无顶点组：'+key.name)
+        if selected:controlled.append(obj)
+    if not controlled:raise ValueError('集合中没有选定的动态键')
+    return objects,controlled,load_job_validation
+
+def export_model(module,asset,path):
+    import bpy
+    from .backend.capture_equipment_morph_job import fingerprint,coords
+    from .geometric_normals import transported
+    from .normal_authoring import unit
+    objects,controlled,_=preflight(asset)
+    if bpy.context.mode!='OBJECT':raise ValueError('联合导出需要对象模式')
+    if bpy.data.collections.get('clonedMod3Meshes'):raise ValueError('导出器临时集合已存在，请先处理该集合')
+    source_before={o.name:fingerprint(o) for o in objects}
+    selection=list(bpy.context.selected_objects);active=bpy.context.view_layer.objects.active
+    last=bpy.context.scene.mhw_mod3_toolpanel.lastExportCollection
+    existing={kind:set(getattr(bpy.data,kind)) for kind in ('meshes','armatures')}
+    clones=[];traces={};current=[];ordered=[]
+    originals={n:getattr(module,n) for n in ('createCloneMesh','parseVertexDict','buildMod3File')}
+    def clone(obj,*args):
+        result=originals['createCloneMesh'](obj,*args);clones.append(result);current[:]=[obj,result]
+        data=result.data
+        if len(data.vertices)!=len(obj.data.vertices) or [tuple(p.vertices) for p in data.polygons]!=[tuple(p.vertices) for p in obj.data.polygons]:raise ValueError('求值拓扑或顶点次序改变：'+obj.name)
+        if data.attributes.get(TAG):raise ValueError('源网格包含保留的追溯属性：'+obj.name)
+        attr=data.attributes.new(TAG,'INT','POINT');attr.data.foreach_set('value',np.arange(len(data.vertices),dtype=np.int32))
+        return result
+    def parse(vertex_dict,info,*args):
+        obj,clone_obj=current;data=clone_obj.data;attr=data.attributes.get(TAG)
+        if not attr or attr.domain!='POINT' or attr.data_type!='INT':raise ValueError('拆点丢失来源属性')
+        indices=np.empty(len(data.vertices),np.int32);attr.data.foreach_get('value',indices)
+        if np.any(indices<0) or np.any(indices>=len(obj.data.vertices)):raise ValueError('拆点来源越界')
+        original_result=originals['parseVertexDict'](vertex_dict,info,*args)
+        if len(vertex_dict['Position'])!=len(indices):raise ValueError('导出顶点次序不完整')
+        trace=dict(object=obj.name,indices=indices.tolist(),positions=np.asarray(vertex_dict['Position']).tolist(),normals={})
+        if asset['shading']=='GEOMETRIC' and obj in controlled:
+            trace['normal_mesh']=data.copy()
+            trace['source_object']=obj
+        traces[id(info)]=trace
+        return original_result
+    def capture_normals(trace):
+        obj=trace.pop('source_object');copy=trace.pop('normal_mesh');indices=np.asarray(trace['indices'])
+        try:
+            first={}
+            for loop in copy.loops:first.setdefault(loop.vertex_index,loop.index)
+            chosen=[first[i] for i in range(len(indices))]
+            copy.normals_split_custom_set([(0.,0.,0.)]*len(copy.loops));copy.update()
+            base=unit(np.asarray([tuple(n.vector) for n in copy.corner_normals]))[chosen]
+            positions=np.asarray([tuple(v.co) for v in copy.vertices])
+            transform=np.asarray(module.exportMatrix @ obj.matrix_world)[:3,:3]
+            for key in asset['keys']:
+                block=obj.data.shape_keys.key_blocks.get(key['source_key'])
+                if block is None:continue
+                delta=(coords(block)-coords(obj.data.shape_keys.reference_key)).astype(np.float64)@transform.T
+                copy.vertices.foreach_set('co',(positions+delta[indices]).astype(np.float32).ravel());copy.update()
+                endpoint=unit(np.asarray([tuple(n.vector) for n in copy.corner_normals]))[chosen]
+                trace['normals'][key['id']]={'base':base.tolist(),'endpoint':endpoint.tolist()}
+        finally:bpy.data.meshes.remove(copy)
+    def build(model,*args):
+        result=originals['buildMod3File'](model,*args)
+        for meshes in result.meshDict.values():
+            for mesh in meshes:ordered.append(traces[id(mesh.meshInfo)])
+        return result
+    try:
+        module.createCloneMesh=clone;module.parseVertexDict=parse;module.buildMod3File=build
+        options=dict(targetCollection=asset['collection'],selectedOnly=False,visibleOnly=False,exportAllLODs=False,
+            useBlenderMaterialName=asset.get('use_blender_material_name',False),exportBoundingBoxes=False,
+            autoSolveRepeatedUVs=True,preserveSharpEdges=True,invisibleMantlesModFix=True)
+        if not module.exportMHWMod3File(str(path),options):raise ValueError('MOD3 导出器报告失败')
+        for trace in ordered:
+            if 'normal_mesh' in trace:capture_normals(trace)
+    finally:
+        for name,original in originals.items():setattr(module,name,original)
+        if bpy.context.mode!='OBJECT':bpy.ops.object.mode_set(mode='OBJECT')
+        for clone_obj in clones:
+            if clone_obj in bpy.data.objects.values():bpy.data.objects.remove(clone_obj,do_unlink=True)
+        temporary=bpy.data.collections.get('clonedMod3Meshes')
+        if temporary:bpy.data.collections.remove(temporary)
+        for kind,before in existing.items():
+            for data in set(getattr(bpy.data,kind))-before:
+                if data.users==0:getattr(bpy.data,kind).remove(data)
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in selection:obj.select_set(True)
+        bpy.context.view_layer.objects.active=active;bpy.context.scene.mhw_mod3_toolpanel.lastExportCollection=last
+        if source_before!={o.name:fingerprint(o) for o in objects}:raise ValueError('导出期间源网格数据改变')
+    model=path.read_bytes();basis,rows=model_meshes(model)
+    if len(rows)!=len(ordered):raise ValueError('序列化网格数量与追溯数量不同')
+    mapping=[];normal_records={k['id']:[] for k in asset['keys']};seen=set()
+    for trace,row in zip(ordered,rows):
+        count=row['count'];disk=np.ndarray((count,3),dtype='<f4',buffer=basis,offset=row['start'],strides=(row['stride'],4))
+        if count!=len(trace['indices']) or not np.array_equal(disk,np.asarray(trace['positions'],dtype='<f4')):raise ValueError('序列化顶点与追溯次序不同')
+        if trace['object'] not in {o.name for o in controlled}:continue
+        if trace['object'] in seen:raise ValueError('同一源对象被多个LOD重复导出，当前不支持')
+        seen.add(trace['object'])
+        mapping.append(dict(object=trace['object'],mesh=row['mesh'],material=row['material'],fully_resolved=True,disk_to_blender_vertex=trace['indices']))
+        for key,values in trace['normals'].items():
+            for i,(base,target) in enumerate(zip(values['base'],values['endpoint'])):
+                offset=row['start']+i*row['stride']+12
+                normal=unit(struct.unpack_from('<3b',basis,offset));direction=transported(normal,base,target)
+                if np.linalg.norm(direction-normal)>1e-5:normal_records[key].append((offset,*(direction-normal)))
+    if seen!={o.name for o in controlled}:raise ValueError('部分动态网格未由导出器输出')
+    normal_data={key:b''.join(struct.pack('<I3f',*record) for record in sorted(records)) for key,records in normal_records.items()}
+    return dict(schema='mhwi-direct-export-trace-v1',part=asset['part'],model_id=asset['model_id'],
+        model_sha256=digest(model),fully_resolved=True,objects=mapping,exporter='MHW Model Editor 0.12',
+        mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix]),normal_data
+
+def export_direct(recipe,output):
+    from .backend.capture_equipment_morph_job import capture
+    output=Path(output).resolve();assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
+    for a in assets:a['package']=a['model_id'].rsplit('/',1)[-1]
+    if output.exists() and not output.is_dir():raise ValueError('输出位置必须是文件夹')
+    if not 0<len(assets)<=64 or len({a['model_id'].casefold() for a in assets})!=len(assets):raise ValueError('模型资源路径重复或超过64个')
+    module=editor_module()
+    for asset in assets:preflight(asset)
+    output.parent.mkdir(parents=True,exist_ok=True)
+    stage_parent=output if output.is_dir() else output.parent
+    stage=Path(tempfile.mkdtemp(prefix='morph-direct-stage-',dir=stage_parent))
+    try:
+        work=stage/'authoring';work.mkdir();empty=work/'baseline_rotations.bin';empty.write_bytes(b'')
+        for asset in assets:
+            _,_,validation=preflight(asset)
+            check=work/(asset['part']+'.keys.json');write(check,validation);load_job(check)
+        parts=[];normal_data={};models=[]
+        for index,asset in enumerate(assets):
+            work=stage/'authoring'/str(index);work.mkdir()
+            empty=work/'baseline_rotations.bin';empty.write_bytes(b'')
+            model=stage/'nativePC'/(asset['model_id']+'.mod3');model.parent.mkdir(parents=True,exist_ok=True)
+            if model.exists():raise ValueError('两个部位使用同一输出模型路径')
+            trace,normals=export_model(module,asset,model);mapping=work/(asset['part']+'.trace.json');write(mapping,trace)
+            matrix=work/(asset['part']+'.coordinates.json');write(matrix,{'export_matrix':trace['export_matrix']})
+            part=dict(part=asset['part'],model_id=asset['model_id'],model=pin(model),mapping=pin(mapping),keys=asset['keys'],author_rotations=pin(empty))
+            job=dict(schema='mhw-equipment-morph-export-job-v2',export_reference=pin(matrix),parts=[part])
+            path=work/(asset['part']+'.job.json');write(path,job);load_job(path)
+            reference=work/(asset['part']+'.reference.json');capture(path,reference)
+            part['reference_capture']=pin(reference);write(path,job)
+            current=work/(asset['part']+'.capture.json');capture(path,current)
+            parts.append(dict(job=pin(path),capture=pin(current),packages={asset['part']:asset['package']},mesh_contracts={asset['part']:{'mode':'serialized'}}))
+            if asset['shading']=='GEOMETRIC':normal_data[asset['model_id']]=normals
+            models.append(dict(part=asset['part'],file=model.relative_to(stage).as_posix(),sha256=trace['model_sha256'],meshes=len(trace['objects']),vertices=sum(len(o['disk_to_blender_vertex']) for o in trace['objects'])))
+        job=work/'package_job.json';write(job,{'schema':'mhw-equipment-morph-package-job-v1','exports':parts})
+        result=export_pipeline(job,stage/'generated',normal_data)
+        publish(stage/'generated/nativePC',stage/'nativePC')
+        shutil.rmtree(stage/'generated/nativePC')
+        result.update(success=True,models=models,mapping_method='same-export-source-indices',source_data_unchanged=True,
+            # Exporter creates/removes datablocks; Blender may mark the scene dirty.
+            scene_mutated=True,blend_saved=False,formal_acceptance_complete=False)
+        write(stage/'result.json',result)
+        # Preserve every hashed receipt byte. Absolute paths record the transient
+        # run location; users repeat the paired export from the Blender collection.
+        write(work/'README.json',{'replayable':False,'staging_root':str(stage),
+            'reason':'archived paired-run evidence; files are now under the output directory',
+            'source_indices_retained':True})
+        publish(stage,output);return result
+    finally:
+        if stage.exists():
+            if stage.parent!=stage_parent or not stage.name.startswith('morph-direct-stage-'):raise ValueError('临时输出清理范围错误')
+            shutil.rmtree(stage)

@@ -1,0 +1,74 @@
+{
+  "schema": "mhwi-equipmentmorph-backend-provenance-v2",
+  "project_name": "MHWI-EquipmentMorph",
+  "version": "0.3.1",
+  "historical_metadata_sha256": "2f1906802d980aa5567375d899804bb9ea9c067618aedc170a7c125737fa4d05",
+  "sources": [
+    {
+      "source": "tools/prepare_equipment_morph_catalog.py",
+      "original_sha256": "ac061661ae3ce01a00a7451878269267b0f9a09c2557af9863400af125d67721",
+      "bundled": "backend/prepare_equipment_morph_catalog.py",
+      "bundled_sha256": "cf5ff2c7ad107be107698a758d29d4de4d5a6eef36ca19349ecc8c3ab080a14d",
+      "frozen_candidate": "blender_addon_v03/mhwi_equipmentmorph/backend/prepare_equipment_morph_catalog.py",
+      "frozen_candidate_sha256": "cf5ff2c7ad107be107698a758d29d4de4d5a6eef36ca19349ecc8c3ab080a14d",
+      "change": "per-key pack format adaptation"
+    },
+    {
+      "source": "tools/equipment_morph_export_pipeline.py",
+      "original_sha256": "95f122df8c4b413559c9bd0411b6a3b8c7c8cfecd0f087e5409fdae8c461cf83",
+      "bundled": "backend/equipment_morph_export_pipeline.py",
+      "bundled_sha256": "bdf7efefa5d1e10b421ca6578d67a5693c029d25f97ceb11ea7e7ccb4c1f9697",
+      "frozen_candidate": "blender_addon_v03/mhwi_equipmentmorph/backend/equipment_morph_export_pipeline.py",
+      "frozen_candidate_sha256": "bdf7efefa5d1e10b421ca6578d67a5693c029d25f97ceb11ea7e7ccb4c1f9697",
+      "change": "package-relative imports only"
+    },
+    {
+      "source": "tools/capture_equipment_morph_job.py",
+      "original_sha256": "abfca14cdc9f3e37e1fd2cdfcfd0af799dfbb08d67bdabd4d302c8d7e8f32591",
+      "bundled": "backend/capture_equipment_morph_job.py",
+      "bundled_sha256": "255ff391ac05b650cf4c112a5f9ac291f0b33f906098047fec9fbcc5915e799a",
+      "frozen_candidate": "blender_addon_v03/mhwi_equipmentmorph/backend/capture_equipment_morph_job.py",
+      "frozen_candidate_sha256": "255ff391ac05b650cf4c112a5f9ac291f0b33f906098047fec9fbcc5915e799a",
+      "change": "package-relative imports only"
+    },
+    {
+      "source": "tools/map_equipment_morph_job.py",
+      "original_sha256": "dc30a307ca507ea5bf75ebb54686d6e587b956b4eeb0f4d1a187efe8bcf102e0",
+      "bundled": "backend/map_equipment_morph_job.py",
+      "bundled_sha256": "ebbb9b8407f4f95a320367bd8e79d198587f7174dea3f4f3298097dfe6f88ba0",
+      "frozen_candidate": "blender_addon_v03/mhwi_equipmentmorph/backend/map_equipment_morph_job.py",
+      "frozen_candidate_sha256": "ebbb9b8407f4f95a320367bd8e79d198587f7174dea3f4f3298097dfe6f88ba0",
+      "change": "package-relative imports only"
+    },
+    {
+      "source": "tools/emit_equipment_morph_profile.py",
+      "original_sha256": "952ced524072fea4ef2d04f938101c6da97dd762be3974fdd20d1d1bf2c3ff1e",
+      "bundled": "backend/emit_equipment_morph_profile.py",
+      "bundled_sha256": "03bc9e5d5e9c662a6b2919f57fe30e1cace2d4034a8a6d135210fdf20465d192",
+      "frozen_candidate": "blender_addon_v03/mhwi_equipmentmorph/backend/emit_equipment_morph_profile.py",
+      "frozen_candidate_sha256": "952ced524072fea4ef2d04f938101c6da97dd762be3974fdd20d1d1bf2c3ff1e",
+      "change": "v2 disk-derived mesh contract for every part, including body"
+    },
+    {
+      "source": "tools/equipment_morph_package_pipeline.py",
+      "original_sha256": "8e9ab6ac0280fdde95a0d0bba5a93f5029b5be871b7f5aa316c43ccd31e02624",
+      "bundled": "backend/equipment_morph_package_pipeline.py",
+      "bundled_sha256": "9709000a769503b84990ebfe0a8bbd590b9bcf5dd336703192d712e67fd8bc80",
+      "frozen_candidate": "blender_addon_v03/mhwi_equipmentmorph/backend/equipment_morph_package_pipeline.py",
+      "frozen_candidate_sha256": "d097023f8fee792b54ca60d485ce20a35bf3c9d3bce0e02fc4cf7f47e6a6cf68",
+      "change": "v2 disk-derived mesh contract for every part, including body"
+    }
+  ],
+  "adapter": "mhw-c2ebbbd2-equipment-v2",
+  "derivative_of_release": "0.3.0",
+  "body_disk_generation": true,
+  "mesh_contract": {
+    "path": "backend/mesh_contract.py",
+    "sha256": "d80222973c68a6d04db6147159b4d9ae226d30b4bbcae48a656335d2cffd6a49",
+    "proven_disk_formats": [
+      "0xf637401c",
+      "0x3c730760",
+      "0x366995a7"
+    ]
+  }
+}

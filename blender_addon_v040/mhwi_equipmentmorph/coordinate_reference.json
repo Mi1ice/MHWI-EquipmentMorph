@@ -1,0 +1,29 @@
+{
+  "export_matrix": [
+    [
+      100.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      -4.371138857095502e-06,
+      100.0,
+      0.0
+    ],
+    [
+      0.0,
+      -100.0,
+      -4.371138857095502e-06,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "scope": "observed MHW MOD3 exporter convention; evaluated model baseline must still match"
+}
