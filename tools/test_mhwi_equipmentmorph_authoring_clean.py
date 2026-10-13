@@ -10,7 +10,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 NAME = 'mhwi_clean_authoring_test'
-FOLDER = ROOT / (sys.argv[1] if len(sys.argv)==2 else 'blender_addon_v040/mhwi_equipmentmorph')
+FOLDER = ROOT / (sys.argv[1] if len(sys.argv)==2 else 'blender_addon_v041/mhwi_equipmentmorph')
 for name, path in [(NAME, FOLDER), (NAME + '.backend', FOLDER / 'backend')]:
     module = types.ModuleType(name)
     module.__path__ = [str(path)]

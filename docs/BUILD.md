@@ -5,7 +5,7 @@
 - Windows x64，PowerShell 7，Git。
 - Visual Studio C++ Build Tools（MSVC x64）及 Windows 10/11 SDK。构建脚本通过 vswhere 自动发现工具链。
 - Python 3.11 或更新版本及 `requirements-dev.txt` 中的 NumPy。
-- 可选联合导出验证：Blender 5.1.2，已安装且启用匹配源码摘要的 MHW Model Editor 0.12。适配摘要位于 `blender_addon_v040/mhwi_equipmentmorph/direct_export_adapter.json`。
+- 可选联合导出验证：Blender 5.1.2，已安装且启用匹配源码摘要的 MHW Model Editor 0.12。适配摘要位于 `blender_addon_v041/mhwi_equipmentmorph/direct_export_adapter.json`。
 
 在仓库根目录执行：
 

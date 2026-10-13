@@ -1,4 +1,4 @@
-bl_info={'name':'MHWI-EquipmentMorph','author':'MHWI-EquipmentMorph','version':(0,4,0),'blender':(4,2,0),'location':'3D View > Sidebar > MHWI-EquipmentMorph','description':'从同一集合联合导出MOD3和装备形态键数据','category':'Import-Export'}
+bl_info={'name':'MHWI-EquipmentMorph','author':'MHWI-EquipmentMorph','version':(0,4,1),'blender':(4,2,0),'location':'3D View > Sidebar > MHWI-EquipmentMorph','description':'从同一集合联合导出MOD3和装备形态键数据','category':'Import-Export'}
 import json
 from pathlib import Path
 import bpy
@@ -55,21 +55,21 @@ class MHWI_EM_Binding(PropertyGroup):
     mesh:EnumProperty(name='模型网格',items=mesh_items)
 class MHWI_EM_Key(PropertyGroup):
     source:StringProperty(name='源形态键')
-    public_id:StringProperty(name='接口名称')
+    public_id:StringProperty(name='接口名称',description='1至63个可打印ASCII字符，同一模型内不能重复；例如 vrc.blink 或 smile。中文源键可以保留，接口名称请用英文、数字和符号')
     enabled:BoolProperty(name='导出',default=False)
     can_control:BoolProperty(default=True)
     participants:IntProperty(default=0)
     author_shading:BoolProperty(name='作者法线',default=True)
     proof_json:StringProperty(default='{}')
 class MHWI_EM_Asset(PropertyGroup):
-    collection:PointerProperty(name='MOD3集合',type=bpy.types.Collection)
+    collection:PointerProperty(name='MOD3集合',description='选择MHW Model Editor使用的MOD3集合，导出其中的模型网格；例如 f_body105_0000.mod3',type=bpy.types.Collection)
     direct_shading:EnumProperty(name='法线',items=[('BASELINE','保留基准法线',''),('GEOMETRIC','逐键几何法线','从导出后的拆点网格生成端点方向；保留作者基准方向')],default='BASELINE')
     use_blender_material_name:BoolProperty(name='使用Blender材质名',default=False)
     part:EnumProperty(name='装备部位',items=PARTS,default='body')
-    package:StringProperty(name='包名',default='equipment-body')
-    model:StringProperty(name='实际MOD3',subtype='FILE_PATH')
-    model_id:StringProperty(name='游戏资源路径')
-    equipment_id:StringProperty(name='目标套装 ID',description='可选，三位数字；同步修改套装目录和模型名，例如105改为001')
+    package:StringProperty(name='包名',description='已有MOD3模式：1至63个英文、数字、下划线或短横线；例如 equipment-body。集合联合导出会自动使用模型名',default='equipment-body')
+    model:StringProperty(name='实际MOD3',description='选择电脑上的.mod3文件，例如 D:/MODExport/MyMod/nativePC/pl/f_equip/pl105_0000/body/mod/f_body105_0000.mod3',subtype='FILE_PATH')
+    model_id:StringProperty(name='游戏资源路径',description='填写相对nativePC的完整模型路径，不是电脑上的文件夹路径。推荐不写.mod3；例：pl/f_equip/pl105_0000/body/mod/f_body105_0000。支持正斜杠或反斜杠')
+    equipment_id:StringProperty(name='目标套装 ID',description='可留空：使用原资源路径；填写时必须是三位数字，例如001。同步将路径中的pl105和模型名中的105改为001')
     mapping:StringProperty(name='已有映射',subtype='FILE_PATH')
     reference_capture:StringProperty(name='映射来源采集',subtype='FILE_PATH')
     shading:EnumProperty(name='法线',items=[('BASELINE','保留基准法线',''),('AUTHOR','使用已有作者法线数据',''),('INTENT','保持作者法线方向（自动生成）','需要兼容MOD Toolkit；不修改源法线编码'),('GEOMETRIC','逐键几何法线','需要支持逐键法线的运行时；保留基准方向，按各键端点变化混合（近似）')],default='BASELINE')
@@ -84,7 +84,8 @@ class MHWI_EM_Settings(PropertyGroup):
     source_mode:EnumProperty(name='导出来源',items=[('DIRECT','集合联合导出','从同一集合生成MOD3和形态键数据，无需选择模型网格编号'),('LEGACY','已有MOD3','使用已有模型和显式映射')],default='DIRECT')
     assets:CollectionProperty(type=MHWI_EM_Asset)
     active_asset:IntProperty(default=0)
-    output:StringProperty(name='输出文件夹',subtype='DIR_PATH')
+    output:StringProperty(name='输出文件夹',description='选择任意可写的导出根文件夹，已有文件夹也可使用；例如 D:/MODExport/MyMod。不必位于游戏目录，自动生成nativePC子目录；同路径导出文件会替换，其它文件保留',subtype='DIR_PATH')
+    show_field_help:BoolProperty(name='填写说明与示例',description='展开资源路径、套装ID、接口名称与输出文件夹的填写示例',default=False)
     matrix_json:StringProperty(default='')
     status:StringProperty(default='选择装备模型、网格与动态形态键')
     result_path:StringProperty(default='')
@@ -223,10 +224,10 @@ class MHWI_EM_PT_Export(Panel):
             box=layout.box();box.prop(asset,'part');box.prop(asset,'collection');box.prop(asset,'model_id');box.prop(asset,'equipment_id')
             box.prop(asset,'use_blender_material_name');box.operator('mhwi_em.refresh_keys')
             box.template_list('MHWI_EM_UL_Keys','',asset,'keys',asset,'active_key',rows=6)
-            box.prop(asset,'direct_shading');box.label(text='动态键须为0；固定修正保留');box.label(text='形态键包与模型同名，随换装自动选择')
-            box.label(text='自动拆UV/锐边，导出整个集合')
+            box.prop(asset,'direct_shading')
+            field_help(layout,state)
             layout.prop(state,'output',text='输出文件夹');layout.operator('mhwi_em.export_package',text='导出 MOD3＋形态键数据',icon='EXPORT')
-            layout.label(text=state.status);layout.label(text='不保存工程；同名导出文件会更新')
+            layout.label(text=state.status)
             return
         if asset:
             box=layout.box();box.prop(asset,'part');box.prop(asset,'package');box.prop(asset,'model');box.operator('mhwi_em.read_model');box.prop(asset,'model_id')
@@ -243,8 +244,28 @@ class MHWI_EM_PT_Export(Panel):
             box.label(text='新生成包需要磁盘契约v2运行时')
             if asset.contract_mode=='recorded':box.prop(asset,'contract_file')
             if asset.mapping:box.label(text='沿用准确来源的既有映射')
+        field_help(layout,state)
         layout.prop(state,'output');layout.operator('mhwi_em.export_package',icon='EXPORT');layout.label(text=state.status)
         layout.label(text='只读采集，不保存工程；新模型仍需最终检查')
+
+def field_help(layout,state):
+    row=layout.row();row.prop(state,'show_field_help',icon='INFO')
+    if not state.show_field_help:return
+    box=layout.box()
+    box.label(text='资源路径：相对 nativePC 的完整路径')
+    box.label(text='例：pl/f_equip/pl105_0000/')
+    box.label(text='     body/mod/f_body105_0000')
+    if state.source_mode=='DIRECT':
+        box.label(text='目标套装 ID：可留空；例如001')
+        box.label(text='填写三位数字，同步修改模型与包')
+    else:
+        box.label(text='包名：英文、数字、_ 或 -')
+        box.label(text='例：equipment-body；最多63字符')
+    box.label(text='接口名称：1至63个ASCII字符')
+    box.label(text='例：vrc.blink；同一模型内不重复')
+    box.label(text='输出：任意可写文件夹（可以已存在）')
+    box.label(text='例：D:/MODExport/MyMod')
+    box.label(text='自动生成 nativePC 子目录')
 
 classes=(MHWI_EM_Binding,MHWI_EM_Key,MHWI_EM_Asset,MHWI_EM_Settings,MHWI_EM_UL_Assets,MHWI_EM_UL_Bindings,MHWI_EM_UL_Keys,MHWI_EM_OT_Add,MHWI_EM_OT_Remove,MHWI_EM_OT_Model,MHWI_EM_OT_Collect,MHWI_EM_OT_Keys,MHWI_EM_OT_Import,MHWI_EM_OT_Export,MHWI_EM_PT_Export)
 def register():

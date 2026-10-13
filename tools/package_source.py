@@ -61,7 +61,7 @@ def main():
     with zipfile.ZipFile(PACKAGE.with_suffix('.zip'), 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(PACKAGE.rglob('*')):
             if path.is_file(): archive.write(path, PACKAGE.name + '/' + path.relative_to(PACKAGE).as_posix())
-    output = ROOT / '.build/packages/MHWI-EquipmentMorph-Blender-0.4.0.zip'
+    output = ROOT / ('.build/packages/MHWI-EquipmentMorph-Blender-' + CONFIG['addon_version'] + '.zip')
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(addon.rglob('*')):
             if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc':

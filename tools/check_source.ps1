@@ -11,7 +11,7 @@ try {
     Run $Python @('tools/check_repository.py')
     & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_current.ps1')
     & (Join-Path $PSScriptRoot 'build_equipment_morph_package_validator.ps1')
-    Run $Python @('tools/test_mhwi_equipmentmorph_authoring_clean.py', 'blender_addon_v040/mhwi_equipmentmorph')
+    Run $Python @('tools/test_mhwi_equipmentmorph_authoring_clean.py', 'blender_addon_v041/mhwi_equipmentmorph')
     Run (Join-Path $taskRoot '.build/cleanup-validation/native/EquipmentMorphDiskContractTests.exe') @('.build/cleanup-validation/synthetic.mhmprofile')
     Run $Python @('tools/test_mhwi_equipmentmorph_weight_log.py')
     & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_control_panel.ps1') -OutputDirectory (Join-Path $taskRoot '.build/current-validation/control-panel')
