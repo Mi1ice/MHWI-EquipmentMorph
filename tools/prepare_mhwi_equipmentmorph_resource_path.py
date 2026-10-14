@@ -32,37 +32,42 @@ def backend():
             importlib.import_module('_mhm_prepare.backend.emit_equipment_morph_profile').encode,
             importlib.import_module('_mhm_prepare.output_files').retarget_model)
 
-def verify(validator,root):
-    process=subprocess.run([str(validator),str(root/'nativePC/plugins/MHWEquipmentMorph'),str(root/'nativePC')],capture_output=True,text=True)
+def runtime_directory(value=None):
+    if value is None:
+        config=ROOT/'config/mhwi-equipmentmorph-current.json'
+        if not config.is_file():raise ValueError('请用 --runtime-config 指定已安装运行时的配置目录或运行时解压目录')
+        value=ROOT/json.loads(config.read_bytes())['release_directory']
+    path=Path(value).absolute()
+    if path.name.lower()=='runtime.ini':path=path.parent
+    if not (path/'runtime.ini').is_file():raise ValueError('未找到运行时配置，请先安装运行时或指定正确的 --runtime-config')
+    return path
+
+def verify(validator,root,runtime_config=None):
+    root=Path(root);config=runtime_directory(runtime_config)
+    process=subprocess.run([str(validator),str(config),str(root/'nativePC')],capture_output=True,text=True)
     report=json.loads(process.stdout)
     if process.returncode or not report['native_loader_valid']:raise ValueError('Native package check failed: '+report.get('error','unknown'))
     return report
 
-def prepare(source,output,part,model_id,validator,installed_model=None,equipment_id=''):
+def prepare(source,output,part,model_id,validator,installed_model=None,equipment_id='',runtime_config=None):
     normalize,encode,retarget=backend()
     source=Path(source).resolve();output=Path(output).resolve()
     if output.exists():raise ValueError('Prepared output already exists; choose a new directory')
-    verified=verify(validator,source)
-    result=json.loads((source/'result.json').read_bytes())
-    if not result.get('success'):raise ValueError('Source export was not successful')
-    entries=[e for e in result['assets'] if e['part']==part];models=[e for e in result['models'] if e['part']==part]
-    if len(entries)!=1 or len(models)!=1:raise ValueError('请选择仅包含一个待迁移模型的导出；同部位多模型请分别迁移')
-    entry=entries[0];model_entry=models[0]
-    old_id=normalize(models[0]['file'].removeprefix('nativePC/'))
-    if entry['package']!=old_id+'.morph':raise ValueError('Source package does not match model resource path')
+    verified=verify(validator,source,runtime_config)
+    records=[p for p in verified['parts'] if p['part']==PARTS[part]]
+    if len(records)!=1:raise ValueError('请选择仅包含一个待迁移部位模型的包；同部位多模型请分别迁移')
+    record=records[0];old_id=normalize(record['model_id'])
     model_id=retarget(old_id,equipment_id) if equipment_id else normalize(model_id)
-    if not any(p['part']==PARTS[part] for p in verified['parts']):raise ValueError('Part is not selected in source configuration')
-    folder=source/'nativePC'/entry['package']
+    folder=source/'nativePC'/record['package']
     description=json.loads((folder/'profile.json').read_bytes());raw=(folder/'asset.mhmpack').read_bytes()
     if description['part']!=PARTS[part]:raise ValueError('Source package belongs to another part')
     old_profile=(folder/'model.mhmprofile').read_bytes()
     sha=lambda data:hashlib.sha256(data).hexdigest()
-    if sha(raw)!=entry['asset_sha256'] or sha(old_profile)!=entry['profile_sha256'] or encode(description,raw)!=old_profile:raise ValueError('Source description/export receipt differs')
+    if (description['model_id']!=old_id or sha(raw)!=record['asset_sha256']
+            or description['asset_sha256']!=sha(raw) or encode(description,raw)!=old_profile):
+        raise ValueError('Readable profile differs from native model/package')
     model=(source/'nativePC'/(description['model_id']+'.mod3')).read_bytes()
-    if sha(model)!=description['model_sha256'] or sha(model)!=model_entry['sha256']:raise ValueError('Source model digest differs')
-    records=[p for p in verified['parts'] if p['part']==PARTS[part] and p['package']==entry['package']]
-    if len(records)!=1 or records[0]['model_id']!=description['model_id'] or records[0]['asset_sha256']!=sha(raw):
-        raise ValueError('Source receipt differs from selected native package')
+    if sha(model)!=description['model_sha256'] or sha(model)!=record['model_sha256']:raise ValueError('Source model digest differs')
     if installed_model and Path(installed_model).read_bytes()!=model:raise ValueError('Installed target model differs from source export')
     old_length=struct.unpack_from('<I',raw,28)[0];old_id=raw[32:32+old_length].decode('ascii')
     if old_id!=description['model_id']:raise ValueError('Source resource identity differs')
@@ -72,31 +77,29 @@ def prepare(source,output,part,model_id,validator,installed_model=None,equipment
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='morph-resource-stage-',dir=output.parent) as temporary:
         stage=Path(temporary)/'export';stage.mkdir()
-        for name in ('nativePC','generated','authoring'):shutil.copytree(source/name,stage/name)
+        if not Path(temporary).resolve().is_relative_to(output.parent):raise ValueError('Temporary migration escaped output parent')
+        shutil.copytree(source/'nativePC',stage/'nativePC')
+        # A MOD never owns the runtime configuration, even if old files are present.
+        ini=stage/'nativePC/plugins/MHWEquipmentMorph/runtime.ini'
+        if ini.exists():ini.unlink()
+        for directory in (ini.parent,ini.parent.parent,ini.parent.parent.parent):
+            if directory.exists() and not any(directory.iterdir()):directory.rmdir()
+        if model_id!=old_id and ((stage/'nativePC'/(model_id+'.mod3')).exists() or (stage/'nativePC'/(model_id+'.morph')).exists()):
+            raise ValueError('Target model/package already exists; migration would overwrite another MOD')
         target=stage/'nativePC'/(model_id+'.mod3');target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(model)
         package=stage/'nativePC'/(model_id+'.morph')
         if old_id!=model_id:
             (stage/'nativePC'/(old_id+'.mod3')).unlink()
-            os.rename(stage/'nativePC'/entry['package'],package)
+            old_package=stage/'nativePC'/record['package']
+            if not old_package.resolve().is_relative_to(stage.resolve()) or not package.resolve().is_relative_to(stage.resolve()):
+                raise ValueError('Migration package escaped staging root')
+            os.rename(old_package,package)
         (package/'asset.mhmpack').write_bytes(updated);(package/'model.mhmprofile').write_bytes(new_profile)
         (package/'profile.json').write_text(json.dumps(description,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-        manifest=stage/'generated/export'/old_id/'manifest.json'
-        metadata=json.loads(manifest.read_bytes())
-        if metadata['model_id']!=old_id or metadata['model_sha256']!=sha(model):raise ValueError('Source manifest identity differs')
-        metadata['model_id']=model_id
-        manifest.write_text(json.dumps(metadata,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-        # The copied authoring receipts retain the original source identity.
-        # This derivative is validated from its final model/pack/profile files.
-        entry.update(package=model_id+'.morph',asset_sha256=sha(updated),profile_sha256=sha(new_profile))
-        model_entry['file']=target.relative_to(stage).as_posix()
-        result['resource_path_adjustment']=dict(part=part,from_model_id=old_id,to_model_id=model_id,
-            source_result_sha256=sha((source/'result.json').read_bytes()),geometry_and_sparse_payloads_unchanged=True,
-            source_asset_sha256=sha(raw),source_profile_sha256=sha(old_profile),
-            installed_model_checked=bool(installed_model),source_export_changed=False,game_files_changed=False)
-        (stage/'result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-        report=verify(validator,stage)
+        report=verify(validator,stage,runtime_config)
         os.rename(stage,output)
-    return {'output':str(output),'model_id':model_id,'native_check':report,'game_files_changed':False}
+    return {'output':str(output),'model_id':model_id,'from_model_id':old_id,'native_check':report,
+            'geometry_and_sparse_payloads_unchanged':True,'source_export_changed':False,'game_files_changed':False}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -106,7 +109,8 @@ def main():
     local=Path(__file__).with_name('EquipmentMorphPackageValidator.exe')
     parser.add_argument('--validator',type=Path,default=local if local.exists() else ROOT/'.build/current-validation/package-validator/EquipmentMorphPackageValidator.exe')
     parser.add_argument('--installed-model',type=Path)
+    parser.add_argument('--runtime-config',type=Path,help='Runtime configuration directory or runtime.ini; never read from the MOD')
     args=parser.parse_args()
-    print(json.dumps(prepare(args.source,args.output,args.part,args.model_id,args.validator,args.installed_model,args.equipment_id or ''),ensure_ascii=False))
+    print(json.dumps(prepare(args.source,args.output,args.part,args.model_id,args.validator,args.installed_model,args.equipment_id or '',args.runtime_config),ensure_ascii=False))
 
 if __name__=='__main__':main()

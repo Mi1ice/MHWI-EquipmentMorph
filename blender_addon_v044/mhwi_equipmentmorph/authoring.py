@@ -2,6 +2,7 @@
 import copy
 import json
 import re
+import tempfile
 from pathlib import Path
 from .backend.equipment_morph_export_pipeline import digest,read_json
 from .backend.equipment_morph_package_pipeline import export_pipeline,package_id
@@ -82,7 +83,36 @@ def reused_map(asset,model_sha):
             raise ValueError('该映射的重合点证明仅覆盖原选定位置键；新增键或法线需重新建立依据')
     return mapping
 
-def export_recipe(recipe,output):
+def export_recipe(recipe,output,debug=False):
+    from .output_files import publish
+    output=Path(output).resolve()
+    if output.exists() and not output.is_dir():raise ValueError('输出位置必须是文件夹')
+    output.parent.mkdir(parents=True,exist_ok=True)
+    parent=output if output.is_dir() else output.parent
+    with tempfile.TemporaryDirectory(prefix='morph-author-stage-',dir=parent) as temporary:
+        stage=Path(temporary)
+        if stage.parent!=parent or not stage.name.startswith('morph-author-stage-'):raise ValueError('临时输出范围错误')
+        built=False
+        try:
+            result=build_recipe(recipe,stage/'run')
+            built=True
+            if debug:
+                # nativePC is published once; generated retains intermediate data only.
+                import shutil
+                native=(stage/'run/generated/nativePC').resolve()
+                if not native.is_relative_to(stage.resolve()):raise ValueError('临时输出清理范围错误')
+                shutil.rmtree(native)
+                publish(stage/'run',output)
+            else:publish(stage/'run/nativePC',output/'nativePC')
+            return result
+        except Exception:
+            if debug and not built and (stage/'run/authoring').is_dir():publish(stage/'run/authoring',output/'authoring')
+            if debug and not built and (stage/'run/result.json').is_file():
+                error_stage=stage/'error';error_stage.mkdir()
+                (error_stage/'result.json').write_bytes((stage/'run/result.json').read_bytes());publish(error_stage,output)
+            raise
+
+def build_recipe(recipe,output):
     from .backend.capture_equipment_morph_job import capture
     output=Path(output).resolve()
     if output.exists():raise ValueError('输出目录已存在，请选择新目录')

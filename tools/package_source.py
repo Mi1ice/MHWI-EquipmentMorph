@@ -64,7 +64,7 @@ def main():
     output = ROOT / ('.build/packages/MHWI-EquipmentMorph-Blender-' + CONFIG['addon_version'] + '.zip')
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(addon.rglob('*')):
-            if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc':
+            if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc' and path.name not in ('LICENSE', 'LICENSING.md'):
                 archive.write(path, 'mhwi_equipmentmorph/' + path.relative_to(addon).as_posix())
         for name in ('LICENSE', 'LICENSING.md'):
             archive.write(ROOT / name, 'mhwi_equipmentmorph/' + name)

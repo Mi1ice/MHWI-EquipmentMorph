@@ -34,6 +34,8 @@ def editor_module():
 
 def preflight(asset):
     import bpy
+    from . import shape_preview
+    if shape_preview.running():raise ValueError('请先结束形态键预览，再进行联合导出')
     collection=asset['collection']
     if asset['part'] not in PARTS:raise ValueError('无效装备部位')
     if not collection or collection.library:raise ValueError('请选择本地 MOD3 集合')
@@ -167,7 +169,7 @@ def export_model(module,asset,path):
         model_sha256=digest(model),fully_resolved=True,objects=mapping,exporter='MHW Model Editor 0.12',
         mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix]),normal_data
 
-def export_direct(recipe,output):
+def export_direct(recipe,output,debug=False):
     from .backend.capture_equipment_morph_job import capture
     output=Path(output).resolve();assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
     for a in assets:a['package']=a['model_id'].rsplit('/',1)[-1]
@@ -213,7 +215,9 @@ def export_direct(recipe,output):
         write(work/'README.json',{'replayable':False,'staging_root':str(stage),
             'reason':'archived paired-run evidence; files are now under the output directory',
             'source_indices_retained':True})
-        publish(stage,output);return result
+        if debug:publish(stage,output)
+        else:publish(stage/'nativePC',output/'nativePC')
+        return result
     finally:
         if stage.exists():
             if stage.parent!=stage_parent or not stage.name.startswith('morph-direct-stage-'):raise ValueError('临时输出清理范围错误')

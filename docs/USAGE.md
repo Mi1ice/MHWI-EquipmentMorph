@@ -1,16 +1,18 @@
-# 多装备模型与同名形态键包 · 0.5.0
-
-配套作者插件0.4.1，新增字段悬停提示与“填写说明与示例”，移除联合导出界面的固定说明文字。已实现同名包、单套装ID迁移、同部位多模型自动选择和配套安装检查。pl001与pl105两套身体MOD的三个键、释放恢复、换装自动绑定及权重归零、连续往返已由用户确认正常。0.5.0正式包运行文件与已验收0.5.0-dev1一致。
+# 作者插件 0.4.4 与多装备运行时 0.5.0
 
 ## 作者操作
 
-在已验证的Blender 5.1.2和MHW Model Editor 0.12中，使用N侧栏MHWI-EquipmentMorph。添加装备模型，选择部位、MOD3集合、游戏资源路径和动态键；同一部位可以添加多个不同资源路径的模型。数据包名由模型名生成，无需另填包名。固定修正保留，动态键须为0。每次导出最多64个模型，重复的资源路径拒绝导出。
+在 Blender 的 N 侧栏打开 MHWI-EquipmentMorph，添加装备模型并选择 MOD3 集合。选择性别、套装和部位后自动确定游戏资源路径；没有对应模型文件的组合不能导出。装备目录随插件提供，见[来源与重建说明](EQUIPMENT_CATALOG.md)。高级手动路径直接使用所填完整路径，不再叠加另一个目标套装 ID。
 
-填写游戏资源路径，例如 `pl/f_equip/pl105_0000/body/mod/f_body105_0000`。可选的“目标套装 ID”填写三位数字，例如001，自动将目录中的pl105与模型名中的105都改为001，保留性别、部位及变体字段。目录和文件名中原ID不一致会拒绝迁移，不使用全局字符串替换。
+例如女性冰狼身体对应 `pl/f_equip/pl105_0000/body/mod/f_body105_0000`，皮质身体对应 `pl/f_equip/pl001_0000/body/mod/f_body001_0000`。这些路径相对 nativePC，不需要填写 .mod3 后缀。具体部位编号和四位变体按目录保留，不用套装默认地址覆盖头部例外。
 
-输出文件夹可选择任意有写入权限的普通文件夹，包括现有文件夹，例如`D:/MODExport/MyMod`。选择的是导出根文件夹，插件会在其中生成`nativePC`子目录；不必选择游戏目录。悬停字段可查看格式要求，展开“填写说明与示例”可查看资源路径、ID、接口名称和输出目录示例。
+刷新候选形态键后，可以搜索并勾选候选，点击“使用选中形态键”。确认后的键在单独列表中配置接口别名与移除；接口名称为1至63个ASCII字符，同一模型内不重复。非零键作为固定修正保留，动态键必须为零；确认列表中失效或缺失的键会阻止导出。
 
-导出结果直接包含可安装的nativePC结构：
+进入预览后，可以组合调节已确认键，统一查看多个网格的同名形态键。预览使用独立副本，源形态键值不改写；退出、导出、保存、载入、撤销或卸载时清理预览。预览要求对象模式和受支持的静态场景，界面会说明不能预览的原因。
+
+输出文件夹可选任意可写的普通文件夹，包括现有目录。插件自动生成 nativePC 子目录，不需要选择游戏目录。已有目录仅替换本次生成文件，失败回滚；不会清理旧目标模型、旧 Debug 文件或历史 runtime.ini。发布精简包建议使用空目录。
+
+默认关闭 Debug，每个模型只导出四个必要文件：
 
 ```text
 nativePC/pl/f_equip/pl105_0000/body/mod/
@@ -19,41 +21,39 @@ nativePC/pl/f_equip/pl105_0000/body/mod/
     asset.mhmpack
     model.mhmprofile
     profile.json
-nativePC/plugins/MHWEquipmentMorph/runtime.ini
 ```
 
-authoring和generated目录保存作者收据，不安装到游戏。输出目录可以是现有文件夹；仅替换本次生成的文件，失败回滚。改变目标ID后，旧目标的输出文件会保留，适合保留两套装备；安装工具依据新结果的模型清单处理，避免误删旧模型。若不需要旧目标，使用新的输出文件夹生成本次独立包。
+开启 Debug 额外保留 authoring、generated 和 result.json。两种模式均执行完整校验，均不携带 runtime.ini。公共配置由游戏运行时安装，多个 MOD 共用一份。
 
-## 已导出模型的ID迁移
+## 检查和安装
 
-在运行时包的Tools目录中运行：
+先关闭游戏并安装运行时。配置为 `[runtime]` 下的 `format=2`；运行时扫描 nativePC/pl 中与模型同名的 .morph 包。目录、模型与包内身份必须一致，两个 MOD 覆盖同一路径时只能使用最终安装的一组模型与包。
+
+在源码仓库根目录检查精简导出：
 
 ```powershell
-python ./prepare_mhwi_equipmentmorph_resource_path.py --source '本版本完整导出目录' --output '尚不存在的新目录' --part body --equipment-id 001
+./tools/Check-EquipmentMorph.ps1 -ExportDirectory 'D:/MODExport/MyMod' -RuntimeConfig './config'
 ```
 
-也可使用 `--model-id 'pl/.../完整目标路径'`。单ID快捷迁移要求所选部位在源导出中只有一个模型。工具保留MOD3、顶点基准及稀疏增量字节，同步修改包路径和描述，再执行原生检查。源导出和游戏文件不变。MOD3本身没有因此重新计算形态键。复制的作者收据不能作为旧作业直接重放。
+也可将 RuntimeConfig 指向已安装运行时的 nativePC/plugins/MHWEquipmentMorph、运行时解压目录或其中的 runtime.ini。发行工具包内没有源码 config，需要显式指定配置位置。检查游戏安装使用 `-GameDirectory '游戏目录'`。
 
-## 安装与冲突检查
-
-先正常退出游戏。安装本版运行时及插件，并使用本版配置：
-
-```ini
-[runtime]
-format=2
-```
-
-新版本不使用每部位指定一个包的配置，也不读取旧packages目录。运行时扫描nativePC/pl中的同名.morph目录，校验模型、包、完整顶点基准和网格身份后建立目录。目录和包内完整资源路径必须一致；同名但内容不同不能混用。
-
-在Tools目录先生成只读计划：
+先生成只读安装计划：
 
 ```powershell
-python ./manage_equipment_morph_mod.py --source '完整导出目录' --game '游戏目录'
+python ./tools/manage_equipment_morph_mod.py --source 'D:/MODExport/MyMod' --game '游戏目录'
 ```
 
-确认计划后添加 `--install` 安装模型、三个包文件及新配置。若已有目标文件不同，操作会拒绝；审阅冲突后明确添加 `--replace`，才会备份并整组替换。该工具管理MOD3与形态键文件，宿主DLL由运行时安装器单独管理。安装后的完整原生校验失败会恢复原文件；备份与收据保留在nativePC/plugins/MHWEquipmentMorph/.mod-installation。
+确认后追加 `--install`。内容冲突会拒绝；审阅后明确添加 `--replace` 才备份并替换。MOD安装器只管理MOD3和三个包文件，不创建、替换或删除公共配置。宿主DLL由运行时安装器管理。安装后的原生检查失败会恢复本次模型文件，备份和收据保留。
 
-不同资源路径的MOD可以共存。两个MOD覆盖同一个资源路径时只能使用最终安装的一组模型与包，安装计划会列出冲突。只读检查也可使用 `./Check-EquipmentMorph.ps1 -ExportDirectory '导出目录'` 或 `-GameDirectory '游戏目录'`。
+## 已导出模型的 ID 迁移
+
+生成独立副本，源文件和游戏保持原样：
+
+```powershell
+python ./tools/prepare_mhwi_equipmentmorph_resource_path.py --source 'D:/MODExport/MyMod' --output 'D:/MODExport/MyMod-Pl001' --part body --equipment-id 001 --runtime-config './config'
+```
+
+输出目录须尚不存在。也可用 `--model-id 'pl/.../完整目标路径'`，与 equipment-id 互斥。同部位存在多个模型时，先选择只包含一个待迁移模型的输入。工具同步更改模型路径和包内身份，保留MOD3和稀疏数据字节，不依赖 Debug 记录。这只处理MOD3与形态键数据，完整MOD材质、纹理和物理关联的压缩包迁移仍待后续实现。
 
 ## 换装行为与资源边界
 

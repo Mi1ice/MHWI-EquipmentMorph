@@ -11,3 +11,5 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 Third-party files retain their original licenses and copyright notices. SafetyHook uses the Boost Software License 1.0; Zydis uses the MIT License. Their license texts are included unchanged and are listed in THIRD_PARTY_NOTICES.md.
 
 该声明针对本公开源码快照。游戏、第三方外部软件及用户模型不包含在此授权中。发布生成的二进制时应一并提供许可证和相应源码获取方式。
+
+装备名称／ID目录来自用户新提供的 `Book.xlsx`，提供者明确授权自由使用和再分发，不附加使用限制。目录数据不受项目代码GPL声明的额外限制，见[装备目录来源](docs/EQUIPMENT_CATALOG.md)。旧受限制目录及表格未纳入本仓库。

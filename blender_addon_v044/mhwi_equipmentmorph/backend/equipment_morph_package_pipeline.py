@@ -132,7 +132,7 @@ def export_pipeline(job_path,output,per_key=None):
     output.parent.mkdir(parents=True,exist_ok=True)
     temporary=Path(tempfile.mkdtemp(prefix='morph-package-stage-',dir=output.parent))
     try:
-        root=temporary/'MHWEquipmentMorph';root.mkdir();selected={part:'' for part in PARTS};assets=[]
+        assets=[]
         for part,name,files,manifest,description,model in pending:
             folder=temporary/'export'/name;folder.mkdir(parents=True)
             for filename,raw in files.items():(folder/filename).write_bytes(raw)
@@ -159,10 +159,6 @@ def export_pipeline(job_path,output,per_key=None):
             assets.append({'part':part,'package':name+'.morph','keys':description['controlled_keys'],
                 'asset_sha256':digest(packed),'profile_sha256':digest(profile),'source_objects':len(description['source_objects']),
                 'asset_format':description.get('asset_format',1)})
-        (root/'runtime.ini').write_text('[runtime]\nformat=2\n',encoding='utf-8')
-        config=temporary/'nativePC/plugins/MHWEquipmentMorph';config.mkdir(parents=True)
-        shutil.copyfile(root/'runtime.ini',config/'runtime.ini')
-        (root/'diagnostic-control.txt').write_text('release 1\n',encoding='utf-8')
         result={'schema':'mhw-equipment-morph-package-export-v1','job_sha256':digest(Path(job_path).read_bytes()),
                 'assets':assets,'source_capture_reused':True,'scene_mutated':False,'blend_saved':False,
                 'game_installed':False,'formal_acceptance_complete':False}

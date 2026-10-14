@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory,ParameterSetName='Export')][string]$ExportDirectory,
     [Parameter(Mandatory,ParameterSetName='Installed')][string]$GameDirectory,
-    [string]$Validator
+    [string]$Validator,
+    [Parameter(ParameterSetName='Export')][string]$RuntimeConfig
 )
 $ErrorActionPreference='Stop'
 if(-not $Validator){
@@ -11,12 +12,22 @@ if(-not $Validator){
 }
 if(-not(Test-Path -LiteralPath $Validator)){throw 'Native validator missing; run build_equipment_morph_package_validator.ps1'}
 if($PSCmdlet.ParameterSetName -eq 'Export'){
-    $taskData=Join-Path $ExportDirectory 'nativePC/plugins/MHWEquipmentMorph';$taskModels=Join-Path $ExportDirectory 'nativePC'
+    $taskModels=Join-Path $ExportDirectory 'nativePC'
+    if($RuntimeConfig){
+        $taskData=$RuntimeConfig
+        if([IO.Path]::GetFileName($taskData) -ieq 'runtime.ini'){$taskData=Split-Path -Parent $taskData}
+    }else{
+        $taskProject=Split-Path -Parent $PSScriptRoot
+        $taskConfig=Join-Path $taskProject 'config/mhwi-equipmentmorph-current.json'
+        if(-not(Test-Path -LiteralPath $taskConfig)){throw '请通过 -RuntimeConfig 指定运行时解压目录或已安装的配置目录'}
+        $taskCurrent=Get-Content -LiteralPath $taskConfig -Raw|ConvertFrom-Json
+        $taskData=Join-Path $taskProject $taskCurrent.release_directory
+    }
 }else{
     if(-not(Test-Path -LiteralPath (Join-Path $GameDirectory 'MonsterHunterWorld.exe'))){throw 'MHW executable not found in chosen directory'}
     $taskData=Join-Path $GameDirectory 'nativePC/plugins/MHWEquipmentMorph';$taskModels=Join-Path $GameDirectory 'nativePC'
 }
-if(-not(Test-Path -LiteralPath (Join-Path $taskData 'runtime.ini'))){throw ('未找到形态键配置：'+(Join-Path $taskData 'runtime.ini')+'。请先安装本次导出的包并配置对应部位。')}
+if(-not(Test-Path -LiteralPath (Join-Path $taskData 'runtime.ini'))){throw '未找到运行时配置，请先安装运行时或指定正确的 -RuntimeConfig。MOD本身不携带此配置。'}
 $taskText=& $Validator $taskData $taskModels
 $taskExit=$LASTEXITCODE
 $taskReport=($taskText -join "`n")|ConvertFrom-Json

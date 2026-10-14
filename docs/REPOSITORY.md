@@ -1,6 +1,6 @@
 # 项目结构与来源
 
-- `blender_addon_v041/`：当前作者插件与标准库导出后端。
+- `blender_addon_v044/`：当前作者插件与标准库导出后端。
 - `runtime/`：形态键核心、模型目录、自动绑定、桥接和必要兼容头文件。
 - `diagnostics/EquipmentMorphDiskContract/`：当前生产宿主与原生回归。名称沿用开发工程，目录内宿主仍是实际运行时。
 - `diagnostics/`下另外四个头文件：生产宿主直接依赖的构建保护与退役边界，按原路径保留。

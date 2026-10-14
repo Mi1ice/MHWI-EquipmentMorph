@@ -26,7 +26,9 @@ def target(game,relative):
 def plan(source,game,validator):
     source=Path(source).absolute();game=Path(game).absolute()
     if not (game/'MonsterHunterWorld.exe').is_file():raise ValueError('Chosen directory has no MHW executable')
-    report=verify(validator,source);_,encode,_=backend();files=[]
+    config=target(game,'nativePC/plugins/MHWEquipmentMorph/runtime.ini')
+    if not config.is_file():raise ValueError('请先安装游戏端形态键运行时；MOD不再提供公共runtime.ini')
+    report=verify(validator,source,config.parent);_,encode,_=backend();files=[]
     for entry in report['parts']:
         model=entry['model_id'];folder=source/'nativePC'/(model+'.morph')
         asset=(folder/'asset.mhmpack').read_bytes();profile=(folder/'model.mhmprofile').read_bytes()
@@ -39,10 +41,8 @@ def plan(source,game,validator):
             old=sha(dest.read_bytes()) if dest.exists() else None
             files.append(dict(relative=relative,sha256=digest,previous_sha256=old,
                               status='identical' if old==digest else 'conflict' if old else 'new'))
-    relative='nativePC/plugins/MHWEquipmentMorph/runtime.ini';dest=target(game,relative)
-    digest=sha((source/relative).read_bytes());old=sha(dest.read_bytes()) if dest.exists() else None
-    files.append(dict(relative=relative,sha256=digest,previous_sha256=old,status='identical' if old==digest else 'conflict' if old else 'new'))
     return dict(source=str(source),game=str(game),native_check=report,files=files,
+                runtime_config={'path':str(config),'sha256':sha(config.read_bytes()),'owned_by_mod':False},
                 conflicts=[entry['relative'] for entry in files if entry['status']=='conflict'],files_changed=False)
 
 def closed(game):
@@ -77,8 +77,11 @@ def install(source,game,validator,replace=False):
                     if parent==game or parent.exists():break
                     directories.add(parent)
             publish=importlib.import_module('_mhm_prepare.output_files').publish
+            runtime=report['runtime_config']
+            if sha(Path(runtime['path']).read_bytes())!=runtime['sha256']:raise ValueError('Runtime configuration changed during installation')
             publish(stage,game);applied=changed
-            checked=verify(validator,game)
+            checked=verify(validator,game,Path(runtime['path']).parent)
+            if sha(Path(runtime['path']).read_bytes())!=runtime['sha256']:raise ValueError('Runtime configuration changed during installation')
             report.update(installed=True,files_changed=bool(changed),installed_check=checked)
             (receipt/'receipt.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
             report['receipt']=str(receipt/'receipt.json');return report
