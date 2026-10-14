@@ -20,6 +20,7 @@ Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插�
 运行环境为 Windows x64、已验证的 MHW Iceborne 游戏构建和 DX12，使用 Stracker's Loader。作者侧联合导出已验证 Blender 5.1.2 与源码摘要匹配的 MHW Model Editor 0.12；这些外部依赖需要自行安装。项目不包含游戏模型或 MHW Model Editor。
 
 - [作者操作、同名包和安装流程](docs/USAGE.md)
+- [下载安装包](docs/INSTALLATION.md)
 - [源码构建与验证](docs/BUILD.md)
 - [SDK 与调用示例](sdk/MHWI-EquipmentMorph-0.4.0/README.md)
 - [手动控制窗口](controls/MHWI-EquipmentMorph-ControlPanel/README.md)
@@ -27,7 +28,7 @@ Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插�
 - [版本记录](CHANGELOG.md)
 - [GitHub发布准备](docs/PUBLISHING.md)
 
-本仓库仅提供当前源码、必要依赖与合成测试。构建产物写入 `.build/`，发行二进制应作为 GitHub Release 附件管理。本阶段不兼容旧单包配置，当前配置使用 `format=2`。
+源码仓库提供当前代码、必要依赖与合成测试，可安装包通过 GitHub Releases 提供。构建产物写入 `.build/`，发行二进制不进入源码提交。本阶段不兼容旧单包配置，当前配置使用 `format=2`。
 
 ## 许可证
 
