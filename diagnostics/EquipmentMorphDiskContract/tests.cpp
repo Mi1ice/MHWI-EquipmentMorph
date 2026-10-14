@@ -1,5 +1,6 @@
 #include "prototype.cpp"
 #include <cstdio>
+#include <thread>
 int wmain(int argc,wchar_t** argv){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
     auto put=[](std::vector<unsigned char>& raw,size_t at,uint64_t value,size_t bytes){for(size_t i=0;i<bytes;i++)raw[at+i]=static_cast<unsigned char>(value>>(i*8));};
@@ -301,6 +302,28 @@ int wmain(int argc,wchar_t** argv){try{
     check(switchApi.read_weights(cycling.binding->target,&state,1,&count,&req,&app)==MHM_OK&&state.requested==0,"new target starts at zero without control replay");
     check(switchApi.submit(sourceId,&requested,1,&switchRevision)==MHM_STALE,"old target update cannot reach newly selected equipment");
     switchApi.close_source(sourceId);cycling.binding.reset();facecontinuous::armed=false;
+    }
+    // Logging may block. A concurrent callback must still acquire the native gate,
+    // while the log record keeps the state captured before that callback.
+    {
+        facecontinuous::Part loggingPart;loggingPart.asset=std::make_shared<const mhm::Asset>(asset);
+        loggingPart.adapter->Arm();loggingPart.target=42;loggingPart.updates=7;
+        struct BlockingLog {
+            facecontinuous::Part& part;bool callbackRan=false;std::string record;
+            bool Write(const char* line){
+                std::thread callback([&]{
+                    if(facecontinuous::gate.try_lock()){
+                        callbackRan=true;part.adapter->Invalidate(0,"logging_test_callback");facecontinuous::gate.unlock();
+                    }
+                });callback.join();record=line;return true;
+            }
+        } log{loggingPart,false,{}};
+        facecontinuous::WriteState(log,loggingPart,"part_state");
+        check(log.callbackRan,"callback can acquire gate during state logging");
+        check(!loggingPart.adapter->Live()&&log.record.find("\"live\":true")!=log.record.npos
+              &&log.record.find("\"reason\":\"none\"")!=log.record.npos,"log retains consistent snapshot when callback changes adapter");
+        check(log.record.find("\"target\":42")!=log.record.npos&&log.record.find("\"updates\":7")!=log.record.npos
+              &&log.record.back()=='\n',"state logging keeps worker fields and complete record");
     }
     std::printf("PASS: %u runtime native checks; synthetic model, no game/GPU calls\n",checks);return 0;
 }catch(const std::exception& e){std::printf("FAIL: %s\n",e.what());return 1;}}

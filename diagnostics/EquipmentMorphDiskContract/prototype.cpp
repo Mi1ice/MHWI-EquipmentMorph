@@ -21,6 +21,7 @@
 #include "LaunchContext.hpp"
 #include "ManualArm.hpp"
 #include "DrainBoundary.hpp"
+#include <tuple>
 
 namespace facecontinuous {
 struct BufferPool {
@@ -193,11 +194,17 @@ bool CanSubmit(const launchpool::View& view){
 std::string Weights(const std::array<float,64>& values,unsigned count){
     std::string result="[";char text[40]{};for(unsigned i=0;i<count;i++){if(i)result+=',';std::snprintf(text,sizeof(text),"%.9g",double(values[i]));result+=text;}return result+"]";
 }
-void WriteState(privateprobe::Log& log,Part& part,const char* event){
+template<class Log> void WriteState(Log& log,Part& part,const char* event){
     // Two 64-float arrays plus bounded integer/identity fields fit in 4096 bytes.
-    char line[4096]{};std::lock_guard lock(gate);const auto& a=*part.adapter;const auto v=part.adapter->View();const auto id=a.Target();
+    const auto [v,id,live,ready,started,reason]=[&]{
+        std::lock_guard lock(gate);const auto& a=*part.adapter;
+        return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason()};
+    }();
+    // Remaining part fields belong to this worker. Formatting and disk IO must
+    // not hold the gate also used by game callbacks.
+    char line[4096]{};
     const auto requested=Weights(v.requested.weights,static_cast<unsigned>(part.asset->keys.size())),applied=Weights(v.applied.weights,static_cast<unsigned>(part.asset->keys.size()));
-    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu}\n",event,part.asset->part,part.epoch,part.target,a.Live()?"true":"false",a.Ready()?"true":"false",a.Started()?"true":"false",a.Reason(),id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,part.replacements);
+    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,part.replacements);
     if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Part state log");
 }
 

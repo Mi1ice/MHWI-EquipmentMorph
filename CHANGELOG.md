@@ -1,5 +1,12 @@
 # 版本记录
 
+## 0.5.1-dev1 源码候选
+
+- 配对MOD安装器在游戏进程查询失败时停止安装；成功确认无匹配进程才允许继续。
+- 状态日志只在回调锁内捕获快照，格式化与磁盘写入移到锁外。
+- 统一源码检查加入8项真实PowerShell进程保护回归；原生检查新增回调并发与日志快照用例。
+- 作者工具仍为0.4.4；新构建使用0.5.1-dev1-source目录，未实机验收，正式v0.5.0附件保持原样。
+
 ## Blender 作者插件 0.4.4
 
 - 新增默认关闭的 Debug 选项。关闭时仅发布 MOD3、asset.mhmpack、model.mhmprofile 和 profile.json；开启时额外保留 authoring、generated 与 result.json。
