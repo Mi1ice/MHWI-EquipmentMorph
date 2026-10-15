@@ -1,8 +1,8 @@
 {
   "schema": "mhwi-equipmentmorph-source-v1",
   "source_release": "0.5.0",
-  "runtime_version": "0.5.1-dev4-source",
+  "runtime_version": "0.5.1-dev5-source",
   "addon_version": "0.4.4",
   "addon_directory": "blender_addon_v044",
-  "release_directory": ".build/packages/MHWI-EquipmentMorph-0.5.1-dev4-source"
+  "release_directory": ".build/packages/MHWI-EquipmentMorph-0.5.1-dev5-source"
 }

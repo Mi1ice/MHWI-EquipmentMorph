@@ -71,4 +71,6 @@ python ./tools/prepare_mhwi_equipmentmorph_resource_path.py --source 'D:/MODExpo
 
 ## 实机验收范围
 
+当前源码候选0.5.1-dev5减少启动阶段的重复身份检查。安装前正常退出游戏和控制窗口，保留已有公共runtime.ini。相同场景与dev4对比全零、持续非零、归零的帧率和视觉，再保持控制不释放完成001→其它套装→001，检查新目标从零开始且可重新调节。dev4用户报告零值约200 FPS、非零约160 FPS；dev5待独立复测。
+
 指定两套身体MOD的三个键、释放恢复、换装绑定及权重归零、连续往返已通过，边界见[验证说明](VALIDATION.md)。

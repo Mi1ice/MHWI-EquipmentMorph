@@ -176,7 +176,11 @@ void LaunchStarting(safetyhook::Context& c) noexcept {
     if(!args.valid||!EngineFacts(args.engine,f)||args.index>=f.workers||!observer::Read(args.engine+0x7AE98+args.index*8,event)){DisableAll("launch_snapshot");return;}
     for(auto& part:parts){if(part.drain.Observing())part.drain.Launch(f,args.index,event);
         if(part.adapter->Ready()){
-            if(!Matches(part.index,part.adapter->Target(),false))part.adapter->Invalidate(0,"equipment_part_identity_changed");
+            // Only worker zero can publish a new input. Validate identity there
+            // and for unstarted bindings; later workers still prove the same
+            // frame/event/order in Launch. Lifecycle and nonzero Input guard
+            // identity changes within the batch without a cross-cycle cache.
+            if((args.index==0||!part.adapter->Started())&&!Matches(part.index,part.adapter->Target(),false))part.adapter->Invalidate(0,"equipment_part_identity_changed");
             else part.adapter->Launch(f,args.index,event);
         }}
 }
