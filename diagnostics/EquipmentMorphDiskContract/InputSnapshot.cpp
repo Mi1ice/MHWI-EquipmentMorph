@@ -49,6 +49,7 @@ bool Read(std::uintptr_t address,void* destination,std::size_t bytes) noexcept {
         destination,bytes,&read)&&read==bytes;
 }
 template<class T> bool Read(std::uintptr_t address,T& value) noexcept {return Read(address,&value,sizeof(value));}
+#include "ReadBlock.hpp"
 bool Snapshot(const safetyhook::Context& ctx,unsigned kind,Event& e) noexcept {
     e.kind=kind;e.owner=kind==1?ctx.rdi:ctx.r15;e.mesh=kind==2?ctx.rsi:ctx.r13;
     e.context=ctx.rcx;e.input=ctx.r8;e.bindingIndex=static_cast<unsigned>(ctx.rdx);
@@ -63,7 +64,9 @@ bool Snapshot(const safetyhook::Context& ctx,unsigned kind,Event& e) noexcept {
     std::uintptr_t table=0,meshBase=0;
     unsigned count=0,bytes=0;
     std::array<char,80> path{};
-    if(!Read(e.owner,table)||!Read(e.owner+0x2A0,e.model)||!Read(e.model+0xC,path))return false;
+    ReadBlock<0x2A8> owner;
+    if(!owner.Load(e.owner))return false;table=owner.Value<std::uintptr_t,0>();e.model=owner.Value<std::uintptr_t,0x2A0>();
+    if(!Read(e.model+0xC,path))return false;
     e.part=5;
     for(const auto& profile:equipmentnative::profiles){
         const auto expectedOwner=profile.part==MHM_BODY?observed::ownerVtableRva:0x34A7560;
@@ -75,29 +78,35 @@ bool Snapshot(const safetyhook::Context& ctx,unsigned kind,Event& e) noexcept {
     const auto& profile=equipmentnative::profiles[e.part];
     const unsigned expectedBytes=profile.vertexBytes,expectedCount=profile.meshCount;
     const char* expectedPath=profile.path.c_str();
-    if(
-        !Read(e.owner+0x2A0,e.model)||!Read(e.model,table)||table!=imageBase+observed::modelVtableRva||
-        !Read(e.model+0xC,path)||std::memcmp(path.data(),expectedPath,std::strlen(expectedPath)+1)!=0||
-        !Read(e.model+0x100,bytes)||bytes!=expectedBytes||
-        !Read(e.model+0xC8,meshBase)||!Read(e.model+0xD0,count)||count!=expectedCount||
+    ReadBlock<0x118> model;ReadBlock<0x68> input;
+    if(!Read(e.owner+0x2A0,e.model)||!model.Load(e.model))return false;
+    table=model.Value<std::uintptr_t,0>();path=model.Value<decltype(path),0xC>();bytes=model.Value<unsigned,0x100>();
+    meshBase=model.Value<std::uintptr_t,0xC8>();count=model.Value<unsigned,0xD0>();e.originalInput=model.Value<std::uintptr_t,0x110>();
+    if(table!=imageBase+observed::modelVtableRva||std::memcmp(path.data(),expectedPath,std::strlen(expectedPath)+1)!=0||
+        bytes!=expectedBytes||count!=expectedCount||
         e.mesh<meshBase||(e.mesh-meshBase)%80!=0||(e.mesh-meshBase)/80>=count||
-        !Read(e.mesh,e.meshBytes)||!Read(e.model+0x110,e.originalInput)||
-        !Read(e.input,table)||table!=imageBase+observed::vertexVtableRva||
-        !Read(e.input+0x5C,e.inputBytes)||e.inputBytes!=expectedBytes||!Read(e.input+0x60,e.backing)||
+        !Read(e.mesh,e.meshBytes)||!input.Load(e.input))return false;
+    table=input.Value<std::uintptr_t,0>();e.inputBytes=input.Value<unsigned,0x5C>();e.backing=input.Value<std::uintptr_t,0x60>();
+    if(table!=imageBase+observed::vertexVtableRva||e.inputBytes!=expectedBytes||
         !Read(e.owner+0x430,e.ownerStreams))return false;
     std::uintptr_t bridge=0,linkedOwner=0,bodyUnit=0,cachedModel=0;
-    if(e.part==MHM_BODY&&(!Read(e.owner+0x126C8,bridge)||!Read(bridge,table)||table!=imageBase+0x324A830||
-        !Read(bridge+0x60,linkedOwner)||linkedOwner!=e.owner||!Read(bridge+0xF0,bodyUnit)||bodyUnit!=e.owner||
-        !Read(bridge+0x480,cachedModel)||cachedModel!=e.model))return false;
+    if(e.part==MHM_BODY){
+        ReadBlock<0x488> links;if(!Read(e.owner+0x126C8,bridge)||!links.Load(bridge))return false;
+        table=links.Value<std::uintptr_t,0>();linkedOwner=links.Value<std::uintptr_t,0x60>();
+        bodyUnit=links.Value<std::uintptr_t,0xF0>();cachedModel=links.Value<std::uintptr_t,0x480>();
+        if(table!=imageBase+0x324A830||linkedOwner!=e.owner||bodyUnit!=e.owner||cachedModel!=e.model)return false;
+    }
     e.meshIndex=static_cast<unsigned>((e.mesh-meshBase)/80);
-    if(!Read(e.context+0x150,e.contextFlags)||!Read(e.context+0x1D0,e.contextObject))return false;
+    ReadBlock<0x88> context;if(!context.Load(e.context+0x150))return false;
+    e.contextFlags=context.Value<unsigned,0>();e.contextObject=context.Value<std::uintptr_t,0x80>();
     unsigned char contextFlag=0;
     if(e.contextObject&&!Read(e.contextObject+0x58,contextFlag))return false;
     e.contextObjectFlags=contextFlag;
     if(kind==2) {
         unsigned char flag=0;
-        if(!Read(ctx.rdi+0x58,e.lod)||!Read(ctx.rdi+0x87,flag)||
-            !Read(ctx.rdi+0x18,e.drawStreams))return false;
+        ReadBlock<0x70> draw;if(!draw.Load(ctx.rdi+0x18))return false;
+        e.lod=draw.Value<unsigned,0x40>();flag=draw.Value<unsigned char,0x6F>();
+        const auto streams=draw.Value<std::array<std::uintptr_t,3>,0>();std::copy(streams.begin(),streams.end(),e.drawStreams);
         e.auxEnabled=flag;
     }
     std::uintptr_t after=0;
