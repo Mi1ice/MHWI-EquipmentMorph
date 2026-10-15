@@ -116,11 +116,14 @@ void Input(safetyhook::Context& context,unsigned kind) noexcept {
     // Reject other scene owners with a cached pointer comparison before any
     // selector/snapshot reads. Discovery refreshes these routes every 50 ms.
     if(std::find(mainPlayerOwners.begin(),mainPlayerOwners.end(),owner)==mainPlayerOwners.end())return;
+    Part* selected=nullptr;for(auto& part:parts)if(part.adapter->Live()&&part.adapter->Target().owner==owner)selected=&part;
+    // This cycle publishes only native original inputs. Leave registers and
+    // bindings untouched; lifecycle discovery and worker/Launch checks remain.
+    if(selected&&!selected->retiring&&selected->adapter->PassOriginalInput())return;
     if(!mhm::localplayer::StillSelected([](std::uintptr_t address,auto& value){return observer::Read(address,value);},observer::imageBase,mainPlayerSelection)){
         anchorPlayer=0;for(auto& part:parts)part.adapter->Invalidate(0,"equipment_main_player_changed");return;
     }
     // Only the independently selected main player can own a captured part.
-    Part* selected=nullptr;for(auto& part:parts)if(part.adapter->Live()&&part.adapter->Target().owner==owner)selected=&part;
     observer::Event e{};std::uintptr_t renderer=0,fence=0;std::uint64_t before=0,after=0;
     if(!RendererFacts(renderer,fence,before)||!observer::Snapshot(context,kind,e)
             ||(kind==2&&e.auxEnabled!=0)||e.ownerStreams[0]||e.ownerStreams[1]||e.ownerStreams[2]
@@ -196,15 +199,15 @@ std::string Weights(const std::array<float,64>& values,unsigned count){
 }
 template<class Log> void WriteState(Log& log,Part& part,const char* event){
     // Two 64-float arrays plus bounded integer/identity fields fit in 4096 bytes.
-    const auto [v,id,live,ready,started,reason]=[&]{
+    const auto [v,id,live,ready,started,reason,replacements,originalBypasses]=[&]{
         std::lock_guard lock(gate);const auto& a=*part.adapter;
-        return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason()};
+        return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason(),part.replacements,a.OriginalBypasses()};
     }();
     // Remaining part fields belong to this worker. Formatting and disk IO must
     // not hold the gate also used by game callbacks.
     char line[4096]{};
     const auto requested=Weights(v.requested.weights,static_cast<unsigned>(part.asset->keys.size())),applied=Weights(v.applied.weights,static_cast<unsigned>(part.asset->keys.size()));
-    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,part.replacements);
+    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu,\"original_input_bypasses\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,replacements,originalBypasses);
     if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Part state log");
 }
 

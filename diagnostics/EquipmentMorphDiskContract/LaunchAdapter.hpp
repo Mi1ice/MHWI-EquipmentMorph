@@ -1,5 +1,6 @@
 #pragma once
 #include "Pool.hpp"
+#include <algorithm>
 #include <charconv>
 #include <string_view>
 
@@ -33,9 +34,9 @@ class LaunchAdapter {
     Identity target{};
     Frame fixed{},batch{};
     std::array<std::uintptr_t,8> launchEvents{},waitEvents{};
-    bool armed=false,ready=false,started=false,failed=false,open=false,syncSeen=false;
+    bool armed=false,ready=false,started=false,failed=false,open=false,syncSeen=false,originalCycle=false;
     unsigned launches=0,nextWait=0;
-    std::uint64_t counter=0,lastSignal=0,boundaries=0,signals=0,inputs=0,dispatches=0,uploadDone=0,drawDone=0;
+    std::uint64_t counter=0,lastSignal=0,boundaries=0,signals=0,inputs=0,dispatches=0,uploadDone=0,drawDone=0,originalBypasses=0;
     const char* reason="none";
     bool Bad(const char* why){if(failed)return false;failed=true;ready=false;open=false;reason=why;pool.Invalidate();return false;}
     bool Same(Frame f)const{return f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.workers==fixed.workers&&f.thread==fixed.thread;}
@@ -56,6 +57,11 @@ public:
     std::uint64_t Signals()const{return signals;}
     std::uint64_t Inputs()const{return inputs;}
     std::uint64_t Dispatches()const{return dispatches;}
+    std::uint64_t OriginalBypasses()const{return originalBypasses;}
+    bool PassOriginalInput(){
+        if(!Started()||!open||!originalCycle)return false;
+        originalBypasses++;return true;
+    }
     launchpool::View View(){return pool.Get();}
     bool PublishResources(std::array<std::uintptr_t,3> values){
         if(!Live()||!target.Valid()||ready)return false;
@@ -82,6 +88,11 @@ public:
             if(!started){fixed=f;lastSignal=f.before;if(!pool.Start(f.before,bindingEpoch)||!pool.Request(latest))return Bad("pool_start_failed");started=true;}
             if(!Same(f)||f.before!=lastSignal)return Bad("launch_identity_or_counter");
             if(!pool.Launch(f.before))return Bad("pool_launch_rejected");
+            const auto view=pool.Get();
+            // Freeze this route until Signal. Requests and upload completions
+            // cannot publish a private input in the middle of this cycle.
+            originalCycle=view.live&&view.frameOpen&&view.active<0&&view.requested.IsZero()&&view.applied.IsZero()
+                &&std::all_of(view.slots.begin(),view.slots.end(),[](const auto& slot){return slot.phase==launchpool::Phase::Free;});
             batch=f;counter=f.before;open=true;syncSeen=false;
             cycleCompute=cycleDraw=cycleDispatch=0;
         }
