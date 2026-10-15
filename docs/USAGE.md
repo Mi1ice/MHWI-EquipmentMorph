@@ -1,4 +1,6 @@
-# 作者插件 0.4.4 与多装备运行时 0.5.0
+# 作者插件 0.4.4 与多装备运行时
+
+正式发行运行时为0.5.0；源码候选构建的版本以运行包 `manifest.json`的version字段为准，新构建不自动继承正式发行的实机验收。
 
 ## 作者操作
 
@@ -28,6 +30,8 @@ nativePC/pl/f_equip/pl105_0000/body/mod/
 ## 检查和安装
 
 先关闭游戏并安装运行时。配置为 `[runtime]` 下的 `format=2`；运行时扫描 nativePC/pl 中与模型同名的 .morph 包。目录、模型与包内身份必须一致，两个 MOD 覆盖同一路径时只能使用最终安装的一组模型与包。
+
+公共 `runtime.ini`来自**运行时ZIP解压后的根目录**，与 `Manage-Installation.ps1`同级；源码对应 `config/runtime.ini`。安装器会建立初始配置；手动复制DLL时，也需把同包根目录的这份文件放到 `游戏目录/nativePC/plugins/MHWEquipmentMorph/runtime.ini`。Blender插件、独立作者工具及MOD导出不提供公共配置，已有配置应保留。
 
 在源码仓库根目录检查精简导出：
 

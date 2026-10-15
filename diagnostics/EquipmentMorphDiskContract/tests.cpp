@@ -1,8 +1,10 @@
 #include "prototype.cpp"
 #include <cstdio>
 #include <thread>
+#include "RetirementTests.hpp"
 int wmain(int argc,wchar_t** argv){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
+    checks+=retirementtest::Run(std::filesystem::absolute(argv[0]).parent_path()/"retirement-regression.ndjson");
     auto put=[](std::vector<unsigned char>& raw,size_t at,uint64_t value,size_t bytes){for(size_t i=0;i<bytes;i++)raw[at+i]=static_cast<unsigned char>(value>>(i*8));};
     constexpr size_t meshStart=128,vertexStart=meshStart+3*80;
     std::vector<unsigned char> model(vertexStart+112);std::memcpy(model.data(),"MOD\0",4);put(model,4,237,2);put(model,8,3,2);put(model,24,112,4);put(model,72,meshStart,8);put(model,80,vertexStart,8);
@@ -134,7 +136,7 @@ int wmain(int argc,wchar_t** argv){try{
             setMemory(wrapper,0,observer::imageBase+observed::vertexVtableRva,8);setMemory(wrapper,0x48,1,4);setMemory(wrapper,0x5C,64,4);
             setMemory(wrapper,0x60,buffer.backing,8);setMemory(wrapper,0x78,buffer.view,8);
             setMemory(backing,0,observer::imageBase+0x3539948,8);setMemory(backing,0x10,64,4);setMemory(backing,0x20,buffer.resource,8);
-            setMemory(backing,0x78,buffer.initialization,8);setMemory(backing,0x80,buffer.initialization,8);
+            setMemory(backing,0x78,buffer.initialization,8);setMemory(backing,0x80,0,8);
             check(privateprobe::Contract(buffer),"synthetic initialization buffer contract valid");
         }
         retired.allocated=allocatedCount==3;
@@ -162,7 +164,7 @@ int wmain(int argc,wchar_t** argv){try{
                 &&!facecontinuous::BufferUploadComplete(buffer,12,UINT64_MAX),"reuse requires finite completed upload stamp");
             setMemory(backings[2],0x80,13,8);
             check(!facecontinuous::BufferUploadComplete(buffer,12,13),"reuse rejects changed upload stamp");
-            setMemory(backings[2],0x80,12,8);setMemory(wrappers[2],0x48,0,4);
+            setMemory(backings[2],0x80,0,8);setMemory(wrappers[2],0x48,0,4);
             check(!facecontinuous::BufferUploadComplete(buffer,12,12),"reuse rejects broken buffer contract");
             setMemory(wrappers[2],0x48,1,4);
             // A set reused after an earlier draw drain must retain that proof,

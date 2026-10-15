@@ -1,9 +1,31 @@
 // Included inside facecontinuous. Worker owns uploads and public bindings;
 // gate only serializes adapter/native callback state, not native GPU calls.
+struct BufferUploadStamp {
+    std::uint64_t initialization=0,expected=0,repeated=UINT64_MAX;
+    bool contract=false,readable=false;
+    bool Stable()const{
+        // The worker records the constructor stamp until a successful Unmap.
+        // A constructor-only buffer may still have no repeated-upload stamp.
+        return contract&&readable&&expected!=UINT64_MAX&&expected>=initialization
+            &&(repeated==expected||(expected==initialization&&repeated==0));
+    }
+};
+BufferUploadStamp InspectBufferUpload(privateprobe::Buffer& buffer,std::uint64_t expected){
+    BufferUploadStamp stamp{buffer.initialization,expected};stamp.contract=privateprobe::Contract(buffer);
+    if(stamp.contract)stamp.readable=observer::Read(buffer.backing+0x80,stamp.repeated);
+    return stamp;
+}
 bool BufferUploadComplete(privateprobe::Buffer& buffer,std::uint64_t expected,std::uint64_t completed){
-    std::uint64_t stamp=0;
-    return expected!=UINT64_MAX&&expected>=buffer.initialization&&completed!=UINT64_MAX&&completed>=expected
-        &&privateprobe::Contract(buffer)&&observer::Read(buffer.backing+0x80,stamp)&&stamp==expected;
+    return completed!=UINT64_MAX&&completed>=expected&&InspectBufferUpload(buffer,expected).Stable();
+}
+[[noreturn]] void RejectBufferUpload(privateprobe::Log& log,const Part& part,unsigned slot,const BufferUploadStamp& stamp,const char* reason){
+    // Called outside gate. Keep enough evidence to distinguish an untouched
+    // update field from a changed stamp, unreadable field or broken resource.
+    char line[700]{};
+    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"part_retirement_buffer_rejected\",\"part\":%u,\"epoch\":%llu,\"slot\":%u,\"initialization_stamp\":%llu,\"expected_stamp\":%llu,\"repeat_stamp\":%llu,\"contract_valid\":%s,\"stamp_readable\":%s,\"reason\":\"%s\"}\n",
+        part.asset->part,part.epoch,slot,stamp.initialization,stamp.expected,stamp.repeated,stamp.contract?"true":"false",stamp.readable?"true":"false",reason);
+    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Part retirement diagnostic log");
+    throw std::runtime_error(reason);
 }
 void ResetPartLocked(Part& part){
     if(part.epoch==UINT64_MAX)throw std::runtime_error("Part epoch exhausted");
@@ -49,14 +71,21 @@ void EndPart(privateprobe::Log& log,Part& part,privateprobe::UploadFence& upload
         if(!log.Write(line))throw std::runtime_error("Unlaunched part retire log");ResetPart(part);return;
     }
     upload.Poll();drawing.Poll();std::uintptr_t renderer=0,fence=0;std::uint64_t floor=0,maximum=0;
+    std::optional<unsigned> rejected;BufferUploadStamp rejectedStamp;
     {std::lock_guard lock(gate);
         if(!fixed.Stable()||!RendererFacts(renderer,fence,floor)||renderer!=resourceRenderer||fence!=resourceDrawingFence
                 ||upload.pointer!=resourceUploadFence)throw std::runtime_error("Part retirement identity");
-        for(unsigned i=0;i<3;i++){auto& b=part.buffers[i];auto& stamp=part.drainStamps[i];
-            if(!privateprobe::Contract(b)||!observer::Read(b.backing+0x80,stamp)||stamp==UINT64_MAX||stamp<b.initialization)throw std::runtime_error("Part retirement stamp");maximum=std::max(maximum,stamp);}
-        part.drain=DrainBoundary{};if(!part.drain.Start(fixed,floor,maximum))throw std::runtime_error("Part drain start");
-        part.retiring=true;part.drainDeadline=::GetTickCount64()+30000;
+        for(unsigned i=0;i<3;i++){
+            const auto stamp=InspectBufferUpload(part.buffers[i],part.stamps[i]);
+            if(!stamp.Stable()){rejected=i;rejectedStamp=stamp;break;}
+            part.drainStamps[i]=stamp.expected;maximum=std::max(maximum,stamp.expected);
+        }
+        if(!rejected){
+            part.drain=DrainBoundary{};if(!part.drain.Start(fixed,floor,maximum))throw std::runtime_error("Part drain start");
+            part.retiring=true;part.drainDeadline=::GetTickCount64()+30000;
+        }
     }
+    if(rejected)RejectBufferUpload(log,part,*rejected,rejectedStamp,"Part retirement stamp");
     std::snprintf(line,sizeof(line),"{\"event\":\"part_retirement_begin\",\"part\":%u,\"epoch\":%llu,\"upload_floor\":%llu,\"counter_floor\":%llu}\n",part.asset->part,part.epoch,maximum,floor);
     if(!log.Write(line))throw std::runtime_error("Part drain log");
 }
@@ -65,8 +94,10 @@ void DrainStep(privateprobe::Log& log,Part& part,privateprobe::UploadFence& uplo
     {std::lock_guard lock(gate);if(part.drain.Failed()||!part.drain.Completed(upload.completed,drawing.completed))throw std::runtime_error(part.drain.Reason());
         ready=part.drain.Ready();covered=part.drain.CoveredSignal();maximum=part.drain.UploadFloor();}
     if(!ready){if(::GetTickCount64()>=part.drainDeadline)throw std::runtime_error("Part drain timeout");return;}
-    for(unsigned i=0;i<3;i++){std::uint64_t stamp=0;auto& b=part.buffers[i];
-        if(!privateprobe::Contract(b)||!observer::Read(b.backing+0x80,stamp)||stamp!=part.drainStamps[i])throw std::runtime_error("Retired part stamp changed");}
+    for(unsigned i=0;i<3;i++){
+        const auto stamp=InspectBufferUpload(part.buffers[i],part.drainStamps[i]);
+        if(!stamp.Stable())RejectBufferUpload(log,part,i,stamp,"Retired part stamp changed");
+    }
     part.stamps=part.drainStamps;part.reuseFence=covered;part.reusable=true;
     char line[800]{};std::snprintf(line,sizeof(line),"{\"event\":\"part_retirement_complete\",\"part\":%u,\"epoch\":%llu,\"covered_signal\":%llu,\"successor_joined\":true,\"upload_floor\":%llu,\"upload_completed\":%llu,\"draw_completed\":%llu,\"part_buffers\":3}\n",part.asset->part,part.epoch,covered,maximum,upload.completed,drawing.completed);
     if(!log.Write(line))throw std::runtime_error("Part drain complete log");ResetPart(part);
