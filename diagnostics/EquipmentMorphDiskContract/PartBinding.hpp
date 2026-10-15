@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <set>
 namespace equipmentmorph {
 struct PartBinding {
@@ -8,10 +9,11 @@ struct PartBinding {
         if(MhwMorphGetApi(MHM_API_VERSION,sizeof(api),&api)!=MHM_OK||Core().Attach(asset,target)!=MHM_OK)throw std::runtime_error("Part attach");
     }
     bool Requested(unsigned count,std::vector<float>& values,std::uint64_t& revision){
-        std::vector<MhmWeightState> state(count);std::uint32_t needed=0;std::uint64_t applied=0;
+        std::array<MhmWeightState,64> state{};std::uint32_t needed=0;std::uint64_t applied=0;
+        if(!count||count>state.size())throw std::runtime_error("Part key count");
         const auto result=api.read_weights(target,state.data(),count,&needed,&revision,&applied);
         if(result==MHM_STALE)return false;if(result!=MHM_OK||needed!=count)throw std::runtime_error("Part read");
-        values.clear();for(const auto& w:state)values.push_back(w.requested);return true;
+        values.resize(count);for(unsigned i=0;i<count;i++)values[i]=state[i].requested;return true;
     }
     bool Capture(std::span<const float> values,std::uint64_t revision,launchpool::MorphVersion& version){
         std::uint64_t frame=0;const auto result=MhwMorphHostCaptureInterpolated(target,values.data(),static_cast<std::uint32_t>(values.size()),revision,&frame);

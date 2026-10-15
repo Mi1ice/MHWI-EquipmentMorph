@@ -40,7 +40,7 @@ struct Part : BufferPool {
     DrainBoundary drain;bool retiring=false,blocked=false;
     mhm::GroupSmoothing smoother;facesmooth::SampleGate cadence;
     std::vector<unsigned char> payload;
-    std::vector<float> lastSample;std::uint64_t lastRevision=0;
+    std::vector<float> requested,lastSample;std::uint64_t smoothingRevision=0,lastRevision=0;
 };
 std::array<Part,5> parts;
 std::mutex gate;

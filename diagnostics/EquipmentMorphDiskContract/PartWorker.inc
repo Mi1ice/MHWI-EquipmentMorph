@@ -31,7 +31,7 @@ bool BufferUploadComplete(privateprobe::Buffer& buffer,std::uint64_t expected,st
 void ResetPartLocked(Part& part){
     if(part.epoch==UINT64_MAX)throw std::runtime_error("Part epoch exhausted");
     part.epoch++;part.adapter=std::make_unique<LaunchAdapter>(part.epoch);part.drain=DrainBoundary{};
-    part.retiring=false;part.target=0;part.updates=part.replacements=part.lastRevision=0;part.lastSample.clear();
+    part.retiring=false;part.target=0;part.updates=part.replacements=part.smoothingRevision=part.lastRevision=0;part.requested.clear();part.lastSample.clear();
     part.cadence=facesmooth::SampleGate{};
     if(armed&&part.asset&&!part.blocked&&!part.adapter->Arm())throw std::runtime_error("Fresh part arm");
 }
@@ -159,9 +159,13 @@ bool PartStep(privateprobe::Log& log,Part& part,privateprobe::UploadFence& uploa
         view=part.adapter->View();live=part.adapter->Live();}
     if(!live)return false;
     if(started)part.binding->Acknowledge(view);part.binding->Collect(view);
-    std::vector<float> requested;std::uint64_t revision=0;if(!part.binding->Requested(static_cast<unsigned>(part.asset->keys.size()),requested,revision))return false;
-    std::vector<MhmUpdate> desired;for(unsigned k=0;k<requested.size();k++)desired.push_back({part.target,k,requested[k]});
-    if(part.smoother.SetTargets(desired,revision,now)!=MHM_OK)throw std::runtime_error("Part smooth target");
+    auto& requested=part.requested;std::uint64_t revision=0;if(!part.binding->Requested(static_cast<unsigned>(part.asset->keys.size()),requested,revision))return false;
+    // The public revision changes on submit, release, expiry or target changes.
+    // Poll it at the existing rate, but do not rebuild identical smooth targets.
+    if(revision!=part.smoothingRevision){
+        std::vector<MhmUpdate> desired;desired.reserve(requested.size());for(unsigned k=0;k<requested.size();k++)desired.push_back({part.target,k,requested[k]});
+        if(part.smoother.SetTargets(desired,revision,now)!=MHM_OK)throw std::runtime_error("Part smooth target");part.smoothingRevision=revision;
+    }
     if(part.cadence.Due(now)&&CanSubmit(view)){
         std::vector<MhmUpdate> sampled;std::uint64_t sampledRevision=0;
         if(part.smoother.Sample(now,sampled,sampledRevision)!=MHM_OK)throw std::runtime_error("Part smooth sample");std::vector<float> values;for(const auto& value:sampled)values.push_back(value.weight);
@@ -169,7 +173,7 @@ bool PartStep(privateprobe::Log& log,Part& part,privateprobe::UploadFence& uploa
             if(part.binding->Capture(values,sampledRevision,version)){
                 std::lock_guard lock(gate);if(part.adapter->Live()){
                     if(!part.adapter->Request(version)||!part.cadence.Submitted(now))throw std::runtime_error("Part request/cadence");part.lastSample=values;part.lastRevision=sampledRevision;}
-            }}
+            }}else if(!part.cadence.Submitted(now))throw std::runtime_error("Part unchanged sample cadence");
     }
     std::optional<launchpool::Token> token;launchpool::Slot previous{};launchpool::MorphVersion version{};std::uint64_t previousUse=0;
     {std::lock_guard lock(gate);if(part.adapter->Started()&&part.adapter->Live()){
