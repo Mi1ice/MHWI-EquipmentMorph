@@ -136,7 +136,7 @@ int wmain(int argc,wchar_t** argv){try{
             setMemory(wrapper,0,observer::imageBase+observed::vertexVtableRva,8);setMemory(wrapper,0x48,1,4);setMemory(wrapper,0x5C,64,4);
             setMemory(wrapper,0x60,buffer.backing,8);setMemory(wrapper,0x78,buffer.view,8);
             setMemory(backing,0,observer::imageBase+0x3539948,8);setMemory(backing,0x10,64,4);setMemory(backing,0x20,buffer.resource,8);
-            setMemory(backing,0x78,buffer.initialization,8);setMemory(backing,0x80,0,8);
+            setMemory(backing,0x78,buffer.initialization,8);setMemory(backing,0x80,UINT64_MAX,8);
             check(privateprobe::Contract(buffer),"synthetic initialization buffer contract valid");
         }
         retired.allocated=allocatedCount==3;
@@ -164,7 +164,7 @@ int wmain(int argc,wchar_t** argv){try{
                 &&!facecontinuous::BufferUploadComplete(buffer,12,UINT64_MAX),"reuse requires finite completed upload stamp");
             setMemory(backings[2],0x80,13,8);
             check(!facecontinuous::BufferUploadComplete(buffer,12,13),"reuse rejects changed upload stamp");
-            setMemory(backings[2],0x80,0,8);setMemory(wrappers[2],0x48,0,4);
+            setMemory(backings[2],0x80,UINT64_MAX,8);setMemory(wrappers[2],0x48,0,4);
             check(!facecontinuous::BufferUploadComplete(buffer,12,12),"reuse rejects broken buffer contract");
             setMemory(wrappers[2],0x48,1,4);
             // A set reused after an earlier draw drain must retain that proof,

@@ -59,7 +59,7 @@ struct Fixture {
         for(unsigned i=0;i<3;i++){
             auto& b=part.buffers[i];b.bytes=64;b.wrapper=reinterpret_cast<std::uintptr_t>(wrappers[i].data());
             b.backing=reinterpret_cast<std::uintptr_t>(backings[i].data());b.resource=b.backing+0x1000;b.view=b.wrapper+0x1000;b.initialization=10+i;
-            part.stamps[i]=repeats[i]?repeats[i]:b.initialization;handles[i]=b.wrapper;
+            part.stamps[i]=repeats[i]==UINT64_MAX?b.initialization:repeats[i];handles[i]=b.wrapper;
             Put(wrappers[i],0,observer::imageBase+observed::vertexVtableRva,8);Put(wrappers[i],0x48,1,4);Put(wrappers[i],0x5C,64,4);
             Put(wrappers[i],0x60,b.backing,8);Put(wrappers[i],0x78,b.view,8);
             Put(backings[i],0,observer::imageBase+0x3539948,8);Put(backings[i],0x10,64,4);Put(backings[i],0x20,b.resource,8);
@@ -89,12 +89,24 @@ inline unsigned Run(const std::filesystem::path& path){
     mhm::Asset asset;asset.part=MHM_WAIST;asset.model="pl/synthetic/waist";asset.basis.resize(64);
     mhm::Key key;strcpy_s(key.info.id,"controlled");key.info.maximum=1;key.deltas.push_back({0,1,0,0});asset.keys.push_back(key);
     {
-        Fixture initial(asset,{0,0,0});auto& b=initial.part.buffers[0];
-        check(privateprobe::Contract(b)&&facecontinuous::BufferUploadComplete(b,10,10),"constructor-only upload completes without repeat stamp");
+        Fixture initial(asset,{UINT64_MAX,UINT64_MAX,UINT64_MAX});auto& b=initial.part.buffers[0];
+        check(privateprobe::Contract(b)&&facecontinuous::BufferUploadComplete(b,10,10),"native constructor UINT64_MAX repeat sentinel permits completed initialization");
         check(!facecontinuous::BufferUploadComplete(b,10,9)&&!facecontinuous::BufferUploadComplete(b,10,UINT64_MAX),"constructor-only completion still requires finite completed fence");
-        check(!facecontinuous::BufferUploadComplete(b,20,1000),"zero repeat stamp cannot hide a previously recorded update");
+        check(!facecontinuous::BufferUploadComplete(b,20,1000),"constructor sentinel cannot hide a previously recorded update");
+        check(!facecontinuous::BufferUploadComplete(b,UINT64_MAX,1000),"constructor sentinel cannot stand in for a finite expected upload");
+        Put(initial.backings[0],0x80,0,8);
+        check(!facecontinuous::BufferUploadComplete(b,10,10),"zero is not the verified native constructor sentinel");
+        Put(initial.backings[0],0x80,10,8);
+        check(!facecontinuous::BufferUploadComplete(b,10,10),"unexpected repeat write equal to initialization is rejected");
     }
-    const std::array<std::array<std::uint64_t,3>,3> patterns={{{0,0,0},{20,0,0},{20,21,22}}};
+    {
+        Fixture updated(asset,{20,21,22});auto& b=updated.part.buffers[0];
+        check(facecontinuous::BufferUploadComplete(b,20,20),"recorded repeated upload still completes at its exact stamp");
+        check(!facecontinuous::BufferUploadComplete(b,20,19)&&!facecontinuous::BufferUploadComplete(b,20,UINT64_MAX),"recorded upload requires finite completed fence");
+        Put(updated.backings[0],0x80,UINT64_MAX,8);
+        check(!facecontinuous::BufferUploadComplete(b,20,1000),"recorded upload reverting to constructor sentinel remains rejected");
+    }
+    const std::array<std::array<std::uint64_t,3>,3> patterns={{{UINT64_MAX,UINT64_MAX,UINT64_MAX},{20,UINT64_MAX,UINT64_MAX},{20,21,22}}};
     for(unsigned i=0;i<patterns.size();i++){
         const std::uint64_t counter=100+i*10;arena.Counter(counter+1);arena.drawObject.completed=counter+1;
         Fixture fixture(asset,patterns[i]);fixture.Bind(arena,counter);
@@ -114,29 +126,39 @@ inline unsigned Run(const std::filesystem::path& path){
     }
     for(unsigned kind=0;kind<5;kind++){
         const std::uint64_t counter=150+kind*10;arena.Counter(counter+1);arena.drawObject.completed=counter+1;
-        Fixture rejected(asset,{0,0,0});rejected.Bind(arena,counter);
-        if(kind==0)Put(rejected.backings[0],0x80,UINT64_MAX,8);
+        Fixture rejected(asset,{UINT64_MAX,UINT64_MAX,UINT64_MAX});rejected.Bind(arena,counter);
+        if(kind==0)rejected.part.stamps[0]=20; // recorded update vanished
         if(kind==1)Put(rejected.backings[0],0x80,5,8);
         if(kind==2)Put(rejected.backings[0],0x80,20,8); // unexpected write
-        if(kind==3)rejected.part.stamps[0]=20; // recorded update vanished
+        if(kind==3)Put(rejected.backings[0],0x80,0,8); // not the native constructor sentinel
         if(kind==4)Put(rejected.wrappers[0],0x48,0,4);
         rejected.part.adapter->Invalidate(0,"equipment_part_model_replaced");
         bool refused=false;try{facecontinuous::EndPart(log,rejected.part,arena.upload,arena.drawing);}catch(const std::runtime_error& error){refused=std::strcmp(error.what(),"Part retirement stamp")==0;}
         check(refused&&!rejected.part.retiring&&!rejected.part.reusable,"invalid, unexpected or missing update evidence remains rejected");
     }
-    {
+    for(unsigned kind=0;kind<3;kind++){
         arena.Counter(201);arena.drawObject.completed=201;
-        Fixture changed(asset,{0,0,0});changed.Bind(arena,200);changed.part.adapter->Invalidate(0,"equipment_part_model_replaced");
+        Fixture changed(asset,{UINT64_MAX,UINT64_MAX,UINT64_MAX});changed.Bind(arena,200);changed.part.adapter->Invalidate(0,"equipment_part_model_replaced");
         facecontinuous::EndPart(log,changed.part,arena.upload,arena.drawing);changed.CpuDrain(arena,200);
-        arena.Counter(202);arena.drawObject.completed=202;arena.drawing.Poll();Put(changed.backings[0],0x80,30,8);
+        arena.Counter(202);arena.drawObject.completed=202;arena.drawing.Poll();
+        Put(changed.backings[0],0x80,kind==0?30:kind==1?0:changed.part.buffers[0].initialization,8);
         bool refused=false;try{facecontinuous::DrainStep(log,changed.part,arena.upload,arena.drawing);}catch(const std::runtime_error& error){refused=std::strcmp(error.what(),"Retired part stamp changed")==0;}
         check(refused&&changed.part.retiring&&!changed.part.reusable,"upload change during retirement cannot permit reuse");
+    }
+    for(unsigned kind=0;kind<2;kind++){
+        Arena removedArena;removedArena.Counter(211);removedArena.drawObject.completed=211;
+        Fixture removed(asset,{UINT64_MAX,UINT64_MAX,UINT64_MAX});removed.Bind(removedArena,210);
+        removed.part.adapter->Invalidate(0,"equipment_part_model_replaced");
+        auto& fence=kind?removedArena.drawObject:removedArena.uploadObject;fence.completed=UINT64_MAX;
+        bool refused=false;try{facecontinuous::EndPart(log,removed.part,removedArena.upload,removedArena.drawing);}catch(const std::runtime_error&){refused=true;}
+        const auto& reader=kind?removedArena.drawing.reader:removedArena.upload.reader;
+        check(refused&&reader.State()==frameobserver::FenceState::deviceRemoved&&!removed.part.retiring&&!removed.part.reusable,"constructor sentinel never permits UINT64_MAX upload or draw Fence completion");
     }
     // Real public bindings and a source kept open across repeated body+waist
     // retirement. No release is sent before changing equipment.
     {
         auto bodyAsset=asset;bodyAsset.part=MHM_BODY;bodyAsset.model="pl/synthetic/body001";
-        Fixture body(bodyAsset,{20,21,22}),waist(asset,{0,0,0});
+        Fixture body(bodyAsset,{20,21,22}),waist(asset,{UINT64_MAX,UINT64_MAX,UINT64_MAX});
         MhmApi api{};std::uint64_t source=0,revision=0;
         check(MhwMorphGetApi(MHM_API_VERSION,sizeof(api),&api)==MHM_OK&&api.open_source("held-switch",220,2000,&source)==MHM_OK,"control source opened for no-release switches");
         for(unsigned pass=0;pass<3;pass++){
@@ -163,7 +185,7 @@ inline unsigned Run(const std::filesystem::path& path){
     std::string records(static_cast<size_t>(size.QuadPart),'\0');
     check(ReadFile(log.file,records.data(),static_cast<DWORD>(records.size()),&read,nullptr)&&read==records.size(),"retirement diagnostic records readable");
     check(records.find("\"event\":\"part_retirement_buffer_rejected\"")!=records.npos
-        &&records.find("\"expected_stamp\":20")!=records.npos&&records.find("\"repeat_stamp\":0")!=records.npos,
+        &&records.find("\"expected_stamp\":20")!=records.npos&&records.find("\"repeat_stamp\":18446744073709551615")!=records.npos,
         "retirement rejection logs observed and expected per-slot evidence");
     return count;
 }

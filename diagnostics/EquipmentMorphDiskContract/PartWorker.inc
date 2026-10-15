@@ -5,9 +5,10 @@ struct BufferUploadStamp {
     bool contract=false,readable=false;
     bool Stable()const{
         // The worker records the constructor stamp until a successful Unmap.
-        // A constructor-only buffer may still have no repeated-upload stamp.
+        // The verified native constructor initializes +0x80 to UINT64_MAX.
+        // That is an unused field, never a completed upload/Fence value.
         return contract&&readable&&expected!=UINT64_MAX&&expected>=initialization
-            &&(repeated==expected||(expected==initialization&&repeated==0));
+            &&(expected==initialization?repeated==UINT64_MAX:repeated==expected);
     }
 };
 BufferUploadStamp InspectBufferUpload(privateprobe::Buffer& buffer,std::uint64_t expected){
