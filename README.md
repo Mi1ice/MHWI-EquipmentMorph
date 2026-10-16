@@ -4,7 +4,7 @@ Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插�
 
 运行时 0.5.0，Blender 插件 0.4.4，SDK 0.4.0。两套不同装备的身体模型已完成用户实机验收：三个形态键、释放恢复、换装自动绑定与权重归零、连续往返均正常。作者插件 0.4.4 已通过用户导出测试。验收范围见 [验证说明](docs/VALIDATION.md)。
 
-当前源码为0.5.1-dev7候选，减少[非零输入的重复读取](docs/BATCHED_INPUT_READS.md)，保留[空闲采样](docs/IDLE_SAMPLING.md)、[启动检查优化](docs/LAUNCH_VALIDATION.md)、[零值轻量路径](docs/ZERO_INPUT_FAST_PATH.md)及[重绑补正](docs/REBIND_FIX.md)。用户确认dev6工作、调节平滑和重绑正常，帧率改善不明显。dev7待实机复测，GPU评估见[采样流程](docs/GPU_EVALUATION.md)，Release附件保持原样。
+当前源码为0.5.1-dev8候选，[合并运行时输入校验并分离诊断](docs/RUNTIME_INPUT.md)，保留[批量读取](docs/BATCHED_INPUT_READS.md)、[空闲采样](docs/IDLE_SAMPLING.md)、[零值轻量路径](docs/ZERO_INPUT_FAST_PATH.md)及[重绑补正](docs/REBIND_FIX.md)。用户确认dev7同场景非零平均约160→170 FPS，测试通过、工作正常。dev8待实机复测，GPU评估尚未进行，Release附件保持原样。
 
 ## 功能
 

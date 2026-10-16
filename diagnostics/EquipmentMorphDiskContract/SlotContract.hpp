@@ -2,7 +2,7 @@
 // Controller owner fields are checked against the same player's backlink pair.
 // Unconfigured slots have no capture or publication path.
 namespace facecontinuous {
-inline bool PlayerAnchorMatches(std::uintptr_t player) noexcept {
+inline bool PlayerAnchorMatches(std::uintptr_t player,std::uintptr_t* validatedBridge=nullptr) noexcept {
     std::uintptr_t table=0,bridge=0,pointer=0;
     observer::ReadBlock<0x98> links;observer::ReadBlock<39*8> methods;
     if(!observer::Read(player,table)||table!=observer::imageBase+observed::ownerVtableRva
@@ -12,7 +12,8 @@ inline bool PlayerAnchorMatches(std::uintptr_t player) noexcept {
     if(methods.Value<std::uintptr_t,0>()!=observer::imageBase+facelife::destructorRva
        ||methods.Value<std::uintptr_t,25*8>()!=observer::imageBase+facelife::removeRva
        ||methods.Value<std::uintptr_t,38*8>()!=observer::imageBase+facelife::modelRva)return false;
-    return observer::Read(player+0x126C8,pointer)&&pointer==bridge;
+    if(!observer::Read(player+0x126C8,pointer)||pointer!=bridge)return false;
+    if(validatedBridge)*validatedBridge=bridge;return true;
 }
 inline bool SlotMatches(unsigned index,Identity id,bool wholeMesh){
     if(index>=equipmentnative::profiles.size()||!equipmentnative::profiles[index].configured

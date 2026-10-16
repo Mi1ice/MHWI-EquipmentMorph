@@ -17,6 +17,7 @@
 #include "HighResolutionClock.hpp"
 #include "NativeBuffer.hpp"
 #include "SlotContract.hpp"
+#include "RuntimeInput.hpp"
 #include "PartBinding.hpp"
 #include "LaunchContext.hpp"
 #include "ManualArm.hpp"
@@ -124,8 +125,8 @@ void Input(safetyhook::Context& context,unsigned kind) noexcept {
         anchorPlayer=0;for(auto& part:parts)part.adapter->Invalidate(0,"equipment_main_player_changed");return;
     }
     // Only the independently selected main player can own a captured part.
-    observer::Event e{};std::uintptr_t renderer=0,fence=0;std::uint64_t before=0,after=0;
-    if(!RendererFacts(renderer,fence,before)||!observer::Snapshot(context,kind,e)
+    InputFacts e{};std::uintptr_t renderer=0,fence=0;std::uint64_t before=0,after=0;
+    if(!RendererFacts(renderer,fence,before)||!ReadInputFacts(context,kind,anchorPlayer,e)||e.owner!=owner
             ||(kind==2&&e.auxEnabled!=0)||e.ownerStreams[0]||e.ownerStreams[1]||e.ownerStreams[2]
             ||!observer::Read(renderer+0x1E0,after)) {
         if(selected){const auto id=selected->adapter->Target();selected->adapter->Invalidate(0,Matches(selected->index,id,false,true)?"part_input_snapshot_failed":"equipment_part_identity_changed");}
@@ -137,12 +138,12 @@ void Input(safetyhook::Context& context,unsigned kind) noexcept {
     if(!adapter.Target().Valid()) {
         if(kind==3||e.input!=e.originalInput)return;
         const Identity candidate{e.owner,e.model,e.originalInput,anchorPlayer};
-        if(Matches(e.part,candidate,false,true))adapter.Capture(candidate,e.input);
+        adapter.Capture(candidate,e.input);
         return;
     }
     if(!adapter.Ready()||owner!=adapter.Target().owner)return;
     const auto actual=adapter.Target();
-    if(!Matches(part.index,actual,false,true)){adapter.Invalidate(0,"equipment_part_identity_changed");return;}
+    if(actual!=Identity{e.owner,e.model,e.originalInput,anchorPlayer}){adapter.Invalidate(0,"equipment_part_identity_changed");return;}
     if(adapter.Started()&&(renderer!=adapter.Fixed().renderer||fence!=adapter.Fixed().fence)){DisableAll("renderer_changed");return;}
     const Identity seen{e.owner,e.model,e.originalInput,actual.player};
     const auto replacement=adapter.Input(seen,e.input,before,after,kind==3,kind);
