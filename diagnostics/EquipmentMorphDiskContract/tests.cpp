@@ -1,7 +1,33 @@
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <cstdint>
+namespace inputfasttest {inline thread_local std::uint64_t reads=0;inline void(*afterRead)(LPCVOID,SIZE_T)=nullptr;}
+BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T bytes,SIZE_T* copied){
+    ++inputfasttest::reads;const auto result=::ReadProcessMemory(process,address,output,bytes,copied);
+    if(result&&inputfasttest::afterRead)inputfasttest::afterRead(address,bytes);return result;
+}
+#define ReadProcessMemory CountInputReads
 #include "prototype.cpp"
+#undef ReadProcessMemory
 #include <cstdio>
+#include <thread>
+#include "RetirementTests.hpp"
+#include "InputFastPathTests.hpp"
+#include "LaunchValidationTests.hpp"
+#include "IdleSamplingTests.hpp"
+#include "BatchedReadTests.hpp"
+#include "RuntimeInputTests.hpp"
+#include "InputConcurrencyTests.hpp"
 int wmain(int argc,wchar_t** argv){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
+    checks+=retirementtest::Run(std::filesystem::absolute(argv[0]).parent_path()/"retirement-regression.ndjson");
+    checks+=inputfasttest::Run();
+    checks+=launchvalidationtest::Run();
+    checks+=idlesamplingtest::Run();
+    checks+=batchedreadtest::Run();
+    checks+=runtimeinputtest::Run();
+    checks+=inputconcurrencytest::Run();
     auto put=[](std::vector<unsigned char>& raw,size_t at,uint64_t value,size_t bytes){for(size_t i=0;i<bytes;i++)raw[at+i]=static_cast<unsigned char>(value>>(i*8));};
     constexpr size_t meshStart=128,vertexStart=meshStart+3*80;
     std::vector<unsigned char> model(vertexStart+112);std::memcpy(model.data(),"MOD\0",4);put(model,4,237,2);put(model,8,3,2);put(model,24,112,4);put(model,72,meshStart,8);put(model,80,vertexStart,8);
@@ -133,7 +159,7 @@ int wmain(int argc,wchar_t** argv){try{
             setMemory(wrapper,0,observer::imageBase+observed::vertexVtableRva,8);setMemory(wrapper,0x48,1,4);setMemory(wrapper,0x5C,64,4);
             setMemory(wrapper,0x60,buffer.backing,8);setMemory(wrapper,0x78,buffer.view,8);
             setMemory(backing,0,observer::imageBase+0x3539948,8);setMemory(backing,0x10,64,4);setMemory(backing,0x20,buffer.resource,8);
-            setMemory(backing,0x78,buffer.initialization,8);setMemory(backing,0x80,buffer.initialization,8);
+            setMemory(backing,0x78,buffer.initialization,8);setMemory(backing,0x80,UINT64_MAX,8);
             check(privateprobe::Contract(buffer),"synthetic initialization buffer contract valid");
         }
         retired.allocated=allocatedCount==3;
@@ -161,7 +187,7 @@ int wmain(int argc,wchar_t** argv){try{
                 &&!facecontinuous::BufferUploadComplete(buffer,12,UINT64_MAX),"reuse requires finite completed upload stamp");
             setMemory(backings[2],0x80,13,8);
             check(!facecontinuous::BufferUploadComplete(buffer,12,13),"reuse rejects changed upload stamp");
-            setMemory(backings[2],0x80,12,8);setMemory(wrappers[2],0x48,0,4);
+            setMemory(backings[2],0x80,UINT64_MAX,8);setMemory(wrappers[2],0x48,0,4);
             check(!facecontinuous::BufferUploadComplete(buffer,12,12),"reuse rejects broken buffer contract");
             setMemory(wrappers[2],0x48,1,4);
             // A set reused after an earlier draw drain must retain that proof,
@@ -301,6 +327,28 @@ int wmain(int argc,wchar_t** argv){try{
     check(switchApi.read_weights(cycling.binding->target,&state,1,&count,&req,&app)==MHM_OK&&state.requested==0,"new target starts at zero without control replay");
     check(switchApi.submit(sourceId,&requested,1,&switchRevision)==MHM_STALE,"old target update cannot reach newly selected equipment");
     switchApi.close_source(sourceId);cycling.binding.reset();facecontinuous::armed=false;
+    }
+    // Logging may block. A concurrent callback must still acquire the native gate,
+    // while the log record keeps the state captured before that callback.
+    {
+        facecontinuous::Part loggingPart;loggingPart.asset=std::make_shared<const mhm::Asset>(asset);
+        loggingPart.adapter->Arm();loggingPart.target=42;loggingPart.updates=7;
+        struct BlockingLog {
+            facecontinuous::Part& part;bool callbackRan=false;std::string record;
+            bool Write(const char* line){
+                std::thread callback([&]{
+                    if(facecontinuous::gate.try_lock()){
+                        callbackRan=true;part.adapter->Invalidate(0,"logging_test_callback");facecontinuous::gate.unlock();
+                    }
+                });callback.join();record=line;return true;
+            }
+        } log{loggingPart,false,{}};
+        facecontinuous::WriteState(log,loggingPart,"part_state");
+        check(log.callbackRan,"callback can acquire gate during state logging");
+        check(!loggingPart.adapter->Live()&&log.record.find("\"live\":true")!=log.record.npos
+              &&log.record.find("\"reason\":\"none\"")!=log.record.npos,"log retains consistent snapshot when callback changes adapter");
+        check(log.record.find("\"target\":42")!=log.record.npos&&log.record.find("\"updates\":7")!=log.record.npos
+              &&log.record.back()=='\n',"state logging keeps worker fields and complete record");
     }
     std::printf("PASS: %u runtime native checks; synthetic model, no game/GPU calls\n",checks);return 0;
 }catch(const std::exception& e){std::printf("FAIL: %s\n",e.what());return 1;}}

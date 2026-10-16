@@ -10,6 +10,7 @@ Push-Location $taskRoot
 try {
     Run $Python @('tools/check_repository.py')
     Run $Python @('tools/test_equipment_catalog.py')
+    Run $Python @('tools/test_equipment_morph_process_guard.py')
     & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_current.ps1')
     & (Join-Path $PSScriptRoot 'build_equipment_morph_package_validator.ps1')
     Run $Python @('tools/test_mhwi_equipmentmorph_authoring_clean.py', 'blender_addon_v044/mhwi_equipmentmorph')

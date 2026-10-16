@@ -25,7 +25,8 @@ class SampleGate {
 public:
     bool Reset(std::uint64_t now){if(initialized)return false;lastSubmission=now;initialized=true;return true;}
     bool Due(std::uint64_t now)const{return initialized&&now>=lastSubmission&&now-lastSubmission>=16;}
-    // Call only after acceptance. An unavailable upload does not move this clock.
+    // Accepted requests and unchanged samples consume an interval. Unavailable
+    // uploads or rejected captures leave it due for the next worker poll.
     bool Submitted(std::uint64_t now){if(!Due(now))return false;lastSubmission=now;return true;}
 };
 }

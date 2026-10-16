@@ -58,7 +58,7 @@ def main():
                 'project_license': 'GPL-3.0-or-later',
                 'build_origin': 'local source build; distinct from byte-verified accepted release'}
     (PACKAGE / 'manifest.json').write_bytes((json.dumps(manifest, indent=2) + '\n').encode())
-    with zipfile.ZipFile(PACKAGE.with_suffix('.zip'), 'w', zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(PACKAGE.parent / (PACKAGE.name + '.zip'), 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(PACKAGE.rglob('*')):
             if path.is_file(): archive.write(path, PACKAGE.name + '/' + path.relative_to(PACKAGE).as_posix())
     output = ROOT / ('.build/packages/MHWI-EquipmentMorph-Blender-' + CONFIG['addon_version'] + '.zip')

@@ -17,10 +17,12 @@
 #include "HighResolutionClock.hpp"
 #include "NativeBuffer.hpp"
 #include "SlotContract.hpp"
+#include "RuntimeInput.hpp"
 #include "PartBinding.hpp"
 #include "LaunchContext.hpp"
 #include "ManualArm.hpp"
 #include "DrainBoundary.hpp"
+#include <tuple>
 
 namespace facecontinuous {
 struct BufferPool {
@@ -39,7 +41,7 @@ struct Part : BufferPool {
     DrainBoundary drain;bool retiring=false,blocked=false;
     mhm::GroupSmoothing smoother;facesmooth::SampleGate cadence;
     std::vector<unsigned char> payload;
-    std::vector<float> lastSample;std::uint64_t lastRevision=0;
+    std::vector<float> requested,lastSample;std::uint64_t smoothingRevision=0,lastRevision=0;
 };
 std::array<Part,5> parts;
 std::mutex gate;
@@ -107,46 +109,90 @@ bool RefreshMainPlayer(){
     }
     return changed;
 }
-void Input(safetyhook::Context& context,unsigned kind) noexcept {
-    std::lock_guard lock(gate);if(!armed)return;
-    if(!anchorPlayer)return;
-    std::uintptr_t owner=kind==1?context.rdi:context.r15;
-    if(kind==3&&!observer::Read(context.rbp+0xD0,owner)){DisableAll("dispatch_owner_unreadable");return;}
-    // Reject other scene owners with a cached pointer comparison before any
-    // selector/snapshot reads. Discovery refreshes these routes every 50 ms.
-    if(std::find(mainPlayerOwners.begin(),mainPlayerOwners.end(),owner)==mainPlayerOwners.end())return;
-    if(!mhm::localplayer::StillSelected([](std::uintptr_t address,auto& value){return observer::Read(address,value);},observer::imageBase,mainPlayerSelection)){
-        anchorPlayer=0;for(auto& part:parts)part.adapter->Invalidate(0,"equipment_main_player_changed");return;
+struct InputProof {
+    InputFacts facts{};InputProfiles profiles{};mhm::localplayer::Selection selection{};
+    std::array<std::uintptr_t,5> owners{};std::array<std::uint64_t,5> epochs{};
+    std::uintptr_t player=0,renderer=0,fence=0;std::uint64_t before=0;
+    unsigned selected=5;bool selectionValid=false,valid=false;
+};
+// Caller holds gate. Copy only values; no adapter, asset or profile reference
+// escapes the lock. The worker resets epoch whenever an active profile changes.
+InputProof SnapshotInputProof(std::uintptr_t owner) noexcept {
+    InputProof proof;
+    if(!armed||!anchorPlayer||std::find(mainPlayerOwners.begin(),mainPlayerOwners.end(),owner)==mainPlayerOwners.end())return proof;
+    proof.player=anchorPlayer;proof.selection=mainPlayerSelection;proof.owners=mainPlayerOwners;proof.profiles=SnapshotInputProfiles();
+    for(unsigned i=0;i<parts.size();i++){
+        proof.epochs[i]=parts[i].epoch;
+        if(parts[i].adapter->Live()&&parts[i].adapter->Target().owner==owner)proof.selected=i;
     }
-    // Only the independently selected main player can own a captured part.
-    Part* selected=nullptr;for(auto& part:parts)if(part.adapter->Live()&&part.adapter->Target().owner==owner)selected=&part;
-    observer::Event e{};std::uintptr_t renderer=0,fence=0;std::uint64_t before=0,after=0;
-    if(!RendererFacts(renderer,fence,before)||!observer::Snapshot(context,kind,e)
-            ||(kind==2&&e.auxEnabled!=0)||e.ownerStreams[0]||e.ownerStreams[1]||e.ownerStreams[2]
-            ||!observer::Read(renderer+0x1E0,after)) {
+    return proof;
+}
+// Only callback-local values and checked process reads are used outside gate.
+void ReadInputProof(const safetyhook::Context& context,unsigned kind,std::uintptr_t owner,InputProof& proof) noexcept {
+    if(!proof.player)return;
+    proof.selectionValid=mhm::localplayer::StillSelected([](std::uintptr_t address,auto& value){return observer::Read(address,value);},observer::imageBase,proof.selection);
+    auto& e=proof.facts;
+    proof.valid=proof.selectionValid&&RendererFacts(proof.renderer,proof.fence,proof.before)
+        &&ReadInputHeader(context,kind,proof.player,e,proof.profiles)&&e.owner==owner&&(kind!=2||e.auxEnabled==0);
+}
+// Caller holds the exclusive gate. Never apply a proof to a replacement
+// generation, changed player/route or configuration after sampling outside gate.
+bool ApplyInputProof(safetyhook::Context& context,unsigned kind,std::uintptr_t owner,const InputProof& proof) noexcept {
+    if(!proof.player||!armed||anchorPlayer!=proof.player||mainPlayerSelection!=proof.selection)return false;
+    // Another part can switch independently. Only this callback's selected or
+    // discovered part can make its profile/route proof stale.
+    for(const auto i:{proof.selected,proof.facts.part})if(i<parts.size())
+        if(parts[i].epoch!=proof.epochs[i]||mainPlayerOwners[i]!=proof.owners[i])return false;
+    if(!proof.selectionValid){
+        anchorPlayer=0;for(auto& part:parts)part.adapter->Invalidate(0,"equipment_main_player_changed");return true;
+    }
+    Part* selected=proof.selected<parts.size()?&parts[proof.selected]:nullptr;
+    auto e=proof.facts;const auto renderer=proof.renderer,fence=proof.fence;std::uint64_t after=0;
+    // Keep the late mutable identity/stream proof and counter read inside the
+    // exclusive commit. Sampling never authorizes a later replacement alone.
+    if(!proof.valid||!ReadInputTail(proof.player,e,proof.profiles)||e.ownerStreams[0]||e.ownerStreams[1]||e.ownerStreams[2]
+            ||!observer::Read(renderer+0x1E0,after)){
         if(selected){const auto id=selected->adapter->Target();selected->adapter->Invalidate(0,Matches(selected->index,id,false,true)?"part_input_snapshot_failed":"equipment_part_identity_changed");}
-        return;
+        return true;
     }
-    if(e.part>=parts.size()||!parts[e.part].asset)return;
+    if(e.part>=parts.size()||!parts[e.part].asset)return true;
     auto& part=parts[e.part];auto& adapter=*part.adapter;
-    if(!adapter.Live())return;
+    if(!adapter.Live())return true;
     if(!adapter.Target().Valid()) {
-        if(kind==3||e.input!=e.originalInput)return;
+        if(kind==3||e.input!=e.originalInput)return true;
         const Identity candidate{e.owner,e.model,e.originalInput,anchorPlayer};
-        if(Matches(e.part,candidate,false,true))adapter.Capture(candidate,e.input);
-        return;
+        adapter.Capture(candidate,e.input);
+        return true;
     }
-    if(!adapter.Ready()||owner!=adapter.Target().owner)return;
+    if(!adapter.Ready()||owner!=adapter.Target().owner)return true;
     const auto actual=adapter.Target();
-    if(!Matches(part.index,actual,false,true)){adapter.Invalidate(0,"equipment_part_identity_changed");return;}
-    if(adapter.Started()&&(renderer!=adapter.Fixed().renderer||fence!=adapter.Fixed().fence)){DisableAll("renderer_changed");return;}
+    if(actual!=Identity{e.owner,e.model,e.originalInput,anchorPlayer}){adapter.Invalidate(0,"equipment_part_identity_changed");return true;}
+    if(adapter.Started()&&(renderer!=adapter.Fixed().renderer||fence!=adapter.Fixed().fence)){DisableAll("renderer_changed");return true;}
     const Identity seen{e.owner,e.model,e.originalInput,actual.player};
-    const auto replacement=adapter.Input(seen,e.input,before,after,kind==3,kind);
+    const auto replacement=adapter.Input(seen,e.input,proof.before,after,kind==3,kind);
     if(replacement!=e.input){
         bool matches=false;for(auto& buffer:part.buffers)if(buffer.wrapper==replacement)matches=privateprobe::Contract(buffer);
-        if(!matches){adapter.Invalidate(0,"part_private_buffer_contract");return;}
+        if(!matches){adapter.Invalidate(0,"part_private_buffer_contract");return true;}
         context.r8=replacement;part.replacements++;
     }
+    return true;
+}
+void Input(safetyhook::Context& context,unsigned kind) noexcept {
+    std::unique_lock lock(gate);if(!armed||!anchorPlayer)return;
+    std::uintptr_t owner=kind==1?context.rdi:context.r15;
+    if(kind==3&&!observer::Read(context.rbp+0xD0,owner)){DisableAll("dispatch_owner_unreadable");return;}
+    // Keep unrelated owners and stable zero inputs on their existing short path.
+    if(std::find(mainPlayerOwners.begin(),mainPlayerOwners.end(),owner)==mainPlayerOwners.end())return;
+    Part* selected=nullptr;for(auto& part:parts)if(part.adapter->Live()&&part.adapter->Target().owner==owner)selected=&part;
+    if(selected&&!selected->retiring&&selected->adapter->PassOriginalInput())return;
+    for(unsigned attempt=0;attempt<2;attempt++){
+        auto proof=SnapshotInputProof(owner);lock.unlock();ReadInputProof(context,kind,owner,proof);
+        lock.lock();if(ApplyInputProof(context,kind,owner,proof))return;
+    }
+    // Repeated state changes must not leave a live private cycle with missing
+    // compute coverage. Retire it through the existing automatic rebind path.
+    for(auto& part:parts)if(part.adapter->Started()&&part.adapter->Target().owner==owner)
+        part.adapter->Invalidate(0,"equipment_part_identity_changed");
 }
 void Source(safetyhook::Context& c){Input(c,1);}
 void Stream(safetyhook::Context& c){Input(c,2);}
@@ -172,7 +218,11 @@ void LaunchStarting(safetyhook::Context& c) noexcept {
     if(!args.valid||!EngineFacts(args.engine,f)||args.index>=f.workers||!observer::Read(args.engine+0x7AE98+args.index*8,event)){DisableAll("launch_snapshot");return;}
     for(auto& part:parts){if(part.drain.Observing())part.drain.Launch(f,args.index,event);
         if(part.adapter->Ready()){
-            if(!Matches(part.index,part.adapter->Target(),false))part.adapter->Invalidate(0,"equipment_part_identity_changed");
+            // Only worker zero can publish a new input. Validate identity there
+            // and for unstarted bindings; later workers still prove the same
+            // frame/event/order in Launch. Lifecycle and nonzero Input guard
+            // identity changes within the batch without a cross-cycle cache.
+            if((args.index==0||!part.adapter->Started())&&!Matches(part.index,part.adapter->Target(),false))part.adapter->Invalidate(0,"equipment_part_identity_changed");
             else part.adapter->Launch(f,args.index,event);
         }}
 }
@@ -193,11 +243,17 @@ bool CanSubmit(const launchpool::View& view){
 std::string Weights(const std::array<float,64>& values,unsigned count){
     std::string result="[";char text[40]{};for(unsigned i=0;i<count;i++){if(i)result+=',';std::snprintf(text,sizeof(text),"%.9g",double(values[i]));result+=text;}return result+"]";
 }
-void WriteState(privateprobe::Log& log,Part& part,const char* event){
+template<class Log> void WriteState(Log& log,Part& part,const char* event){
     // Two 64-float arrays plus bounded integer/identity fields fit in 4096 bytes.
-    char line[4096]{};std::lock_guard lock(gate);const auto& a=*part.adapter;const auto v=part.adapter->View();const auto id=a.Target();
+    const auto [v,id,live,ready,started,reason,replacements,originalBypasses]=[&]{
+        std::lock_guard lock(gate);const auto& a=*part.adapter;
+        return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason(),part.replacements,a.OriginalBypasses()};
+    }();
+    // Remaining part fields belong to this worker. Formatting and disk IO must
+    // not hold the gate also used by game callbacks.
+    char line[4096]{};
     const auto requested=Weights(v.requested.weights,static_cast<unsigned>(part.asset->keys.size())),applied=Weights(v.applied.weights,static_cast<unsigned>(part.asset->keys.size()));
-    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu}\n",event,part.asset->part,part.epoch,part.target,a.Live()?"true":"false",a.Ready()?"true":"false",a.Started()?"true":"false",a.Reason(),id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,part.replacements);
+    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu,\"original_input_bypasses\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,replacements,originalBypasses);
     if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Part state log");
 }
 
