@@ -23,7 +23,7 @@ python -m venv .venv
 
 统一入口构建宿主、检查器、桥接、窗口和 SDK 示例，执行原生、作者、日志、控制会话、管道、窗口及模拟安装回滚检查。提供 `-Blender` 时，还会启动独立后台合成场景，检查配对导出、ID迁移和MOD安装冲突；不会打开或保存用户工程。
 
-当前0.5.1-dev8候选使用同一入口，新增[运行时输入校验](RUNTIME_INPUT.md)回归，保留[批量读取](BATCHED_INPUT_READS.md)、[空闲采样](IDLE_SAMPLING.md)、[启动检查](LAUNCH_VALIDATION.md)、[零值轻量路径](ZERO_INPUT_FAST_PATH.md)及[重绑补正](REBIND_FIX.md)。包位于 `.build/packages/MHWI-EquipmentMorph-0.5.1-dev8-source`，待用户实机复测，不覆盖正式0.5.0发行。
+当前0.5.1-dev9候选使用同一入口，新增[并行输入校验](CONCURRENT_INPUT.md)回归，保留[运行时最小校验](RUNTIME_INPUT.md)，保留[批量读取](BATCHED_INPUT_READS.md)、[空闲采样](IDLE_SAMPLING.md)、[启动检查](LAUNCH_VALIDATION.md)、[零值轻量路径](ZERO_INPUT_FAST_PATH.md)及[重绑补正](REBIND_FIX.md)。包位于 `.build/packages/MHWI-EquipmentMorph-0.5.1-dev9-source`，待用户实机复测，不覆盖正式0.5.0发行。
 
 装备目录结构与选择器检查不需要工作簿或解包资源。提供 Blender 时额外执行精简／Debug 导出、公共配置归属、安装回滚及独立副本预览回归。目录重建才需要用户提供的六列工作簿、openpyxl和解包文件名，见[装备目录说明](EQUIPMENT_CATALOG.md)。
 
