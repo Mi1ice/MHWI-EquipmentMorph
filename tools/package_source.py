@@ -38,6 +38,7 @@ def main():
     copy(ROOT / 'config/runtime.ini', 'runtime.ini')
     copy(ROOT / 'docs/USAGE.md', 'README.md')
     copy(ROOT / 'docs/USAGE.md', 'QUICK_START.md')
+    copy(ROOT / 'docs/INPUT_DIAGNOSTICS.md', 'INPUT_DIAGNOSTICS.md')
     copy(ROOT / 'LICENSE', 'LICENSE')
     copy(ROOT / 'LICENSING.md', 'LICENSING.md')
     copy(ROOT / 'THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')

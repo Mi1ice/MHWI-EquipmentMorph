@@ -22,6 +22,8 @@
 #include "LaunchContext.hpp"
 #include "ManualArm.hpp"
 #include "DrainBoundary.hpp"
+#include "InputTiming.hpp"
+#include "ResourceProperties.hpp"
 #include <tuple>
 
 namespace facecontinuous {
@@ -178,21 +180,29 @@ bool ApplyInputProof(safetyhook::Context& context,unsigned kind,std::uintptr_t o
     return true;
 }
 void Input(safetyhook::Context& context,unsigned kind) noexcept {
-    std::unique_lock lock(gate);if(!armed||!anchorPlayer)return;
+    const auto timingStart=inputtiming::Begin(kind);
+    std::unique_lock lock(gate);inputtiming::Trace timing(kind,timingStart);if(!armed||!anchorPlayer)return;
     std::uintptr_t owner=kind==1?context.rdi:context.r15;
     if(kind==3&&!observer::Read(context.rbp+0xD0,owner)){DisableAll("dispatch_owner_unreadable");return;}
     // Keep unrelated owners and stable zero inputs on their existing short path.
-    if(std::find(mainPlayerOwners.begin(),mainPlayerOwners.end(),owner)==mainPlayerOwners.end())return;
+    const auto route=std::find(mainPlayerOwners.begin(),mainPlayerOwners.end(),owner);
+    if(route==mainPlayerOwners.end())return;
+    timing.Part(static_cast<unsigned>(route-mainPlayerOwners.begin()));
     Part* selected=nullptr;for(auto& part:parts)if(part.adapter->Live()&&part.adapter->Target().owner==owner)selected=&part;
-    if(selected&&!selected->retiring&&selected->adapter->PassOriginalInput())return;
+    if(selected&&!selected->retiring&&selected->adapter->PassOriginalInput()){timing.Path(inputtiming::Route::Original);return;}
+    timing.Path(inputtiming::Route::Guarded);
     for(unsigned attempt=0;attempt<2;attempt++){
-        auto proof=SnapshotInputProof(owner);lock.unlock();ReadInputProof(context,kind,owner,proof);
-        lock.lock();if(ApplyInputProof(context,kind,owner,proof))return;
+        auto proof=SnapshotInputProof(owner);timing.Reading();lock.unlock();ReadInputProof(context,kind,owner,proof);
+        timing.Waiting();lock.lock();timing.Acquired();if(ApplyInputProof(context,kind,owner,proof))return;
     }
     // Repeated state changes must not leave a live private cycle with missing
     // compute coverage. Retire it through the existing automatic rebind path.
     for(auto& part:parts)if(part.adapter->Started()&&part.adapter->Target().owner==owner)
         part.adapter->Invalidate(0,"equipment_part_identity_changed");
+}
+template<class Log> void WriteInputTiming(Log& log,std::uint64_t elapsedMs,std::uint64_t frequency){
+    const auto window=[](){std::lock_guard lock(gate);return inputtiming::Take();}();
+    inputtiming::Write(log,window,elapsedMs,frequency);
 }
 void Source(safetyhook::Context& c){Input(c,1);}
 void Stream(safetyhook::Context& c){Input(c,2);}

@@ -126,6 +126,8 @@ void InitializePart(privateprobe::Log& log,Part& part,privateprobe::UploadFence&
                 if(prior.wrapper==buffer.wrapper||prior.backing==buffer.backing||prior.resource==buffer.resource||prior.view==buffer.view)throw std::runtime_error("Private alias across cached models");
             std::snprintf(line,sizeof(line),"{\"event\":\"private_part_buffer_initialized\",\"part\":%u,\"slot\":%u,\"bytes\":%u,\"initial_stamp\":%llu}\n",part.asset->part,slot,buffer.bytes,buffer.initialization);
             if(!log.Write(line))throw std::runtime_error("Part initialization log");
+            const auto properties=resourceinfo::Read(reinterpret_cast<IUnknown*>(buffer.resource));
+            resourceinfo::Write(log,part.index,part.epoch,slot,buffer,properties);
         }
         part.allocated=true;
     }else{

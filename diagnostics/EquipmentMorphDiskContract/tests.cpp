@@ -3,12 +3,16 @@
 #include <windows.h>
 #include <cstdint>
 namespace inputfasttest {inline thread_local std::uint64_t reads=0;inline void(*afterRead)(LPCVOID,SIZE_T)=nullptr;}
+namespace diagnosticstest {inline thread_local std::uint64_t qpcCalls=0;}
+BOOL WINAPI CountTimingQpc(LARGE_INTEGER* value){++diagnosticstest::qpcCalls;return ::QueryPerformanceCounter(value);}
 BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T bytes,SIZE_T* copied){
     ++inputfasttest::reads;const auto result=::ReadProcessMemory(process,address,output,bytes,copied);
     if(result&&inputfasttest::afterRead)inputfasttest::afterRead(address,bytes);return result;
 }
 #define ReadProcessMemory CountInputReads
+#define QueryPerformanceCounter CountTimingQpc
 #include "prototype.cpp"
+#undef QueryPerformanceCounter
 #undef ReadProcessMemory
 #include <cstdio>
 #include <thread>
@@ -20,6 +24,7 @@ BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T 
 #include "RuntimeInputTests.hpp"
 #include "InputConcurrencyTests.hpp"
 #include "SameWeightTests.hpp"
+#include "DiagnosticsTests.hpp"
 int wmain(int argc,wchar_t** argv){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
     checks+=retirementtest::Run(std::filesystem::absolute(argv[0]).parent_path()/"retirement-regression.ndjson");
@@ -30,6 +35,7 @@ int wmain(int argc,wchar_t** argv){try{
     checks+=runtimeinputtest::Run();
     checks+=inputconcurrencytest::Run();
     checks+=sameweighttest::Run();
+    checks+=diagnosticstest::Run(std::filesystem::absolute(argv[0]).parent_path()/"input-diagnostics-regression.ndjson");
     auto put=[](std::vector<unsigned char>& raw,size_t at,uint64_t value,size_t bytes){for(size_t i=0;i<bytes;i++)raw[at+i]=static_cast<unsigned char>(value>>(i*8));};
     constexpr size_t meshStart=128,vertexStart=meshStart+3*80;
     std::vector<unsigned char> model(vertexStart+112);std::memcpy(model.data(),"MOD\0",4);put(model,4,237,2);put(model,8,3,2);put(model,24,112,4);put(model,72,meshStart,8);put(model,80,vertexStart,8);
