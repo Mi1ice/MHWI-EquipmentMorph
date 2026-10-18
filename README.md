@@ -4,7 +4,7 @@ Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插�
 
 运行时 0.5.0，Blender 插件 0.4.4，SDK 0.4.0。两套不同装备的身体模型已完成用户实机验收：三个形态键、释放恢复、换装自动绑定与权重归零、连续往返均正常。作者插件 0.4.4 已通过用户导出测试。验收范围见 [验证说明](docs/VALIDATION.md)。
 
-当前源码为0.5.1-dev11候选，新增[输入计时与私有资源诊断](docs/INPUT_DIAGNOSTICS.md)，保留[精确相同权重复用](docs/SAME_WEIGHT_REUSE.md)、[并行输入校验](docs/CONCURRENT_INPUT.md)和现有重绑路径。用户确认dev10同场景工作正常，帧率变化不明显；dev11待实机测试，GPU耗时尚未采集，Release附件保持原样。
+当前源码为0.5.1-dev12候选，新增[无关绘制回调早退](docs/DRAW_FILTER.md)，保留[输入计时与私有资源诊断](docs/INPUT_DIAGNOSTICS.md)、[相同权重复用](docs/SAME_WEIGHT_REUSE.md)及现有重绑路径。用户确认dev11调节、释放和换装重绑正常，四段权重约200→180→180→200 FPS；dev12待实机测试，GPU耗时尚未采集，Release附件保持原样。
 
 ## 功能
 

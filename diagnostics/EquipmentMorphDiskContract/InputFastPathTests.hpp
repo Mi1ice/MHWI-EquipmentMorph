@@ -10,6 +10,7 @@ struct Fixture {
     std::array<equipmentnative::Profile,5> oldProfiles=equipmentnative::profiles;
     const std::uintptr_t oldBase=observer::imageBase,oldPlayer=facecontinuous::anchorPlayer;
     const bool oldArmed=facecontinuous::armed;
+    const std::uint64_t oldDrawOwners=drawfilter::owners.bits.load();
     static constexpr auto PartIndex=MHM_BODY;
     const mhm::localplayer::Selection oldSelection=facecontinuous::mainPlayerSelection;
     const std::array<std::uintptr_t,5> oldOwners=facecontinuous::mainPlayerOwners;
@@ -26,6 +27,7 @@ struct Fixture {
         observer::imageBase=Address(image);const auto base=observer::imageBase;
         const auto p=Address(player),b=Address(bridge),m=Address(model),s=Address(source),r=Address(renderer);
         anchorPlayer=p;mainPlayerOwners={};mainPlayerOwners[PartIndex]=p;
+        drawfilter::owners.bits=0;drawfilter::owners.Publish(mainPlayerOwners);
         equipmentnative::profiles={};auto& profile=equipmentnative::profiles[PartIndex];
         profile.configured=true;profile.part=PartIndex;profile.vertexBytes=64;profile.meshCount=1;
         profile.path="pl\\f_equip\\pl001_0000\\body\\mod\\f_body001_0000";
@@ -61,6 +63,7 @@ struct Fixture {
         facecontinuous::parts=decltype(facecontinuous::parts){};facecontinuous::parts=std::move(oldParts);
         equipmentnative::profiles=std::move(oldProfiles);observer::imageBase=oldBase;facecontinuous::anchorPlayer=oldPlayer;
         facecontinuous::mainPlayerSelection=oldSelection;facecontinuous::mainPlayerOwners=oldOwners;facecontinuous::armed=oldArmed;
+        drawfilter::owners.bits=oldDrawOwners;
     }
     facecontinuous::Part& Part(){return facecontinuous::parts[PartIndex];}
     facecontinuous::LaunchAdapter& Adapter(){return *Part().adapter;}

@@ -53,7 +53,7 @@ DWORD WINAPI Worker(void*) noexcept {
         if(!log.Write("{\"event\":\"automatic_binding_enabled\",\"requires_F8\":false,\"local_player_source\":\"guarded_sPlayer_master_record\"}\n")||!log.Flush())return 16;
         facesmooth::HighResolutionClock clock;if(!clock.Start(Qpc(),static_cast<std::uint64_t>(frequency.QuadPart)))throw std::runtime_error("QPC setup");
         privateprobe::UploadFence upload;DrawingFence drawing;bool attached=false;
-        std::uint64_t stateAt=0,codeAt=0,playerAt=0,timingAt=::GetTickCount64();bool playerSampled=false;
+        std::uint64_t stateAt=0,codeAt=0,playerAt=0;bool playerSampled=false;inputtiming::WindowClock timingClock;
         for(;;){
             std::uint64_t now=0;if(!clock.Read(Qpc(),now)||MhwMorphHostTick(::GetTickCount64())!=MHM_OK)throw std::runtime_error("Host clock");
             if(now-codeAt>=500){codeAt=now;if(!CodeMatches())throw std::runtime_error("Runtime code changed");}
@@ -87,7 +87,7 @@ DWORD WINAPI Worker(void*) noexcept {
             }
             if(now-stateAt>=500){
                 stateAt=now;for(auto& part:parts)if(part.asset)WriteState(log,part,"part_state");
-                if(now-timingAt>=1000){WriteInputTiming(log,now-timingAt,static_cast<std::uint64_t>(frequency.QuadPart));timingAt=now;}
+                if(const auto elapsed=timingClock.Due(now))WriteInputTiming(log,*elapsed,static_cast<std::uint64_t>(frequency.QuadPart));
                 if(!log.Flush())throw std::runtime_error("State flush");
             }
             ::Sleep(settling?1:5);

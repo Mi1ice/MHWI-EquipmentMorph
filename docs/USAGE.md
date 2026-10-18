@@ -71,6 +71,6 @@ python ./tools/prepare_mhwi_equipmentmorph_resource_path.py --source 'D:/MODExpo
 
 ## 实机验收范围
 
-当前源码候选0.5.1-dev11新增[输入计时与私有资源诊断](INPUT_DIAGNOSTICS.md)，形变路径与数值精度保持原样。安装前正常退出游戏和控制窗口，保留已有公共runtime.ini；包顶层runtime.ini来自仓库config/runtime.ini，是空配置模板。相同场景按0→0.01→1→0各停留约30秒，固定非零时停止拖动并记录帧率与起止时间，再检查调节、释放和保持控制的001→其它套装→001重绑。用户确认dev10功能正常、帧率变化不明显；dev11待独立复测，新增计时不代表GPU耗时。
+当前源码候选0.5.1-dev12增加[无关绘制回调早退](DRAW_FILTER.md)，命中owner仍执行原有校验，形变精度保持原样。安装前正常退出游戏和控制窗口，保留已有公共runtime.ini；包顶层runtime.ini来自仓库config/runtime.ini，是空配置模板。同场景按0→0.01→1→0各停留约30秒，固定非零时停止拖动并记录帧率与起止时间，再检查调节、释放和保持控制的001→其它套装→001重绑。用户确认dev11功能正常，四段约200→180→180→200 FPS；dev12待独立复测，尚无GPU耗时。
 
 指定两套身体MOD的三个键、释放恢复、换装绑定及权重归零、连续往返已通过，边界见[验证说明](VALIDATION.md)。

@@ -24,6 +24,7 @@
 #include "DrainBoundary.hpp"
 #include "InputTiming.hpp"
 #include "ResourceProperties.hpp"
+#include "DrawFilter.hpp"
 #include <tuple>
 
 namespace facecontinuous {
@@ -97,6 +98,7 @@ bool RefreshMainPlayer(){
     }
     std::lock_guard lock(gate);const bool changed=anchorPlayer!=current.player;
     if(changed&&anchorPlayer)for(auto& part:parts)part.adapter->Invalidate(0,"equipment_main_player_changed");
+    drawfilter::owners.Publish(owners);
     mainPlayerSelection=current;anchorPlayer=current.player;mainPlayerOwners=owners;
     for(unsigned i=0;i<parts.size();i++){
         auto& part=parts[i];std::optional<size_t> wanted;std::uintptr_t model=0,table=0;std::array<char,80> path{};
@@ -180,6 +182,7 @@ bool ApplyInputProof(safetyhook::Context& context,unsigned kind,std::uintptr_t o
     return true;
 }
 void Input(safetyhook::Context& context,unsigned kind) noexcept {
+    if(kind==2&&drawfilter::Reject(context.r15))return;
     const auto timingStart=inputtiming::Begin(kind);
     std::unique_lock lock(gate);inputtiming::Trace timing(kind,timingStart);if(!armed||!anchorPlayer)return;
     std::uintptr_t owner=kind==1?context.rdi:context.r15;
@@ -203,6 +206,7 @@ void Input(safetyhook::Context& context,unsigned kind) noexcept {
 template<class Log> void WriteInputTiming(Log& log,std::uint64_t elapsedMs,std::uint64_t frequency){
     const auto window=[](){std::lock_guard lock(gate);return inputtiming::Take();}();
     inputtiming::Write(log,window,elapsedMs,frequency);
+    drawfilter::Write(log,elapsedMs);
 }
 void Source(safetyhook::Context& c){Input(c,1);}
 void Stream(safetyhook::Context& c){Input(c,2);}

@@ -39,6 +39,7 @@ def main():
     copy(ROOT / 'docs/USAGE.md', 'README.md')
     copy(ROOT / 'docs/USAGE.md', 'QUICK_START.md')
     copy(ROOT / 'docs/INPUT_DIAGNOSTICS.md', 'INPUT_DIAGNOSTICS.md')
+    copy(ROOT / 'docs/DRAW_FILTER.md', 'DRAW_FILTER.md')
     copy(ROOT / 'LICENSE', 'LICENSE')
     copy(ROOT / 'LICENSING.md', 'LICENSING.md')
     copy(ROOT / 'THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')

@@ -72,6 +72,13 @@ public:
     void Acquired(){Move(Phase::Held);}
 };
 inline Window Take(){const auto window=metrics;metrics={};return window;}
+struct WindowClock {
+    std::uint64_t last=0;
+    std::optional<std::uint64_t> Due(std::uint64_t now){
+        if(now<last||now-last<1000)return {};
+        const auto elapsed=now-last;last=now;return elapsed;
+    }
+};
 template<class Log> void Write(Log& log,const Window& window,std::uint64_t elapsedMs,std::uint64_t frequency){
     constexpr const char* names[]={"other","original","guarded"};
     for(unsigned kind=1;kind<=3;kind++)for(unsigned part=0;part<6;part++)for(unsigned route=0;route<3;route++){
