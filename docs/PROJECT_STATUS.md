@@ -18,7 +18,9 @@
 
 ## 构建与历史记录
 
-正在开发 [Tauri 控制窗口](../controls/MHWI-EquipmentMorph-Desktop/README.md)，使用 React 和 WebView2。控制桥接在游戏启动后自动运行隐藏的外部窗口，Ctrl＋Shift＋M 呼出／隐藏；隐藏保留权重，“×”释放后隐藏，游戏退出后自动关闭。运行时核心继续使用 dev12，控制中心候选独立打包，尚未获得用户实机验收。
+[Tauri 控制窗口候选](../controls/MHWI-EquipmentMorph-Desktop/README.md)已于 2026-10-19 暂停。实机出现自动启动后 WebView 初始化停滞；游戏外重启相同 EXE 可恢复，Steam Overlay 注入及启动时序的独立因果尚未确认。按用户选择转向独立、可选的 Dear ImGui 游戏内面板，直接调用现有核心 API。
+
+已归档并清理测试游戏目录中的 Tauri 面板、旧原生面板、控制桥接及旧安装收据和面板启动日志。dev12 核心、runtime.ini 和全部 354 个装备文件共 356 项摘要保持一致；游戏当前为仅核心部署。源码与历史候选保留，本地开发分支为 `codex/imgui-control-panel`，ImGui 尚未实现。首版范围限定为装备下拉选择及“形态键名／权重滑块／权重输入框／当前已应用值”四列，外观优化后置。
 
 开发使用本仓库的 `config/mhwi-equipmentmorph-current.json` 和 `tools/check_source.ps1`，详见[构建说明](BUILD.md)。软件检查和实机验证范围见[验证说明](VALIDATION.md)。
 
