@@ -31,6 +31,8 @@ python -m venv .venv
 
 ## 指定工具链
 
+可选 Dear ImGui 游戏内面板使用 `./tools/build_mhwi_equipmentmorph_imgui.ps1` 独立构建，输出 `.build/current-validation/imgui/`，包括面板 DLL、软件测试程序、开发候选清单与许可证。它不重建／安装核心，也不需要 Tauri 工具链；验证范围和实机步骤见[面板说明](../controls/MHWI-EquipmentMorph-ImGui/README.md)。
+
 Tauri 控制窗口候选另需 Node.js 22.12+、Rust stable MSVC 和 WebView2。使用 `./tools/check_source.ps1 -Desktop` 可追加前后端构建、独立四文件候选包与 39 项模拟安装检查，默认入口仍构建原三文件包。浏览器交互及软件联动检查的操作见[控制中心说明](../controls/MHWI-EquipmentMorph-Desktop/README.md)。
 
 可设置 `MHWI_MSVC_ROOT`、`MHWI_WINDOWS_SDK_ROOT` 和 `MHWI_WINDOWS_SDK_VERSION`。MSVC 根目录需包含 `bin/Hostx64/x64/cl.exe`、`include` 和 `lib/x64`。原实机验收载荷使用 MSVC 14.51.36231、Windows SDK 10.0.26100.0；源码重新编译的产物不自动等同于已验收的二进制。
