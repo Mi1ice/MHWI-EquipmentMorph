@@ -46,10 +46,11 @@ def plan(source,game,validator):
                 conflicts=[entry['relative'] for entry in files if entry['status']=='conflict'],files_changed=False)
 
 def closed(game):
-    command="foreach($taskProcess in @(Get-CimInstance Win32_Process -Filter \"Name='MonsterHunterWorld.exe'\")){if(-not $taskProcess.ExecutablePath -or [IO.Path]::GetFullPath($taskProcess.ExecutablePath).Equals($env:MHWI_MORPH_GAME_EXE,[StringComparison]::OrdinalIgnoreCase)){exit 1}}"
+    command="$ErrorActionPreference='Stop';try{foreach($taskProcess in @(Get-CimInstance Win32_Process -Filter \"Name='MonsterHunterWorld.exe'\")){if(-not $taskProcess.ExecutablePath -or [IO.Path]::GetFullPath($taskProcess.ExecutablePath).Equals($env:MHWI_MORPH_GAME_EXE,[StringComparison]::OrdinalIgnoreCase)){exit 1}};exit 0}catch{[Console]::Error.WriteLine('Cannot query game processes');exit 2}"
     process=subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',command],
         env=dict(os.environ,MHWI_MORPH_GAME_EXE=str(game/'MonsterHunterWorld.exe')),capture_output=True)
-    if process.returncode:raise ValueError('Normally close the selected game before installation')
+    if process.returncode==1:raise ValueError('Normally close the selected game before installation')
+    if process.returncode:raise ValueError('Cannot confirm the selected game is closed; process query failed')
 
 def install(source,game,validator,replace=False):
     report=plan(source,game,validator);source=Path(report['source']);game=Path(report['game'])

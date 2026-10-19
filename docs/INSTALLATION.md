@@ -19,6 +19,8 @@
 
 运行时安装公共 `nativePC/plugins/MHWEquipmentMorph/runtime.ini`。每个 MOD 只携带模型和对应形态键包，多 MOD 共用此配置。工具检查或安装模型前，运行时应已安装。
 
+`runtime.ini`的来源是**运行时压缩包解压后的根目录**，与 `Manage-Installation.ps1`同级；源码对应文件为 `config/runtime.ini`。使用上述安装器会在首次安装时建立配置。手动安装DLL时，也必须把同一个包根目录的 `runtime.ini`放入 `游戏目录/nativePC/plugins/MHWEquipmentMorph/`，不能只复制payload中的DLL。Blender插件包、独立作者工具包及导出的MOD均不提供这份公共配置；已有配置应保留。
+
 发行中的运行时 DLL 与控制窗口沿用已验收 0.5.0 的原字节，更新的是配套工具、授权说明和打包资料。源码重新编译的产物须单独验证，不能自动继承这项二进制验收。
 
 ## Blender 作者插件

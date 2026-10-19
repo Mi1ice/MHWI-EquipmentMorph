@@ -23,6 +23,8 @@ python -m venv .venv
 
 统一入口构建宿主、检查器、桥接、窗口和 SDK 示例，执行原生、作者、日志、控制会话、管道、窗口及模拟安装回滚检查。提供 `-Blender` 时，还会启动独立后台合成场景，检查配对导出、ID迁移和MOD安装冲突；不会打开或保存用户工程。
 
+当前0.5.1-dev12候选使用同一入口，新增[无关绘制回调早退](DRAW_FILTER.md)及29项原生回归，保留[输入计时与资源诊断](INPUT_DIAGNOSTICS.md)和既有优化。包位于 `.build/packages/MHWI-EquipmentMorph-0.5.1-dev12-source`，待用户实机复测，不覆盖正式0.5.0发行。
+
 装备目录结构与选择器检查不需要工作簿或解包资源。提供 Blender 时额外执行精简／Debug 导出、公共配置归属、安装回滚及独立副本预览回归。目录重建才需要用户提供的六列工作簿、openpyxl和解包文件名，见[装备目录说明](EQUIPMENT_CATALOG.md)。
 
 输出目录为 `.build/`，打包结果为 `.build/packages/`。联合导出的深层安装测试使用系统临时目录，结束后清理，避免Windows路径长度限制。脚本不安装到真实游戏目录，不启动游戏。单独重复打包可使用 `python ./tools/package_source.py`。

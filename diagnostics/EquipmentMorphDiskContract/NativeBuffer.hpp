@@ -7,16 +7,16 @@ struct Buffer {
     std::uint64_t initialization=0;
 };
 bool Contract(Buffer& b,bool initialize=false) noexcept {
-    std::uintptr_t table=0,backing=0,view=0,resource=0,mapped=0,poolOffset=0;unsigned bytes=0,mode=9,refs=0;
-    unsigned char persistent=1;std::uint64_t stamp=0;
-    if(!observer::Read(b.wrapper,table)||table!=observer::imageBase+observed::vertexVtableRva||
-       !observer::Read(b.wrapper+0x48,refs)||refs==0||!observer::Read(b.wrapper+0x5C,bytes)||bytes!=b.bytes||
-       !observer::Read(b.wrapper+0x58,mode)||mode!=0||!observer::Read(b.wrapper+0x60,backing)||
-       !observer::Read(backing,table)||table!=observer::imageBase+0x3539948||
-       !observer::Read(backing+0x10,bytes)||bytes!=b.bytes||!observer::Read(backing+0x14,mode)||mode!=0||
-       !observer::Read(backing+0x20,resource)||resource<=0xFFFF||!observer::Read(backing+0x28,poolOffset)||poolOffset!=0||
-       !observer::Read(backing+0x38,mapped)||mapped!=0||!observer::Read(backing+0x6C,persistent)||persistent!=0||
-       !observer::Read(b.wrapper+0x78,view)||view<=0xFFFF||!observer::Read(backing+0x78,stamp)||stamp==~std::uint64_t{0})return false;
+    observer::ReadBlock<0x80> wrapper,storage;
+    if(!wrapper.Load(b.wrapper)||wrapper.Value<std::uintptr_t,0>()!=observer::imageBase+observed::vertexVtableRva
+       ||!wrapper.Value<unsigned,0x48>()||wrapper.Value<unsigned,0x5C>()!=b.bytes||wrapper.Value<unsigned,0x58>()!=0)return false;
+    const auto backing=wrapper.Value<std::uintptr_t,0x60>(),view=wrapper.Value<std::uintptr_t,0x78>();
+    if(!storage.Load(backing)||storage.Value<std::uintptr_t,0>()!=observer::imageBase+0x3539948
+       ||storage.Value<unsigned,0x10>()!=b.bytes||storage.Value<unsigned,0x14>()!=0
+       ||storage.Value<std::uintptr_t,0x28>()!=0||storage.Value<std::uintptr_t,0x38>()!=0
+       ||storage.Value<unsigned char,0x6C>()!=0)return false;
+    const auto resource=storage.Value<std::uintptr_t,0x20>();const auto stamp=storage.Value<std::uint64_t,0x78>();
+    if(resource<=0xFFFF||view<=0xFFFF||stamp==~std::uint64_t{0})return false;
     if(initialize){b.backing=backing;b.view=view;b.resource=resource;b.initialization=stamp;return true;}
     return backing==b.backing&&view==b.view&&resource==b.resource&&stamp==b.initialization;
 }

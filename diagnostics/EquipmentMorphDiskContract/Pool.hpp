@@ -27,6 +27,7 @@ struct View {
     MorphVersion requested{},applied{};
     std::uint64_t epoch=0,request=0,lastSignal=0,publicationCounter=0;
     std::array<Slot,3> slots{};
+    std::uint64_t sameWeightPublications=0;
 };
 class Pool {
     std::mutex gate;
@@ -34,7 +35,7 @@ class Pool {
     bool started=false,live=false,frameOpen=false;
     int active=-1;
     MorphVersion requested{},original{};
-    std::uint64_t epoch=0,request=0,lastSignal=0,originalCounter=0,openCounter=0,uploadCompleted=0,drawCompleted=0;
+    std::uint64_t epoch=0,request=0,lastSignal=0,originalCounter=0,openCounter=0,uploadCompleted=0,drawCompleted=0,sameWeightPublications=0;
     bool Match(Token t) const {return t.slot<slots.size()&&t.epoch==epoch&&slots[t.slot].token==t;}
     void Disable() {
         live=false;frameOpen=false;active=-1;
@@ -71,7 +72,9 @@ public:
     }
     std::optional<Token> Prepare() {
         std::lock_guard lock(gate);
-        if(!live||requested.IsZero()||(active>=0&&slots[static_cast<unsigned>(active)].weight==requested))return {};
+        // A new core frame/revision can carry the exact same 64 weights, e.g.
+        // when another part changes. Its active payload already exists.
+        if(!live||requested.IsZero()||(active>=0&&slots[static_cast<unsigned>(active)].weight.weights==requested.weights))return {};
         Reclaim();
         for(const auto& s:slots)if(s.phase!=Phase::Free&&s.phase!=Phase::Retiring&&s.token.request==request)return {};
         for(unsigned i=0;i<slots.size();i++)if(slots[i].phase==Phase::Free) {
@@ -103,6 +106,14 @@ public:
         if(!live)return false;
         if(frameOpen||counter!=lastSignal||counter>=UINT64_MAX-1){Disable();return false;}
         if(requested.IsZero()){RetireActive();if(original!=requested){original=requested;originalCounter=counter;}}
+        else if(active>=0&&slots[static_cast<unsigned>(active)].weight.weights==requested.weights){
+            auto& s=slots[static_cast<unsigned>(active)];
+            // Only publish the new metadata at this native boundary. Keep the
+            // resource, token, upload stamp and all use/retirement proofs intact.
+            if(s.weight.frame!=requested.frame||s.weight.revision!=requested.revision){
+                s.weight=requested;s.publicationCounter=counter;sameWeightPublications++;
+            }
+        }
         else if(active<0||slots[static_cast<unsigned>(active)].weight!=requested) {
             for(unsigned i=0;i<slots.size();i++)if(slots[i].phase==Phase::Ready&&slots[i].token.request==request) {
                 RetireActive();active=static_cast<int>(i);slots[i].phase=Phase::Active;slots[i].publicationCounter=counter;break;
@@ -135,6 +146,6 @@ public:
         lastSignal=value;frameOpen=false;return true;
     }
     void Invalidate(){std::lock_guard lock(gate);Disable();}
-    View Get(){std::lock_guard lock(gate);return {live,frameOpen,active,requested,active<0?original:slots[static_cast<unsigned>(active)].weight,epoch,request,lastSignal,active<0?originalCounter:slots[static_cast<unsigned>(active)].publicationCounter,slots};}
+    View Get(){std::lock_guard lock(gate);return {live,frameOpen,active,requested,active<0?original:slots[static_cast<unsigned>(active)].weight,epoch,request,lastSignal,active<0?originalCounter:slots[static_cast<unsigned>(active)].publicationCounter,slots,sameWeightPublications};}
 };
 }
