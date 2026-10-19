@@ -29,3 +29,7 @@ __pycache__/
 *.bin
 .vscode/
 .idea/
+
+/controls/MHWI-EquipmentMorph-Desktop/node_modules/
+/controls/MHWI-EquipmentMorph-Desktop/src-tauri/target/
+/controls/MHWI-EquipmentMorph-Desktop/src-tauri/gen/

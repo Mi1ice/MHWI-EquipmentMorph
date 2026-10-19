@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference='Stop'
 $taskPackageRoot=$PSScriptRoot
 $taskGameRoot=[IO.Path]::GetFullPath($GameDirectory).TrimEnd([IO.Path]::DirectorySeparatorChar)
-$taskAllowed=@('nativePC/plugins/MHWEquipmentMorphConfiguredPrototype.dll','nativePC/plugins/MHWEquipmentMorphControlBridge.dll','MHWI-EquipmentMorph/MHWI-EquipmentMorph-ControlPanel.exe')
+$taskAllowed=@('nativePC/plugins/MHWEquipmentMorphConfiguredPrototype.dll','nativePC/plugins/MHWEquipmentMorphControlBridge.dll','MHWI-EquipmentMorph/MHWI-EquipmentMorph-ControlPanel.exe','MHWI-EquipmentMorph/MHWI-EquipmentMorph-ControlCenter.exe')
 $taskConfig='nativePC/plugins/MHWEquipmentMorph/runtime.ini'
 $taskStateRelative='nativePC/plugins/MHWEquipmentMorph/.installation/state.json'
 $taskStateRootRelative='nativePC/plugins/MHWEquipmentMorph/.installation'
@@ -38,7 +38,10 @@ function CopyManaged([string]$Source,[string]$Destination){
 }
 function ValidateState($State){
     if($State.schema -ne 'mhwi-equipmentmorph-install-state-v1' -or -not ([string]$State.game_directory).Equals($taskGameRoot,[StringComparison]::OrdinalIgnoreCase)){throw 'Installation state belongs to another directory/version'}
-    if(@($State.files).Count -ne 3 -or @($State.originals).Count -ne 3){throw 'Invalid managed file count'}
+    if(@($State.files).Count -notin @(3,4) -or @($State.originals).Count -ne @($State.files).Count){throw 'Invalid managed file count'}
+    ValidatePaths $State.files
+    ValidatePaths $State.originals
+    foreach($taskEntry in $State.files){if($taskEntry.path -notin @($State.originals.path)){throw 'Original paths differ from managed paths'}}
     foreach($taskList in @(@($State.files),@($State.originals))){
         $taskSeen=@{};foreach($taskEntry in $taskList){
             if($taskEntry.path -notin $taskAllowed -or $taskSeen.ContainsKey($taskEntry.path)){throw 'Invalid state file path'};$taskSeen[$taskEntry.path]=$true
@@ -46,6 +49,11 @@ function ValidateState($State){
             if($taskEntry.backup){ValidateBackup $taskEntry}
         }
     }
+}
+function ValidatePaths($Entries){
+    $taskPaths=@($Entries.path)
+    if($taskPaths.Count -notin @(3,4)){throw 'Invalid managed file count'}
+    foreach($taskRequired in $taskAllowed[0..2]){if($taskRequired -notin $taskPaths){throw 'Missing required managed component'}}
 }
 function ValidateBackup($Entry){
     if(-not $Entry.backup.StartsWith($taskStateRootRelative+'/',[StringComparison]::Ordinal) -or $Entry.sha256 -notmatch '^[0-9a-f]{64}$'){throw 'Invalid backup reference'}
@@ -82,8 +90,10 @@ if($Mode -eq 'Rollback' -or $Mode -eq 'Uninstall'){
         $taskUndoReference=[string]$taskState.undo
         if(-not $taskUndoReference.StartsWith($taskStateRootRelative+'/',[StringComparison]::Ordinal)){throw 'Invalid undo reference'}
         $taskUndo=Get-Content -LiteralPath (Target $taskUndoReference) -Raw | ConvertFrom-Json
-        if($taskUndo.schema -ne 'mhwi-equipmentmorph-install-undo-v1' -or @($taskUndo.files).Count -ne 3){throw 'Invalid undo receipt'}
+        if($taskUndo.schema -ne 'mhwi-equipmentmorph-install-undo-v1' -or @($taskUndo.files).Count -notin @(3,4)){throw 'Invalid undo receipt'}
         $taskEntries=$taskUndo.files;$taskPrevious=$taskUndo.previous
+        ValidatePaths $taskEntries
+        foreach($taskEntry in $taskState.files){if($taskEntry.path -notin @($taskEntries.path)){throw 'Undo paths differ from managed paths'}}
         if($taskPrevious){ValidateState $taskPrevious}
     }else{$taskEntries=$taskState.originals;$taskPrevious=$null}
     $taskSeen=@{};foreach($taskEntry in $taskEntries){
@@ -110,7 +120,8 @@ if($Mode -eq 'Rollback' -or $Mode -eq 'Uninstall'){
 if($Mode -eq 'Install' -and $taskState){throw 'Already managed; use Upgrade'}
 if($Mode -eq 'Upgrade' -and -not $taskState){throw 'No managed installation; use Install first'}
 $taskManifest=Get-Content -LiteralPath (Join-Path $taskPackageRoot 'manifest.json') -Raw | ConvertFrom-Json
-if($taskManifest.schema -ne 'mhwi-equipmentmorph-runtime-distribution-v1' -or @($taskManifest.files).Count -ne 3){throw 'Invalid distribution manifest'}
+if($taskManifest.schema -ne 'mhwi-equipmentmorph-runtime-distribution-v1' -or @($taskManifest.files).Count -notin @(3,4)){throw 'Invalid distribution manifest'}
+ValidatePaths $taskManifest.files
 $taskSeen=@{}
 foreach($taskEntry in $taskManifest.files){
     if($taskEntry.path -notin $taskAllowed -or $taskSeen.ContainsKey($taskEntry.path) -or $taskEntry.sha256 -notmatch '^[0-9a-f]{64}$'){throw 'Invalid package target'};$taskSeen[$taskEntry.path]=$true
@@ -122,6 +133,8 @@ foreach($taskEntry in $taskManifest.files){
         if((Hash $taskDestination) -notin $taskAccepted){throw 'Existing unmanaged file differs; no overwrite performed'}
     }
 }
+# An upgrade may add ControlCenter, but cannot silently abandon managed files.
+if($taskState){foreach($taskEntry in $taskState.files){if($taskEntry.path -notin @($taskManifest.files.path)){throw 'Package omits an installed component; use Rollback or Uninstall before downgrading'}}}
 $taskTemplate=Join-Path $taskPackageRoot 'runtime.ini';$taskTemplateHash=Hash $taskTemplate
 if($taskTemplateHash -ne $taskManifest.empty_config_sha256){throw 'Empty configuration differs'}
 New-Item -ItemType Directory -Path $taskTransactionRoot | Out-Null
@@ -131,6 +144,8 @@ $taskBefore=@();foreach($taskEntry in $taskManifest.files){
     if($taskExists){CopyManaged $taskDestination (Target $taskSavedRelative)}
     $taskBefore+=[ordered]@{path=$taskEntry.path;existed=$taskExists;backup=$(if($taskExists){$taskSavedRelative}else{$null});sha256=$(if($taskExists){Hash $taskDestination}else{$null})}
 }
+$taskOriginals=@($taskBefore)
+if($taskState){$taskOriginals=@($taskState.originals);foreach($taskEntry in $taskBefore){if($taskEntry.path -notin @($taskOriginals.path)){$taskOriginals+=,$taskEntry}}}
 $taskConfigCreated=-not (Test-Path -LiteralPath (Target $taskConfig));$taskConfigCopied=$false
 $taskUndo=[ordered]@{schema='mhwi-equipmentmorph-install-undo-v1';files=$taskBefore;previous=$taskState}
 $taskUndoRelative=$taskTransactionRelative+'/undo.json';WriteJson (Target $taskUndoRelative) $taskUndo
@@ -139,7 +154,7 @@ try{
     foreach($taskEntry in $taskManifest.files){$taskDestination=Target $taskEntry.path;CopyManaged (Join-Path $taskPackageRoot ('payload/'+$taskEntry.path)) $taskDestination;if((Hash $taskDestination) -ne $taskEntry.sha256){throw 'Installed payload differs'}}
     if($taskConfigCreated){CopyManaged $taskTemplate (Target $taskConfig);$taskConfigCopied=$true}
     $taskNewState=[ordered]@{schema='mhwi-equipmentmorph-install-state-v1';project_name='MHWI-EquipmentMorph';version=$taskManifest.version;game_directory=$taskGameRoot;
-        files=$taskManifest.files;originals=$(if($taskState){$taskState.originals}else{$taskBefore});undo=$taskUndoRelative;
+        files=$taskManifest.files;originals=$taskOriginals;undo=$taskUndoRelative;
         config_created=($taskConfigCreated -or ($taskState -and $taskState.config_created));empty_config_sha256=$(if($taskState){$taskState.empty_config_sha256}else{$taskTemplateHash})}
     WriteJson $taskStatePath $taskNewState
 }catch{

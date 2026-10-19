@@ -25,6 +25,8 @@ $taskJobs=@(
     @{Source='runtime/EquipmentMorphPerKeyCore/api.cpp';Name='fixture/MHWEquipmentMorphConfiguredPrototype';Dll=$true;Libs=@('kernel32.lib')},
     @{Source='runtime/EquipmentMorphControlBridge/pipe_tests.cpp';Name='ControlPipeTests';Libs=@('kernel32.lib')},
     @{Source='controls/MHWI-EquipmentMorph-ControlPanel/ui_tests.cpp';Name='ControlUiTests';Libs=@('kernel32.lib','user32.lib','gdi32.lib','comctl32.lib')}
+    @{Source='runtime/EquipmentMorphControlBridge/desktop_launch_tests.cpp';Name='DesktopLaunchTests';Libs=@('kernel32.lib')}
+    @{Source='controls/MHWI-EquipmentMorph-Desktop/native/integration_fixture.cpp';Name='DesktopIntegrationFixture';Gui=$true;Libs=@('kernel32.lib','user32.lib')}
 )
 foreach($taskJob in $taskJobs){
     $taskObject=Join-Path $taskOutput ($taskJob.Name+'.obj')
@@ -44,6 +46,7 @@ foreach($taskTest in @(
     @{Name='ControlSessionTests';Field='control_session';Pattern='PASS: (\d+) control-session checks'},
     @{Name='ControlPipeTests';Field='control_pipe';Pattern='PASS: (\d+) real-pipe checks'},
     @{Name='ControlUiTests';Field='control_ui';Pattern='PASS: (\d+) native UI checks'}
+    @{Name='DesktopLaunchTests';Field='desktop_launch';Pattern='PASS: (\d+) desktop-launch checks'}
 )){
     $taskLines=& (Join-Path $taskOutput ($taskTest.Name+'.exe'))
     if($LASTEXITCODE -ne 0){$taskLines|Write-Host;throw ('Check failed: '+$taskTest.Name)}

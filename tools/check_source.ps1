@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Python = 'python', [string]$Blender)
+param([string]$Python = 'python', [string]$Blender, [switch]$Desktop)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 function Run([string]$Program, [string[]]$Arguments) {
@@ -22,10 +22,18 @@ try {
         Run $Blender @('--background', '--factory-startup', '--python-exit-code', '1', '--python', 'tools/test_mhwi_equipmentmorph_direct_blender.py')
         Run $Blender @('--background', '--factory-startup', '--python-exit-code', '1', '--python', 'tools/test_key_selection_preview.py')
     }
-    Run $Python @('tools/package_source.py')
-    & (Join-Path $PSScriptRoot 'test_mhwi_equipmentmorph_candidate_installation.ps1')
+    if($Desktop){
+        & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_desktop.ps1') -CheckOnly
+        & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_desktop.ps1') -SkipInstall
+        Run $Python @('tools/package_source.py','--desktop')
+        & (Join-Path $PSScriptRoot 'test_mhwi_equipmentmorph_candidate_installation.ps1') -PackageDirectory (Join-Path $taskRoot '.build/packages/MHWI-EquipmentMorph-0.5.1-dev12-controlcenter-dev1')
+    }else{
+        Run $Python @('tools/package_source.py')
+        & (Join-Path $PSScriptRoot 'test_mhwi_equipmentmorph_candidate_installation.ps1')
+    }
     $taskInstallation = Get-Content -LiteralPath '.build/current-validation/installation-checks.json' -Raw | ConvertFrom-Json
-    if ($taskInstallation.passed -ne 26) { throw 'Installer checks incomplete' }
+    $taskExpected=if($Desktop){39}else{29}
+    if ($taskInstallation.passed -ne $taskExpected) { throw 'Installer checks incomplete' }
     Write-Output 'PASS: source build, native/authoring/SDK/control checks, packaging and installer fixtures'
     if (-not $Blender) { Write-Output 'Blender paired export checks skipped; supply -Blender to include them.' }
 } finally { Pop-Location }
