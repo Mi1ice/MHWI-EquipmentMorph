@@ -1,4 +1,4 @@
-// Optional in-process GUI. This stage never opens a morph control source.
+// Optional in-process GUI; the core remains an independent API provider.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -9,6 +9,7 @@
 #include <backends/imgui_impl_dx12.h>
 #include "Input.hpp"
 #include "QueueDiscovery.hpp"
+#include "View.hpp"
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -18,6 +19,7 @@ void Require(HRESULT result){if(FAILED(result))throw std::runtime_error("DX12 re
 struct Renderer {
     struct Frame {ComPtr<ID3D12CommandAllocator> allocator;UINT64 fence=0;};
     Input& input;
+    Control& control;View view;
     ComPtr<ID3D12Device> device;
     ComPtr<ID3D12CommandQueue> queue;
     ComPtr<ID3D12DescriptorHeap> rtvs,srvs;
@@ -27,8 +29,8 @@ struct Renderer {
     std::array<Frame,8> frames;
     std::array<bool,64> descriptors{};
     UINT count=0,rtvStep=0,srvStep=0;UINT64 stamp=0,sequence=0;HANDLE completed=nullptr;
-    bool win32=false,dx12=false;char keyboardTest[96]{};
-    explicit Renderer(Input& value):input(value){}
+    bool win32=false,dx12=false;
+    Renderer(Input& value,Control& controller):input(value),control(controller){}
     bool Drain(){
         if(!fence||!stamp||fence->GetCompletedValue()>=stamp)return true;
         if(FAILED(fence->SetEventOnCompletion(stamp,completed)))return FAILED(device->GetDeviceRemovedReason());
@@ -86,14 +88,10 @@ struct Renderer {
         auto& frame=frames[sequence%count];if(frame.fence&&fence->GetCompletedValue()<frame.fence)return false;
         const auto index=swap->GetCurrentBackBufferIndex();if(index>=count)throw std::runtime_error("Invalid backbuffer index");
         ImGui::SetCurrentContext(input.context);ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
-        ImGui::SetNextWindowSize(ImVec2(560,230),ImGuiCond_FirstUseEver);bool opened=true;
+        ImGui::SetNextWindowSize(ImVec2(860,440),ImGuiCond_FirstUseEver);bool opened=true;
         if(ImGui::Begin("MHWI EquipmentMorph",&opened,ImGuiWindowFlags_NoCollapse)){
-            ImGui::TextUnformatted("游戏内窗口与输入验证");
-            ImGui::TextUnformatted("Ctrl + Shift + M：显示 / 隐藏");
-            ImGui::TextUnformatted("装备与形态键列表将在下一阶段接入。");
-            ImGui::InputText("输入测试",keyboardTest,sizeof(keyboardTest));
-            ImGui::TextUnformatted("此阶段不读取或修改形态键权重。");
-        }ImGui::End();if(!opened)input.RequestClose();ImGui::Render();
+            view.Draw(control);
+        }ImGui::End();if(!opened){control.Post(mhmcontrol::Action::Release);input.RequestClose();}ImGui::Render();
         Require(frame.allocator->Reset());Require(list->Reset(frame.allocator.Get(),nullptr));
         D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition.pResource=buffers[index].Get();
         barrier.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_PRESENT;barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -105,13 +103,13 @@ struct Renderer {
 };
 struct Association {ComPtr<IUnknown> identity;ComPtr<ID3D12CommandQueue> queue;HWND window=nullptr;};
 struct State {
-    Input input;Renderer renderer{input};std::array<safetyhook::InlineHook,9> hooks;QueueDiscovery discovery;
+    Input input;Control control;Renderer renderer{input,control};std::array<safetyhook::InlineHook,9> hooks;QueueDiscovery discovery;
     std::array<Association,8> associations{};size_t next=0;std::atomic<IDXGISwapChain*> active=nullptr;ComPtr<ID3D12CommandQueue> queue;
     std::atomic_bool queueReady=false;std::atomic_uintptr_t queueAddress=0;
     std::atomic<const char*> bindingRoute="none";std::atomic_uint64_t creations=0,unmatchedPresents=0;
     std::atomic_int boot=0;std::atomic<const char*> error="none";std::atomic_bool resizing=false;
     std::atomic_uint64_t presents=0,drawn=0,busy=0,resizes=0;
-    void Disable(const char* reason){error=reason;input.available=false;input.RequestClose();}
+    void Disable(const char* reason){error=reason;input.available=false;control.Post(mhmcontrol::Action::Release);input.RequestClose();}
 };
 State* state=nullptr;
 std::atomic_int publishedBoot=0;
@@ -242,11 +240,24 @@ DWORD WINAPI Worker(void* value){
     const auto folder=path.parent_path()/L"nativePC"/L"plugins"/L"MHWEquipmentMorph"/L"logs";
     std::error_code error;std::filesystem::create_directories(folder,error);
     std::ofstream log(folder/(L"imgui-"+std::to_wstring(GetCurrentProcessId())+L".ndjson"));
-    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":2,\"state\":\"starting\"}\n";log.flush();
+    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":3,\"state\":\"starting\"}\n";log.flush();
     try{state->boot=Install(static_cast<HINSTANCE>(value))?1:-1;if(state->boot<0)state->Disable("hook_install_failed");}catch(...){state->boot=-1;state->Disable("bootstrap_failed");}
     publishedBoot.store(state->boot.load());
+    uint64_t nextConnect=0,nextLog=0;
     for(;;){
-        log<<"{\"event\":\"imgui_status\",\"stage\":2,\"tick\":"<<GetTickCount64()<<",\"boot\":"<<state->boot.load()
+        const auto now=GetTickCount64();
+        if(!state->control.Connected()&&now>=nextConnect){
+            nextConnect=now+500;HMODULE host=nullptr;
+            if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN,L"MHWEquipmentMorphConfiguredPrototype.dll",&host)){
+                using Getter=MhmResult(MHM_CALL*)(uint32_t,uint32_t,MhmApi*);Getter getter=nullptr;
+                const auto address=GetProcAddress(host,"MhwMorphGetApi");std::memcpy(&getter,&address,sizeof(getter));MhmApi api{};
+                if(getter&&getter(MHM_API_VERSION,sizeof(api),&api)==MHM_OK)state->control.Connect(api);
+            }
+        }
+        try{state->control.Service(now);}catch(...){state->Disable("control_failed");}
+        if(now>=nextLog){
+        nextLog=now+2000;const auto controls=state->control.Snapshot();
+        log<<"{\"event\":\"imgui_status\",\"stage\":3,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
            <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
            <<",\"captured_creations\":"<<state->creations.load()<<",\"unmatched_presents\":"<<state->unmatchedPresents.load()
@@ -256,7 +267,10 @@ DWORD WINAPI Worker(void* value){
            <<",\"resizes\":"<<state->resizes.load()<<",\"toggles\":"<<state->input.toggles.load()<<",\"blocked_messages\":"<<state->input.blockedMessages.load()
            <<",\"hotkey_messages\":"<<state->input.hotkeyMessages.load()<<",\"last_hotkey_modifiers\":"<<state->input.lastHotkeyModifiers.load()
            <<",\"hotkey_registered\":"<<(state->input.hotkeyRegistered.load()?"true":"false")<<",\"hotkey_error\":"<<state->input.hotkeyError.load()
-           <<",\"blocked_polls\":"<<state->input.blockedPolls.load()<<"}\n";log.flush();Sleep(2000);
+           <<",\"blocked_polls\":"<<state->input.blockedPolls.load()
+           <<",\"api_connected\":"<<(controls->connected?"true":"false")<<",\"control_ready\":"<<(controls->ready?"true":"false")
+           <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan<<"}\n";log.flush();
+        }Sleep(state->input.visible.load()?16:100);
     }
 }
 }

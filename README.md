@@ -8,9 +8,9 @@ Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插�
 
 ## 功能
 
-2026-10-19 已暂停 [Tauri 控制窗口候选](controls/MHWI-EquipmentMorph-Desktop/README.md)，并清理旧部署。[可选 Dear ImGui 游戏内面板](controls/MHWI-EquipmentMorph-ImGui/README.md)已实现第二阶段的空窗口、Ctrl＋Shift＋M 显隐及键盘／鼠标捕获，通过 DX12 软件隔离验证，等待实机确认。装备选择与形态键四列列表将在下一阶段接入。dev12 核心、配置及装备数据保留，Tauri 源码与历史候选保留供追溯。
+2026-10-19 已暂停 [Tauri 控制窗口候选](controls/MHWI-EquipmentMorph-Desktop/README.md)，并清理旧部署。[可选 Dear ImGui 游戏内面板](controls/MHWI-EquipmentMorph-ImGui/README.md)的第二阶段窗口、快捷键与输入已通过用户实机测试。第三阶段已接入装备下拉及“形态键名／权重滑块／权重输入框／当前权重值”四列，22 项无窗口控制回归通过，等待用户进行界面与实机验收。隐藏保留权重，× 释放本面板控制。dev12 核心、配置及装备数据保留，Tauri 源码与历史候选保留供追溯。
 
-2026-10-20 已复现初版在交换链创建后加载时无法呼出的故障，并补充已有窗口与后台缓冲提交队列的识别，以及输入法环境的系统快捷键路径。先／后加载、多队列干扰、命令重置与缩放回归通过，修复候选待用户实机测试。
+2026-10-20 已复现并修复初版在交换链创建后加载时无法呼出的故障，修复版已获用户确认。此后的界面测试交由用户完成；助手只执行构建和非界面逻辑验证。
 
 - 从 Blender 的 MOD3 集合联合导出模型与形态键数据，自动保留顶点对应关系。
 - 通过本地装备目录选择性别、套装和部位，自动确定资源路径；也支持手动完整路径。装备目录随插件提供，来源与重建方法，见 [装备目录说明](docs/EQUIPMENT_CATALOG.md)。

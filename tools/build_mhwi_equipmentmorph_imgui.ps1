@@ -33,12 +33,22 @@ if($LASTEXITCODE -ne 0){throw 'ImGui fixture compilation failed'}
 $taskArguments=@('/NOLOGO','/SUBSYSTEM:WINDOWS','/MACHINE:X64','/Brepro',('/OUT:"'+(Join-Path $taskOutput 'EquipmentMorphImGuiFixture.exe')+'"'),('"'+(Join-Path $taskOutput 'fixture.obj')+'"'))+@($taskLibraries|ForEach-Object{'/LIBPATH:"'+$_+'"'})+@('kernel32.lib','user32.lib','d3d12.lib','dxgi.lib','dxguid.lib','dinput8.lib')
 $taskResponse=Join-Path $taskOutput 'fixture-link.rsp';[IO.File]::WriteAllLines($taskResponse,$taskArguments,[Text.Encoding]::Unicode)
 & $taskLinker ('@'+$taskResponse);if($LASTEXITCODE -ne 0){throw 'ImGui fixture link failed'}
+& $taskCompiler @taskCommon '/W4' '/WX' '/fp:strict' '/c' (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui/control_tests.cpp') ('/Fo'+(Join-Path $taskOutput 'control-tests.obj'))
+if($LASTEXITCODE -ne 0){throw 'ImGui control tests compilation failed'}
+$taskArguments=@('/NOLOGO','/SUBSYSTEM:CONSOLE','/MACHINE:X64','/Brepro',('/OUT:"'+(Join-Path $taskOutput 'ImGuiControlTests.exe')+'"'),('"'+(Join-Path $taskOutput 'control-tests.obj')+'"'))+@($taskLibraries|ForEach-Object{'/LIBPATH:"'+$_+'"'})+@('kernel32.lib')
+$taskResponse=Join-Path $taskOutput 'control-tests-link.rsp';[IO.File]::WriteAllLines($taskResponse,$taskArguments,[Text.Encoding]::Unicode)
+& $taskLinker ('@'+$taskResponse);if($LASTEXITCODE -ne 0){throw 'ImGui control tests link failed'}
+$taskChecks=& (Join-Path $taskOutput ImGuiControlTests.exe)
+if($LASTEXITCODE -ne 0){$taskChecks|Write-Output;throw 'ImGui control tests failed'}
+$taskChecks|Write-Output
+if(($taskChecks -join "`n") -notmatch 'PASS: (\d+) ImGui control checks'){throw 'Missing control test summary'}
+$taskPassed=[int]$Matches[1]
 Copy-Item -LiteralPath (Join-Path $taskRoot 'research/imgui-v1.93.0/LICENSE.txt') -Destination (Join-Path $taskOutput 'LICENSE.ImGui.txt') -Force
 foreach($taskLicense in @('LICENSE.SafetyHook','LICENSE.Zydis')){Copy-Item -LiteralPath (Join-Path $taskRoot ('research/safetyhook-local-v0.7.0/'+$taskLicense)) -Destination $taskOutput -Force}
 Copy-Item -LiteralPath (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui/README.md') -Destination $taskOutput -Force
-$taskManifest=[ordered]@{schema='mhwi-equipmentmorph-imgui-candidate-v1';stage=2;architecture='windows-x64';renderer='dx12';formal_acceptance_complete=$false;morph_api_connected=$false;imgui_commit=$taskUpstream.commit;files=@()}
-foreach($taskFile in @('MHWEquipmentMorphImGui.dll','EquipmentMorphImGuiFixture.exe','README.md','LICENSE.ImGui.txt','LICENSE.SafetyHook','LICENSE.Zydis')){
+$taskManifest=[ordered]@{schema='mhwi-equipmentmorph-imgui-candidate-v1';stage=3;architecture='windows-x64';renderer='dx12';formal_acceptance_complete=$false;morph_api_connected=$true;control_checks=$taskPassed;ui_testing='user-operated';imgui_commit=$taskUpstream.commit;files=@()}
+foreach($taskFile in @('MHWEquipmentMorphImGui.dll','EquipmentMorphImGuiFixture.exe','ImGuiControlTests.exe','README.md','LICENSE.ImGui.txt','LICENSE.SafetyHook','LICENSE.Zydis')){
     $taskManifest.files+=@{path=$taskFile;sha256=(Get-FileHash -LiteralPath (Join-Path $taskOutput $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()}
 }
 [IO.File]::WriteAllText((Join-Path $taskOutput 'manifest.json'),($taskManifest|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
-Write-Output ('PASS: optional stage-2 ImGui DLL built at '+$taskOutput)
+Write-Output ('PASS: optional stage-3 ImGui DLL built at '+$taskOutput+'; UI tests left to user')

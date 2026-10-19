@@ -33,7 +33,7 @@ python -m venv .venv
 
 可选 Dear ImGui 游戏内面板使用 `./tools/build_mhwi_equipmentmorph_imgui.ps1` 独立构建，输出 `.build/current-validation/imgui/`，包括面板 DLL、软件测试程序、开发候选清单与许可证。它不重建／安装核心，也不需要 Tauri 工具链；验证范围和实机步骤见[面板说明](../controls/MHWI-EquipmentMorph-ImGui/README.md)。
 
-构建后执行 `./tools/test_mhwi_equipmentmorph_imgui.ps1`，验证交换链创建前／后两种加载顺序、实际后台缓冲队列关联、无关队列干扰和缩放后重识别。输出保留在新的 `.build/imgui-binding-tests-*` 目录，脚本不会安装或启动游戏。
+ImGui 构建入口只自动执行无窗口的 `ImGuiControlTests.exe`，当前为 22 项控制逻辑回归。图形窗口程序仅编译，不启动。用户指定后续界面／实机测试由其手动完成；助手不执行会创建窗口的历史 `test_mhwi_equipmentmorph_imgui.ps1`。历史先／后加载和队列回归的记录仍保留。
 
 Tauri 控制窗口候选另需 Node.js 22.12+、Rust stable MSVC 和 WebView2。使用 `./tools/check_source.ps1 -Desktop` 可追加前后端构建、独立四文件候选包与 39 项模拟安装检查，默认入口仍构建原三文件包。浏览器交互及软件联动检查的操作见[控制中心说明](../controls/MHWI-EquipmentMorph-Desktop/README.md)。
 
