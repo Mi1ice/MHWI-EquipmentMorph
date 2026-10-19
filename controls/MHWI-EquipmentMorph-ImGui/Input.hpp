@@ -21,7 +21,10 @@ struct Input {
     ImGuiContext* context=nullptr;
     std::atomic<HWND> window=nullptr;std::atomic<WNDPROC> previous=nullptr;
     std::atomic_bool visible=false,available=false,releaseKeys=false,releaseMouse=false;
-    std::atomic_uint64_t toggles=0,blockedMessages=0,blockedPolls=0;
+    std::atomic_uint64_t toggles=0,blockedMessages=0,blockedPolls=0,hotkeyMessages=0;
+    std::atomic_uint lastHotkeyModifiers=0;
+    std::atomic_bool hotkeyRegistered=false;std::atomic_uint hotkeyError=0;
+    static constexpr int hotkeyId=0x4d48;
     UINT message=RegisterWindowMessageW(L"MHWI EquipmentMorph ImGui visibility v1");
     std::array<safetyhook::InlineHook,12> hooks;
     int cursorAdjustments=0;RECT clip{};bool clipNull=false;POINT anchor{};
@@ -29,7 +32,7 @@ struct Input {
     enum {Async,Key,Keyboard,Warp,Clip,CursorCount,CursorShape,KeyboardState,KeyboardData,MouseState,MouseData,RawData};
     bool Capturing()const{return available.load()&&visible.load()&&GetForegroundWindow()==window;}
     SHORT Physical(int key)const{return hooks[Async].original<decltype(&GetAsyncKeyState)>()(key);}
-    SHORT MessageKey(int key)const{return hooks[Key].original<decltype(&GetKeyState)>()(key);}
+    SHORT MessageKey(int key)const{OwnCalls own;return hooks[Key].original<decltype(&GetKeyState)>()(key);}
     bool Neutral(bool mouse)const{
         for(int key=1;key<256;key++){
             const bool button=key==VK_LBUTTON||key==VK_RBUTTON||key==VK_MBUTTON||key==VK_XBUTTON1||key==VK_XBUTTON2;
@@ -61,6 +64,7 @@ struct Input {
             hooks[Clip].original<decltype(&ClipCursor)>()(GetForegroundWindow()==window&&!clipNull?&clip:nullptr);
         }
         visible=shown;toggles++;
+        if(const auto ime=ImmGetContext(window)){ImmNotifyIME(ime,NI_COMPOSITIONSTR,CPS_CANCEL,0);ImmReleaseContext(window,ime);}
         if(context){ImGui::SetCurrentContext(context);ImGui::GetIO().ClearInputKeys();ImGui::GetIO().ClearEventsQueue();}
     }
     bool Attach(HWND target){
@@ -69,18 +73,34 @@ struct Input {
         previous=reinterpret_cast<WNDPROC>(GetWindowLongPtrW(target,GWLP_WNDPROC));
         window=target;SetLastError(0);
         previous=reinterpret_cast<WNDPROC>(SetWindowLongPtrW(window,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(&Procedure)));
-        if(!previous){window=nullptr;return false;}return true;
+        if(!previous){window=nullptr;return false;}PostMessageW(target,message,3,0);return true;
+    }
+    void SynchronizeHotkey(){
+        // Register/unregister on the HWND's thread, and only while the game
+        // has focus. WM_HOTKEY is recognized before IME translation.
+        if(GetForegroundWindow()==window){
+            if(!hotkeyRegistered){hotkeyRegistered=RegisterHotKey(window,hotkeyId,MOD_CONTROL|MOD_SHIFT|MOD_NOREPEAT,'M')!=FALSE;hotkeyError=hotkeyRegistered?0:GetLastError();}
+        }else if(hotkeyRegistered.exchange(false))UnregisterHotKey(window,hotkeyId);
     }
     void RequestClose(){if(window)PostMessageW(window,message,0,0);}
     static LRESULT CALLBACK Procedure(HWND w,UINT m,WPARAM a,LPARAM b){
         auto& self=*instance;
-        if(m==self.message){self.Visibility(a==2?!self.visible.load():a!=0);return 0;}
-        const auto virtualKey=a==VK_PROCESSKEY?ImmGetVirtualKey(w):a;
-        if((m==WM_KEYDOWN||m==WM_SYSKEYDOWN)&&virtualKey=='M'&&!(b&(1ll<<30))
-            &&(self.MessageKey(VK_CONTROL)&0x8000)&&(self.MessageKey(VK_SHIFT)&0x8000)){
-            self.Visibility(!self.visible.load());return 0;
+        if(m==self.message){if(a==3)self.SynchronizeHotkey();else self.Visibility(a==2?!self.visible.load():a!=0);return 0;}
+        if(m==WM_SETFOCUS||m==WM_ACTIVATE)self.SynchronizeHotkey();
+        if(m==WM_HOTKEY&&a==hotkeyId&&self.hotkeyRegistered){
+            self.hotkeyMessages++;self.lastHotkeyModifiers=3;self.Visibility(!self.visible.load());return 0;
         }
-        if(m==WM_KILLFOCUS||m==WM_CANCELMODE||(m==WM_SIZE&&a==SIZE_MINIMIZED))self.Visibility(false);
+        // The host has already called TranslateMessage: ImmGetVirtualKey may
+        // now return VK_PROCESSKEY. The original scan code is still available.
+        const auto virtualKey=a==VK_PROCESSKEY?MapVirtualKeyExW((static_cast<ULONG_PTR>(b)>>16)&0xff,MAPVK_VSC_TO_VK,GetKeyboardLayout(0)):a;
+        if(!self.hotkeyRegistered&&(m==WM_KEYDOWN||m==WM_SYSKEYDOWN)&&virtualKey=='M'&&!(b&(1ll<<30))){
+            const auto modifiers=((self.MessageKey(VK_CONTROL)&0x8000)?1u:0u)|((self.MessageKey(VK_SHIFT)&0x8000)?2u:0u);
+            self.hotkeyMessages++;self.lastHotkeyModifiers=modifiers;
+            if(modifiers==3){self.Visibility(!self.visible.load());return 0;}
+        }
+        if(m==WM_KILLFOCUS||m==WM_CANCELMODE||(m==WM_SIZE&&a==SIZE_MINIMIZED)){
+            self.Visibility(false);if(m!=WM_CANCELMODE&&self.hotkeyRegistered.exchange(false))UnregisterHotKey(w,hotkeyId);
+        }
         if(self.visible.load()){
             std::scoped_lock lock(self.gui);OwnCalls own;
             if(self.context){ImGui::SetCurrentContext(self.context);ImGui_ImplWin32_WndProcHandler(w,m,a,b);}
@@ -94,7 +114,7 @@ struct Input {
             return 0;
         }
         if((keyboard&&self.BlockPoll(false))||(mouse&&self.BlockPoll(true)))return 0;
-        if(m==WM_NCDESTROY){self.Visibility(false);const auto result=CallWindowProcW(self.previous,w,m,a,b);self.window=nullptr;return result;}
+        if(m==WM_NCDESTROY){self.Visibility(false);if(self.hotkeyRegistered.exchange(false))UnregisterHotKey(w,hotkeyId);const auto result=CallWindowProcW(self.previous,w,m,a,b);self.window=nullptr;return result;}
         return CallWindowProcW(self.previous,w,m,a,b);
     }
     static SHORT WINAPI AsyncKey(int key){auto& s=*instance;const auto value=s.hooks[Async].original<decltype(&GetAsyncKeyState)>()(key);

@@ -8,6 +8,7 @@
 #include <imgui.h>
 #include <backends/imgui_impl_dx12.h>
 #include "Input.hpp"
+#include "QueueDiscovery.hpp"
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -102,28 +103,45 @@ struct Renderer {
         ID3D12CommandList* submitted[]={list.Get()};queue->ExecuteCommandLists(1,submitted);Require(queue->Signal(fence.Get(),++stamp));frame.fence=stamp;sequence++;return true;
     }
 };
-struct Association {IDXGISwapChain* swap=nullptr;ComPtr<ID3D12CommandQueue> queue;HWND window=nullptr;};
+struct Association {ComPtr<IUnknown> identity;ComPtr<ID3D12CommandQueue> queue;HWND window=nullptr;};
 struct State {
-    Input input;Renderer renderer{input};std::array<safetyhook::InlineHook,6> hooks;
-    std::array<Association,8> associations{};size_t next=0;IDXGISwapChain* active=nullptr;ComPtr<ID3D12CommandQueue> queue;
+    Input input;Renderer renderer{input};std::array<safetyhook::InlineHook,9> hooks;QueueDiscovery discovery;
+    std::array<Association,8> associations{};size_t next=0;std::atomic<IDXGISwapChain*> active=nullptr;ComPtr<ID3D12CommandQueue> queue;
+    std::atomic_bool queueReady=false;std::atomic_uintptr_t queueAddress=0;
+    std::atomic<const char*> bindingRoute="none";std::atomic_uint64_t creations=0,unmatchedPresents=0;
     std::atomic_int boot=0;std::atomic<const char*> error="none";std::atomic_bool resizing=false;
     std::atomic_uint64_t presents=0,drawn=0,busy=0,resizes=0;
     void Disable(const char* reason){error=reason;input.available=false;input.RequestClose();}
 };
 State* state=nullptr;
 std::atomic_int publishedBoot=0;
-enum {CreateLegacy,CreateWindow,Present,Present1,Resize,Resize1};
+enum {CreateLegacy,CreateWindow,Present,Present1,Resize,Resize1,Execute,Barriers,ResetList};
 using CreateFn=HRESULT(STDMETHODCALLTYPE*)(IDXGIFactory*,IUnknown*,DXGI_SWAP_CHAIN_DESC*,IDXGISwapChain**);
 using CreateWindowFn=HRESULT(STDMETHODCALLTYPE*)(IDXGIFactory2*,IUnknown*,HWND,const DXGI_SWAP_CHAIN_DESC1*,const DXGI_SWAP_CHAIN_FULLSCREEN_DESC*,IDXGIOutput*,IDXGISwapChain1**);
 using PresentFn=HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*,UINT,UINT);
 using Present1Fn=HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain1*,UINT,UINT,const DXGI_PRESENT_PARAMETERS*);
 using ResizeFn=HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*,UINT,UINT,UINT,DXGI_FORMAT,UINT);
 using Resize1Fn=HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain3*,UINT,UINT,UINT,DXGI_FORMAT,UINT,const UINT*,IUnknown* const*);
+using ExecuteFn=void(STDMETHODCALLTYPE*)(ID3D12CommandQueue*,UINT,ID3D12CommandList* const*);
+using BarriersFn=void(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,UINT,const D3D12_RESOURCE_BARRIER*);
+using ResetListFn=HRESULT(STDMETHODCALLTYPE*)(ID3D12GraphicsCommandList*,ID3D12CommandAllocator*,ID3D12PipelineState*);
+void STDMETHODCALLTYPE Submit(ID3D12CommandQueue* queue,UINT count,ID3D12CommandList* const* lists){
+    state->hooks[Execute].original<ExecuteFn>()(queue,count,lists);
+    try{state->discovery.Submitted(queue,count,lists);}catch(...){state->Disable("queue_discovery_failed");}
+}
+void STDMETHODCALLTYPE Transition(ID3D12GraphicsCommandList* list,UINT count,const D3D12_RESOURCE_BARRIER* barriers){
+    try{state->discovery.Barriers(list,count,barriers);}catch(...){state->Disable("queue_discovery_failed");}
+    state->hooks[Barriers].original<BarriersFn>()(list,count,barriers);
+}
+HRESULT STDMETHODCALLTYPE ResetCommands(ID3D12GraphicsCommandList* list,ID3D12CommandAllocator* allocator,ID3D12PipelineState* pipeline){
+    state->discovery.Reset(list);return state->hooks[ResetList].original<ResetListFn>()(list,allocator,pipeline);
+}
 void Remember(IUnknown* device,IDXGISwapChain* swap){
     if(!swap||!device)return;ComPtr<ID3D12CommandQueue> queue;if(FAILED(device->QueryInterface(IID_PPV_ARGS(&queue)))||queue->GetDesc().Type!=D3D12_COMMAND_LIST_TYPE_DIRECT)return;
     DXGI_SWAP_CHAIN_DESC description{};if(FAILED(swap->GetDesc(&description))||!description.OutputWindow)return;
     DWORD pid=0;GetWindowThreadProcessId(description.OutputWindow,&pid);if(pid!=GetCurrentProcessId())return;
-    std::scoped_lock lock(state->input.gui);auto& slot=state->associations[state->next++%state->associations.size()];slot={swap,queue,description.OutputWindow};
+    ComPtr<IUnknown> identity;if(FAILED(swap->QueryInterface(IID_PPV_ARGS(&identity))))return;
+    std::scoped_lock lock(state->input.gui);auto& slot=state->associations[state->next++%state->associations.size()];slot={identity,queue,description.OutputWindow};state->creations++;
 }
 HRESULT STDMETHODCALLTYPE CreateSwap(IDXGIFactory* factory,IUnknown* device,DXGI_SWAP_CHAIN_DESC* description,IDXGISwapChain** swap){
     const auto result=state->hooks[CreateLegacy].original<CreateFn>()(factory,device,description,swap);if(SUCCEEDED(result)&&swap)try{Remember(device,*swap);}catch(...){state->Disable("swapchain_capture_failed");}return result;
@@ -134,16 +152,28 @@ HRESULT STDMETHODCALLTYPE CreateWindowSwap(IDXGIFactory2* factory,IUnknown* devi
 void Render(IDXGISwapChain* swap,UINT flags){
     state->presents++;
     if((flags&DXGI_PRESENT_TEST)||!state->input.available.load()||state->resizing.load())return;
-    if(swap==state->active&&!state->input.visible.load())return; // Hidden: no GUI frame or GPU submission.
+    if(swap==state->active&&state->queueReady.load()&&!state->input.visible.load())return; // Hidden: no GUI frame or GPU submission.
     std::scoped_lock lock(state->input.gui);
     if(swap!=state->active){
-        for(const auto& binding:state->associations)if(binding.swap==swap&&IsWindowVisible(binding.window)){
-            RECT bounds{};GetClientRect(binding.window,&bounds);if(bounds.right<128||bounds.bottom<128)return;
-            if(!state->renderer.Reset()){state->Disable("gpu_drain_timeout");return;}
-            if(!state->input.Attach(binding.window)){state->Disable("window_subclass_failed");return;}
-            state->active=swap;state->queue=binding.queue;break;
-        }
+        DXGI_SWAP_CHAIN_DESC description{};if(FAILED(swap->GetDesc(&description))||!IsWindowVisible(description.OutputWindow))return;
+        DWORD pid=0;GetWindowThreadProcessId(description.OutputWindow,&pid);if(pid!=GetCurrentProcessId())return;
+        RECT bounds{};GetClientRect(description.OutputWindow,&bounds);if(bounds.right<128||bounds.bottom<128)return;
+        if(state->input.window&&state->input.window!=description.OutputWindow)return;
+        ComPtr<ID3D12Device> device;if(FAILED(swap->GetDevice(IID_PPV_ARGS(&device))))return;
+        ComPtr<IUnknown> identity;Require(swap->QueryInterface(IID_PPV_ARGS(&identity)));
+        if(!state->renderer.Reset()){state->Disable("gpu_drain_timeout");return;}
+        state->discovery.Clear();state->queue.Reset();state->queueReady=false;state->queueAddress=0;
+        for(const auto& binding:state->associations)if(binding.identity.Get()==identity.Get()){state->queue=binding.queue;break;}
+        if(!state->input.Attach(description.OutputWindow)){state->Disable("window_subclass_failed");return;}
+        state->active=swap;state->bindingRoute=state->queue?"creation":"waiting_for_backbuffer_submission";
+        if(!state->queue)state->unmatchedPresents++;
     }
+    if(!state->queue){
+        state->queue=state->discovery.Take();
+        if(state->queue)state->bindingRoute="backbuffer_submission";
+        else{if(!state->discovery.Begin(swap))state->Disable("unsupported_backbuffer_discovery");return;}
+    }
+    state->queueAddress=reinterpret_cast<uintptr_t>(state->queue.Get());state->queueReady=true;
     if(swap!=state->active||!state->input.Capturing())return;
     ComPtr<IDXGISwapChain3> modern;Require(swap->QueryInterface(IID_PPV_ARGS(&modern)));
     if(state->renderer.Draw(modern.Get(),state->queue.Get(),state->input.window))state->drawn++;else state->busy++;
@@ -165,7 +195,12 @@ inline thread_local bool resizing=false;
 struct ResizeScope{bool outer=!resizing;ResizeScope(){resizing=true;state->resizing=true;}~ResizeScope(){if(outer){resizing=false;state->resizing=false;}}};
 bool BeforeResize(IDXGISwapChain* swap){
     std::scoped_lock lock(state->input.gui);
-    if(swap==state->active){if(!state->renderer.Reset()){state->Disable("resize_gpu_timeout");return false;}state->resizes++;}return true;
+    if(swap==state->active){
+        if(!state->renderer.Reset()){state->Disable("resize_gpu_timeout");return false;}
+        state->discovery.Clear();
+        if(std::strcmp(state->bindingRoute.load(),"creation")){state->queue.Reset();state->queueReady=false;state->queueAddress=0;state->bindingRoute="waiting_for_backbuffer_submission";}
+        state->resizes++;
+    }return true;
 }
 HRESULT STDMETHODCALLTYPE ChangeSize(IDXGISwapChain* swap,UINT count,UINT width,UINT height,DXGI_FORMAT format,UINT flags){
     ResizeScope scope;try{if(!BeforeResize(swap))return DXGI_ERROR_WAS_STILL_DRAWING;}catch(...){state->Disable("resize_failed");return DXGI_ERROR_WAS_STILL_DRAWING;}
@@ -184,12 +219,14 @@ bool Install(HINSTANCE module){
     ComPtr<ID3D12Device> device;auto hr=D3D12CreateDevice(nullptr,D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device));
     if(FAILED(hr)){ComPtr<IDXGIAdapter> warp;Require(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)));Require(D3D12CreateDevice(warp.Get(),D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)));}
     D3D12_COMMAND_QUEUE_DESC queueDescription{};queueDescription.Type=D3D12_COMMAND_LIST_TYPE_DIRECT;ComPtr<ID3D12CommandQueue> queue;Require(device->CreateCommandQueue(&queueDescription,IID_PPV_ARGS(&queue)));
+    ComPtr<ID3D12CommandAllocator> allocator;Require(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&allocator)));
+    ComPtr<ID3D12GraphicsCommandList> list;Require(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,allocator.Get(),nullptr,IID_PPV_ARGS(&list)));Require(list->Close());
     DXGI_SWAP_CHAIN_DESC1 description{};description.Width=16;description.Height=16;description.Format=DXGI_FORMAT_R8G8B8A8_UNORM;description.SampleDesc.Count=1;
     description.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;description.BufferCount=2;description.SwapEffect=DXGI_SWAP_EFFECT_FLIP_DISCARD;
     ComPtr<IDXGISwapChain1> swap;Require(factory->CreateSwapChainForHwnd(queue.Get(),window,&description,nullptr,nullptr,&swap));ComPtr<IDXGISwapChain3> modern;Require(swap.As(&modern));
-    auto fv=*reinterpret_cast<void***>(factory.Get()),sv=*reinterpret_cast<void***>(modern.Get());
-    std::array<void*,6> targets={fv[10],fv[15],sv[8],sv[22],sv[13],sv[39]};
-    std::array<void*,6> callbacks={reinterpret_cast<void*>(&CreateSwap),reinterpret_cast<void*>(&CreateWindowSwap),reinterpret_cast<void*>(&ShowFrame),reinterpret_cast<void*>(&ShowFrame1),reinterpret_cast<void*>(&ChangeSize),reinterpret_cast<void*>(&ChangeSize1)};
+    auto fv=*reinterpret_cast<void***>(factory.Get()),sv=*reinterpret_cast<void***>(modern.Get()),qv=*reinterpret_cast<void***>(queue.Get()),lv=*reinterpret_cast<void***>(list.Get());
+    std::array<void*,9> targets={fv[10],fv[15],sv[8],sv[22],sv[13],sv[39],qv[10],lv[26],lv[10]};
+    std::array<void*,9> callbacks={reinterpret_cast<void*>(&CreateSwap),reinterpret_cast<void*>(&CreateWindowSwap),reinterpret_cast<void*>(&ShowFrame),reinterpret_cast<void*>(&ShowFrame1),reinterpret_cast<void*>(&ChangeSize),reinterpret_cast<void*>(&ChangeSize1),reinterpret_cast<void*>(&Submit),reinterpret_cast<void*>(&Transition),reinterpret_cast<void*>(&ResetCommands)};
     for(size_t i=0;i<targets.size();i++){
         auto hook=safetyhook::InlineHook::create(targets[i],callbacks[i],safetyhook::InlineHook::StartDisabled);if(!hook)return false;state->hooks[i]=std::move(*hook);
     }
@@ -211,9 +248,14 @@ DWORD WINAPI Worker(void* value){
     for(;;){
         log<<"{\"event\":\"imgui_status\",\"stage\":2,\"tick\":"<<GetTickCount64()<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
+           <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
+           <<",\"captured_creations\":"<<state->creations.load()<<",\"unmatched_presents\":"<<state->unmatchedPresents.load()
+           <<",\"backbuffer_transitions\":"<<state->discovery.backbufferTransitions.load()<<",\"matched_submissions\":"<<state->discovery.matchedSubmissions.load()
            <<",\"visible\":"<<(state->input.visible.load()?"true":"false")<<",\"capture\":"<<(state->input.Capturing()?"true":"false")
            <<",\"presents\":"<<state->presents.load()<<",\"drawn\":"<<state->drawn.load()<<",\"busy_frames\":"<<state->busy.load()
            <<",\"resizes\":"<<state->resizes.load()<<",\"toggles\":"<<state->input.toggles.load()<<",\"blocked_messages\":"<<state->input.blockedMessages.load()
+           <<",\"hotkey_messages\":"<<state->input.hotkeyMessages.load()<<",\"last_hotkey_modifiers\":"<<state->input.lastHotkeyModifiers.load()
+           <<",\"hotkey_registered\":"<<(state->input.hotkeyRegistered.load()?"true":"false")<<",\"hotkey_error\":"<<state->input.hotkeyError.load()
            <<",\"blocked_polls\":"<<state->input.blockedPolls.load()<<"}\n";log.flush();Sleep(2000);
     }
 }
