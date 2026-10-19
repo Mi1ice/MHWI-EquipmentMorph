@@ -21,6 +21,8 @@ Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插�
 - 连续权重、平滑变化、多个键叠加、逐键控制来源和释放，以及失效后重新绑定。
 - 独立 Windows 控制窗口和原生 C API；自动表情控制可由外部项目通过 SDK 实现。
 
+2026-10-20 新增快速响应候选：缩短核心平滑时间，并将可见面板的实际权重读回提高至约每 16ms，装备元数据仍约 250ms 扫描。643 项核心原生检查与 33 项面板控制检查通过；候选核心与 GUI 配套测试，用户实机验收待完成，详见[面板说明](controls/MHWI-EquipmentMorph-ImGui/README.md)。
+
 ## 使用与开发
 
 运行环境为 Windows x64、已验证的 MHW Iceborne 游戏构建和 DX12，使用 Stracker's Loader。作者侧联合导出已验证 Blender 5.1.2 与源码摘要匹配的 MHW Model Editor 0.12；这些外部依赖需要自行安装。项目不包含游戏模型或 MHW Model Editor。

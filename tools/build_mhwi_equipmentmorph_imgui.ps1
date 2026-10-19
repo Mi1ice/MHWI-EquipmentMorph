@@ -46,7 +46,7 @@ $taskPassed=[int]$Matches[1]
 Copy-Item -LiteralPath (Join-Path $taskRoot 'research/imgui-v1.93.0/LICENSE.txt') -Destination (Join-Path $taskOutput 'LICENSE.ImGui.txt') -Force
 foreach($taskLicense in @('LICENSE.SafetyHook','LICENSE.Zydis')){Copy-Item -LiteralPath (Join-Path $taskRoot ('research/safetyhook-local-v0.7.0/'+$taskLicense)) -Destination $taskOutput -Force}
 Copy-Item -LiteralPath (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui/README.md') -Destination $taskOutput -Force
-$taskManifest=[ordered]@{schema='mhwi-equipmentmorph-imgui-candidate-v1';stage=3;architecture='windows-x64';renderer='dx12';formal_acceptance_complete=$false;morph_api_connected=$true;control_checks=$taskPassed;ui_testing='user-operated';imgui_commit=$taskUpstream.commit;files=@()}
+$taskManifest=[ordered]@{schema='mhwi-equipmentmorph-imgui-candidate-v1';stage=3;architecture='windows-x64';renderer='dx12';formal_acceptance_complete=$false;morph_api_connected=$true;control_checks=$taskPassed;visible_weight_read_ms=16;equipment_scan_ms=250;ui_testing='user-operated';imgui_commit=$taskUpstream.commit;files=@()}
 foreach($taskFile in @('MHWEquipmentMorphImGui.dll','EquipmentMorphImGuiFixture.exe','ImGuiControlTests.exe','README.md','LICENSE.ImGui.txt','LICENSE.SafetyHook','LICENSE.Zydis')){
     $taskManifest.files+=@{path=$taskFile;sha256=(Get-FileHash -LiteralPath (Join-Path $taskOutput $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()}
 }

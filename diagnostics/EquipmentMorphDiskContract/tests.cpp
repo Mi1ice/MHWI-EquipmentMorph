@@ -120,7 +120,7 @@ int wmain(int argc,wchar_t** argv){try{
     mhm::GroupSmoothing smoothing;
     check(api.submit(source,smoothRequest,2,&revision)==MHM_OK&&smoothing.Reset({&descriptor,1},0)==MHM_OK
         &&smoothing.SetTargets(smoothRequest,revision,0)==MHM_OK,"opposed endpoints enter host smoother");
-    for(uint64_t now:{0ull,200ull,210ull,220ull,300ull,1000ull}){
+    for(uint64_t now:{0ull,16ull,20ull,24ull,40ull,1000ull}){
         std::vector<MhmUpdate> sampled;uint64_t sampledRevision=0;
         check(smoothing.Sample(now,sampled,sampledRevision)==MHM_OK&&sampled.size()==2,"opposed weights sampled across midpoint");
         const float pair[]={sampled[0].weight,sampled[1].weight};output.resize(64);

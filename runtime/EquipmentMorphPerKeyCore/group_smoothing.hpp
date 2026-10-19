@@ -2,8 +2,8 @@
 #include "core.hpp"
 
 namespace mhm {
-// Same analytic critically damped response (omega=8) as the visually accepted
-// body prototype. All keys advance at one host timestamp, with complete-group
+// Short analytic critically damped response (omega=80): a step reaches 95% in
+// about 59 ms. All keys advance at one host timestamp, with complete-group
 // validation before changing any member. No GPU scheduling belongs here.
 class GroupSmoothing {
     struct Weight {double position=0,velocity=0,target=0;};
@@ -12,7 +12,7 @@ class GroupSmoothing {
     uint64_t last=0,revision=0;
     bool initialized=false;
     static bool Advance(std::vector<Member>& candidate,uint64_t elapsed) {
-        const double dt=static_cast<double>(elapsed)/1000,omega=8,decay=std::exp(-omega*dt);
+        const double dt=static_cast<double>(elapsed)/1000,omega=80,decay=std::exp(-omega*dt);
         for(auto& m:candidate)for(auto& w:m.weights) {
             const double displacement=w.position-w.target,coefficient=w.velocity+omega*displacement;
             w.position=w.target+(displacement+coefficient*dt)*decay;

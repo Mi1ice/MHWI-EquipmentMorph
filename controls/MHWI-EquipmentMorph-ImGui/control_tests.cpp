@@ -7,6 +7,17 @@
 #include <thread>
 #include <chrono>
 
+namespace {
+MhmApi originalApi{};
+std::atomic_uint targetReads=0,keyReads=0,weightReads=0;
+uint64_t failWeightTarget=0;
+MhmResult MHM_CALL CountTarget(uint32_t index,MhmTargetInfo* info){++targetReads;return originalApi.target_at(index,info);}
+MhmResult MHM_CALL CountKey(uint64_t target,uint32_t index,MhmKeyInfo* info){++keyReads;return originalApi.key_at(target,index,info);}
+MhmResult MHM_CALL CountWeights(uint64_t target,MhmWeightState* values,uint32_t capacity,uint32_t* count,uint64_t* requested,uint64_t* applied){
+    ++weightReads;if(target==failWeightTarget)return MHM_NOT_READY;
+    return originalApi.read_weights(target,values,capacity,count,requested,applied);
+}
+}
 int main(){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
     MhmApi api{};MhwMorphGetApi(MHM_API_VERSION,sizeof(api),&api);
@@ -68,5 +79,38 @@ int main(){try{
     stop=true;worker.join();
     check(control.Snapshot()->completed>=finalTicket&&key(body,0).contribution==precise,"concurrent command posting and immutable snapshot reads keep latest precise weight");
     control.Post(Action::Release);control.Service(1000000);
+    {
+        originalApi=api;auto counted=api;counted.target_at=CountTarget;counted.key_at=CountKey;counted.read_weights=CountWeights;
+        morphgui::Control polling;check(polling.Connect(counted)==MHM_OK,"weight polling connects without owning targets");
+        polling.Post(Action::Set,body,0,1);polling.Service(1,true);
+        const auto before=polling.Snapshot();Core().Capture(frame,revision);Core().Acknowledge(frame);Core().ReleaseFrame(frame);
+        const auto targetsBefore=targetReads.load(),keysBefore=keyReads.load(),weightsBefore=weightReads.load();
+        polling.Service(16,true);check(polling.Snapshot()==before&&weightReads==weightsBefore,"visible weight reads wait for sixteen millisecond interval");
+        polling.Service(17,true);
+        check(polling.Snapshot()->data.keys[0].state.applied==1&&polling.Snapshot()->data.keys[0].owned,"actual acknowledgement appears at next visible read without another edit");
+        check(targetReads==targetsBefore&&keyReads==keysBefore&&weightReads==weightsBefore+2,"fast weight read avoids target and key enumeration");
+        const auto visible=polling.Snapshot();polling.Service(33,false);
+        check(polling.Snapshot()==visible,"hidden panel skips fast weight reads");
+        const auto leg=attach(MHM_LEGS,"synthetic/legs");polling.Service(49,true);
+        check(polling.Snapshot()->data.targetCount==2,"weight read reuses metadata between discovery scans");
+        polling.Service(251,true);
+        check(polling.Snapshot()->data.targetCount==3,"visible weight reads do not postpone equipment discovery");
+        mhmcontrol::Session session(counted);mhmcontrol::Response readback;
+        check(session.Snapshot(readback)==MHM_OK,"read failure fixture discovers complete state");
+        readback.keys[0].state.applied=.123f;const auto saved=readback;failWeightTarget=arm;
+        check(session.Weights(readback)==MHM_NOT_READY&&readback.revision==saved.revision&&readback.keys[0].state.applied==saved.keys[0].state.applied,
+            "failed weight read leaves caller snapshot unchanged");failWeightTarget=0;
+        failWeightTarget=body;morphgui::Control unavailable;unavailable.Connect(counted);unavailable.Service(0,true);unavailable.Service(16,true);
+        check(!unavailable.Snapshot()->ready&&unavailable.Snapshot()->scan==MHM_NOT_READY,"fast reads never turn a failed initial discovery into an empty ready snapshot");failWeightTarget=0;
+        Core().Detach(arm);arm=attach(MHM_ARMS,"synthetic/replaced_arms",true);polling.Service(267,true);
+        const auto replacement=polling.Snapshot();bool healthy=false,fresh=false;
+        for(uint32_t i=0;i<replacement->data.keyCount;i++){
+            const auto& entry=replacement->data.keys[i];
+            if(entry.target==body&&entry.index==0)healthy=entry.owned&&entry.contribution==1;
+            if(entry.target==arm&&entry.index==0)fresh=!entry.owned&&entry.state.requested==0;
+        }
+        check(replacement->ready&&healthy&&fresh,"retired handle during fast read triggers discovery without replaying weights");
+        polling.Post(Action::Release);polling.Service(268,true);Core().Detach(leg);
+    }
     std::printf("PASS: %u ImGui control checks; no windows, input automation or game process\n",checks);return 0;
 }catch(const std::exception& e){std::printf("FAIL: %s\n",e.what());return 1;}}

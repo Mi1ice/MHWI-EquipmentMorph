@@ -22,6 +22,20 @@ public:
         const auto result=source?api.heartbeat(source):MHM_OK;
         if(result==MHM_STALE){source=0;owned.clear();}return result;
     }
+    // Reuse checked metadata between full scans; publish only complete reads.
+    MhmResult Weights(Response& output){
+        if(!Valid(output,0,0))return MHM_INVALID;
+        auto next=output;next.revision=0;
+        for(uint32_t i=0;i<next.targetCount;i++){
+            auto& target=next.targets[i];std::array<MhmWeightState,64> states{};
+            uint32_t count=0;uint64_t requested=0;
+            const auto result=api.read_weights(target.info.handle,states.data(),64,&count,&requested,&target.appliedRevision);
+            if(result!=MHM_OK)return result;if(count!=target.count)return MHM_STALE;
+            next.revision=(std::max)(next.revision,requested);
+            for(uint32_t k=0;k<count;k++)next.keys[target.first+k].state=states[k];
+        }
+        output=next;return MHM_OK;
+    }
     MhmResult Snapshot(Response& output){
         Response next;next.capabilities=api.capabilities;
         for(uint32_t i=0;i<MaxTargets;i++){

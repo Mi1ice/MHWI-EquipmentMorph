@@ -22,13 +22,19 @@ class Control {
     std::mutex commands;
     std::map<Identity,mhmcontrol::Request> pending;
     bool releasePending=false;
-    uint64_t sequence=0,nextScan=0,nextHeartbeat=0;
+    uint64_t sequence=0,nextScan=0,nextWeights=0,nextHeartbeat=0;
     void Publish(){published.store(std::make_shared<ControlSnapshot>(current));}
     void Refresh(){
         mhmcontrol::Response next;current.scan=session->Snapshot(next);
         current.ready=current.scan==MHM_OK&&mhmcontrol::Valid(next,0,0);
         if(current.ready)current.data=next;
         else if(current.scan==MHM_OK)current.scan=MHM_INVALID;
+    }
+    void RefreshWeights(){
+        if(!current.ready){Refresh();return;}
+        auto next=current.data;current.scan=session->Weights(next);
+        if(current.scan==MHM_OK&&mhmcontrol::Valid(next,0,0)){current.data=next;current.ready=true;}
+        else Refresh(); // Retired handles require fresh discovery, never replay.
     }
 public:
     std::shared_ptr<const ControlSnapshot> Snapshot()const{return published.load();}
@@ -54,7 +60,7 @@ public:
     }
     // Lease renewal continues while the window is hidden. An expired source
     // loses ownership; no previous weights are automatically submitted again.
-    void Service(uint64_t now){
+    void Service(uint64_t now,bool visible=false){
         std::map<Identity,mhmcontrol::Request> batch;bool release=false;uint64_t completed=0;
         {std::scoped_lock lock(commands);batch.swap(pending);release=std::exchange(releasePending,false);completed=sequence;}
         const bool changed=release||!batch.empty();
@@ -71,7 +77,8 @@ public:
             const auto found=std::find_if(current.data.keys.begin(),end,[&](const auto& k){return k.target==request.target&&k.index==request.key;});
             current.operation=found==end?MHM_STALE:session->Change(request);
         }
-        if(changed||expired||now>=nextScan){Refresh();nextScan=now+250;current.completed=completed;Publish();}
+        if(changed||expired||now>=nextScan){Refresh();nextScan=now+250;nextWeights=now+16;current.completed=completed;Publish();}
+        else if(visible&&now>=nextWeights){RefreshWeights();nextWeights=now+16;Publish();}
     }
 };
 }

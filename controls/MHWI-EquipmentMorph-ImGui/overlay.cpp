@@ -254,7 +254,7 @@ DWORD WINAPI Worker(void* value){
                 if(getter&&getter(MHM_API_VERSION,sizeof(api),&api)==MHM_OK)state->control.Connect(api);
             }
         }
-        try{state->control.Service(now);}catch(...){state->Disable("control_failed");}
+        try{state->control.Service(now,state->input.visible.load());}catch(...){state->Disable("control_failed");}
         if(now>=nextLog){
         nextLog=now+2000;const auto controls=state->control.Snapshot();
         log<<"{\"event\":\"imgui_status\",\"stage\":3,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
