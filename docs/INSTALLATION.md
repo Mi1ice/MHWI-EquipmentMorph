@@ -1,5 +1,7 @@
 # 下载与安装
 
+本页列出的下载附件属于正式 v0.5.0。main 当前源码为已完成本轮测试的 0.5.1-dev12-source 开发基线，尚未发布正式 0.5.1；自行构建与正式附件的区别见[项目状态](PROJECT_STATUS.md)。
+
 从 [GitHub Releases](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases) 下载对应组件：
 
 - `MHWI-EquipmentMorph-Runtime-0.5.0.zip`：游戏运行时、控制窗口、公共 runtime.ini 和新版工具。

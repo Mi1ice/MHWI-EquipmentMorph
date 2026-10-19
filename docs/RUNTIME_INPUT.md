@@ -1,5 +1,7 @@
 # 0.5.1-dev8：运行时输入校验与诊断分离
 
+历史阶段说明：本页保留对应开发版本的设计、检查数量与当时测试步骤。相关修复已纳入main的dev12基线，本轮用户功能验证与性能优化均已结束；当前状态见[项目状态](PROJECT_STATUS.md)及[dev12结论](DEV12_BASELINE.md)。下文的候选“待复测”不代表当前新增任务。
+
 dev7合并了内存读取，但运行时仍先执行完整观察器Snapshot，再重复验证许多相同字段。dev8用ReadInputFacts在同一个回调内完成一次运行时校验。完整observer::Snapshot仍供诊断采样使用，不再位于生产输入替换路径。
 
 运行时保留主玩家选择、前后两次玩家/桥接/vtable证明、部位路由、模型路径/大小/网格范围、原始source模式/引用/资源、实际绑定输入头、晚期owner streams、末尾model/source身份复核和渲染计数。绑定context本身及网格仍检查可读。私有缓冲完整Contract、GPU退役及Compute/Dispatch一致性不变。
