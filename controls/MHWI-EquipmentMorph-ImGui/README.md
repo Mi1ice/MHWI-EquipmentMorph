@@ -30,7 +30,7 @@
 
 默认输出 `.build/current-validation/imgui/`，可用 `-OutputDirectory` 指定目录。使用现有 MSVC／Windows SDK，不重建／安装核心。脚本编译 DLL、历史软件窗口程序与无窗口的 `ImGuiControlTests.exe`，**只执行控制逻辑测试**。当前 22 项回归覆盖接口校验、命令合并、贡献隔离、实际应用值、冲突拒绝、隐藏续租、目标替换、释放取消排队编辑、租期过期、并发发布及 float32 精度。
 
-用户已确认第二阶段修复版的界面与输入测试通过。此后界面交互、窗口呈现及实机测试统一交由用户执行，助手不启动或自动操作测试窗口。第三阶段尚待用户实机验收；不自动继承第二阶段的功能验收。
+用户已确认第二阶段修复版的界面与输入测试通过。此后界面交互、窗口呈现及实机测试统一交由用户执行，助手不启动或自动操作测试窗口。2026-10-20 用户确认第三阶段的调节、多部位控制、显隐／释放及换装后的列表更新正常，上述功能实机验收通过。该结果对应源码提交 `d30799d` 生成并部署的 DLL（SHA-256：`a35bdcde36690b591811ef7636725a11a3f583c93fa56ed5fa6ce78e2118b469`），后续重新构建的产物需另行验证。
 
 历史工具 `EquipmentMorphImGuiFixture.exe` 和 `tools/test_mhwi_equipmentmorph_imgui.ps1` 仍保留用于手动复现 DX12 先／后加载、队列干扰、Reset 与缩放。它们会创建窗口，不能作为助手默认检查。测试机未安装 DX12 Debug Layer，历史日志中的 `d3d12_errors=0` 不代表调试层验证通过。
 
@@ -44,4 +44,4 @@
 - 接口字段：`api_connected`、`control_ready`、`targets`、`source`、`control_result`、`snapshot_result`。只查看时 `source=0`；接管后为本面板来源，释放后回到 0。错误码沿用公共 API。
 - 依赖为固定 Dear ImGui v1.93.0，来源及逐文件摘要见 [UPSTREAM.json](../../research/imgui-v1.93.0/UPSTREAM.json)。系统字体使用 `msyh.ttc`，不重新分发字体。
 
-当前为未完成第三阶段实机验收的开发候选，不改变正式 0.5.0 发行及已验收 dev12 核心。
+当前为已通过上述用户实机功能验收的开发候选；外观优化仍后置，不改变正式 0.5.0 发行及已验收 dev12 核心。
