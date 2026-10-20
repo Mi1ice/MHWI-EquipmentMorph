@@ -3,6 +3,7 @@
 #include <objbase.h>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 
 namespace morphpreset {
 inline std::string NewId(){
@@ -11,6 +12,7 @@ inline std::string NewId(){
     for(size_t i=0;i<sizeof(id);i++){text+=hex[bytes[i]>>4];text+=hex[bytes[i]&15];}return text;
 }
 struct Catalog {std::vector<Document> documents;unsigned invalid=0;};
+struct Purged {std::vector<std::string> ids;unsigned failed=0,skipped=0;};
 class Store {
     std::filesystem::path root;
     static void NoLink(const std::filesystem::path& path){const auto attributes=GetFileAttributesW(path.c_str());if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_REPARSE_POINT))throw std::runtime_error("预设目录或文件不能是链接");}
@@ -51,5 +53,24 @@ public:
     }
     void Trash(const std::string& id)const{Move(id,false);}
     void Restore(const std::string& id)const{Move(id,true);}
+    void Purge(const std::string& id)const{
+        if(!Hex(id,32))throw std::runtime_error("预设编号无效");
+        const auto path=Directory(true)/(id+".json");NoLink(path);
+        if(!DeleteFileW(path.c_str()))throw std::runtime_error("永久删除失败：文件不存在或不可写；请检查回收区文件权限");
+    }
+    Purged PurgeAll(const std::function<void()>& keepAlive={})const{
+        const auto directory=Directory(true);Purged result;if(!std::filesystem::exists(directory))return result;
+        std::vector<std::string> ids;size_t entries=0;
+        for(const auto& entry:std::filesystem::directory_iterator(directory)){
+            if(keepAlive)keepAlive();
+            if(++entries>4096)throw std::runtime_error("回收区文件过多，请先手动整理");
+            const auto filename=entry.path().filename().wstring();
+            if(filename.size()!=37||filename.substr(32)!=L".json"||!std::all_of(filename.begin(),filename.begin()+32,[](wchar_t c){return c<=127;})){result.skipped++;continue;}
+            std::string id;for(size_t i=0;i<32;i++)id+=static_cast<char>(filename[i]);
+            if(!Hex(id,32)){result.skipped++;continue;}ids.push_back(id);
+        }
+        for(const auto& id:ids){if(keepAlive)keepAlive();try{Purge(id);result.ids.push_back(id);}catch(const std::exception&){result.failed++;}}
+        return result;
+    }
 };
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include "PanelLayout.hpp"
 namespace managementtest {
 inline MhmApi original{};inline unsigned submits=0,queries=0;
 inline MhmResult MHM_CALL Submit(uint64_t source,const MhmUpdate* updates,uint32_t count,uint64_t* revision){++submits;return original.submit(source,updates,count,revision);}
@@ -62,6 +63,43 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& api,con
     check(refused&&Read(directory/(a.id+".json"))==active&&Read(directory/L".trash"/(a.id+".json"))==recycled,"restore cannot overwrite a conflicting active file");
     refused=false;try{store.Trash("../escape");}catch(const std::exception&){refused=true;}check(refused,"delete validates identifier before constructing a path");
     refused=false;try{store.Restore("../escape");}catch(const std::exception&){refused=true;}check(refused,"restore validates identifier before constructing a path");
+    const auto permanent=directory/L"permanent";Store permanentStore(permanent);
+    auto p=a;p.id=NewId();p.name="Permanent one";permanentStore.Save(p);permanentStore.Save(p,true);
+    auto q=p;q.id=NewId();q.name="Hidden by search";permanentStore.Save(q,true);
+    morphgui::Control manager;manager.ConfigurePresets(permanent);uint64_t managerNow=0;
+    const auto manage=[&](Action action,const std::string& id=std::string{}){manager.PostPreset({action,id,{},true});manager.Service(managerNow+=20);return manager.Snapshot()->presets.success;};
+    const auto preserved=Read(permanent/(p.id+".json"));
+    check(manage(Action::Purge,p.id),"permanent deletion works without a core session");
+    check(!std::filesystem::exists(permanent/L".trash"/(p.id+".json"))&&Read(permanent/(p.id+".json"))==preserved,"permanent deletion only touches the recycle copy of an identifier");
+    check(manager.Snapshot()->presets.removed->size()==1&&manager.Snapshot()->presets.library->size()==1&&!manager.Snapshot()->presets.selectLast,"permanent deletion updates recycle catalog without changing active library or selection");
+    check(!manage(Action::Purge,p.id)&&std::filesystem::exists(permanent/(p.id+".json")),"repeated permanent delete cannot fall back to the active directory");
+    permanentStore.Save(p,true);manager.ConfigurePresets(permanent);
+    const auto readonly=permanent/L".trash"/(q.id+".json");SetFileAttributesW(readonly.c_str(),FILE_ATTRIBUTE_READONLY);
+    check(!manage(Action::Purge,q.id)&&manager.Snapshot()->presets.removed->size()==2,"failed permanent delete retains its recycle entry");
+    const auto damaged=permanent/L".trash"/(NewId()+".json");std::ofstream(damaged)<<"invalid preset";
+    const auto foreign=permanent/L".trash"/L"notes.txt";std::ofstream(foreign)<<"keep";
+    const auto nested=permanent/L".trash"/L"nested";std::filesystem::create_directory(nested);std::ofstream(nested/L"keep.json")<<"keep";
+    check(!manage(Action::PurgeAll),"bulk permanent deletion reports partial failures");
+    check(!std::filesystem::exists(permanent/L".trash"/(p.id+".json"))&&!std::filesystem::exists(damaged)&&std::filesystem::exists(readonly),"bulk delete includes hidden and damaged identifier files while retaining failed files");
+    check(manager.Snapshot()->presets.removed->size()==1&&manager.Snapshot()->presets.removed->front().id==q.id,"partial bulk delete removes only successful entries from memory");
+    check(std::filesystem::exists(foreign)&&std::filesystem::exists(nested/L"keep.json")&&Read(permanent/(p.id+".json"))==preserved,"bulk delete preserves active presets, unrelated files and nested directories");
+    SetFileAttributesW(readonly.c_str(),FILE_ATTRIBUTE_NORMAL);
+    check(manage(Action::PurgeAll)&&manager.Snapshot()->presets.removed->empty(),"bulk delete can retry remaining failed entries");
+    check(manage(Action::PurgeAll),"empty recycle deletion is a harmless no-op");
+    manager.ConfigurePresets(permanent);check(manager.Snapshot()->presets.removed->empty(),"permanent deletion remains effective after catalog reload");
+    permanentStore.Save(p,true);unsigned keepAliveCalls=0;
+    const auto purged=permanentStore.PurgeAll([&](){keepAliveCalls++;});
+    check(purged.ids.size()==1&&keepAliveCalls>=2,"bulk deletion offers lease renewal during enumeration and deletion");
+    check(submits==beforeSubmits&&control.Snapshot()->data.source==source&&control.Snapshot()->data.keys[0].contribution==weight,"single and bulk permanent deletion never submit or release live weights");
+    refused=false;try{permanentStore.Purge("../escape");}catch(const std::exception&){refused=true;}check(refused,"permanent deletion rejects traversal identifiers");
+    const auto wide=morphgui::ArrangePanels({0,0,1920,1080},{100,120,860,540},8);
+    check(wide.side.x==wide.main.x+wide.main.w+8&&wide.side.y==wide.main.y&&wide.side.h==wide.main.h,"manager follows the main panel's right edge, top and height");
+    const auto edge=morphgui::ArrangePanels({20,30,1600,900},{1400,800,860,540},8);
+    check(edge.main.x>=20&&edge.side.x+edge.side.w<=1620&&edge.main.y+edge.main.h<=930,"paired windows stay within a non-origin viewport at the right and bottom edges");
+    const auto medium=morphgui::ArrangePanels({0,0,1280,720},{60,60,860,800},8);
+    check(medium.side.x>=medium.main.x+medium.main.w&&medium.side.x+medium.side.w<=1280&&medium.side.h<=720,"intermediate viewport shrinks the pair to fit side by side");
+    const auto narrow=morphgui::ArrangePanels({0,0,800,400},{100,100,860,540},8);
+    check(narrow.main.x>=0&&narrow.side.x>=0&&narrow.main.w<=800&&narrow.side.x+narrow.side.w<=800&&narrow.side.h<=400,"small viewport fallback keeps management controls reachable");
     control.Post(mhmcontrol::Action::Release);step();return checks;
 }
 }

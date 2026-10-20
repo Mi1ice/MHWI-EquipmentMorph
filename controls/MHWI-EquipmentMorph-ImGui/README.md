@@ -1,8 +1,8 @@
-# Dear ImGui 游戏内面板：第五阶段预设管理候选
+# Dear ImGui 游戏内面板：第六阶段管理栏与回收区候选
 
 提供独立、可选的 `MHWEquipmentMorphImGui.dll`。本阶段已通过公开 API 接入装备选择和形态键控制，使用默认 ImGui 样式；外观优化后置。核心插件继续独立提供形态键支持，不需要面板或旧控制桥接。
 
-2026-10-20 用户确认第四阶段整套保存／应用测试项全部正常。第五阶段增加[预设筛选与管理](../../docs/PRESETS.md)：下拉框仅显示整套匹配的预设并支持名称搜索；独立管理窗口提供全部／回收区、匹配筛选、详情、重命名、删除和恢复。删除当前预设保留权重并转为未保存配置。复选框和显式零权重语义保留；新候选待用户实机测试。
+2026-10-20 用户确认第四阶段整套保存／应用和第五阶段筛选／管理测试通过。第六阶段将[预设管理](../../docs/PRESETS.md)改为主面板右侧附随栏，并在回收区增加单项永久删除和删除全部，均有确认提示。批量删除不受搜索／匹配筛选限制，失败项保留；管理操作保持现有权重。复选框和显式零权重语义保留；新候选待用户实机测试。
 
 ## 使用
 
@@ -30,7 +30,7 @@
 ./tools/build_mhwi_equipmentmorph_imgui.ps1
 ```
 
-默认输出 `.build/current-validation/imgui/`，可用 `-OutputDirectory` 指定目录。使用现有 MSVC／Windows SDK，不重建／安装核心。脚本编译 DLL、历史软件窗口程序与无窗口的 `ImGuiControlTests.exe`，**只执行控制逻辑测试**。当前 33 项回归覆盖接口校验、命令合并、贡献隔离、实际应用值、冲突拒绝、隐藏续租、目标替换、释放取消排队编辑、租期过期、并发发布、float32 精度、快速实际权重读回、隐藏降频及换装发现。
+默认输出 `.build/current-validation/imgui/`，可用 `-OutputDirectory` 指定目录。使用现有 MSVC／Windows SDK，不重建／安装核心。脚本编译 DLL、历史软件窗口程序，以及无窗口的 `ImGuiControlTests.exe` 和 `ImGuiPresetTests.exe`，**只执行控制与预设的控制台测试**。33 项控制回归覆盖接口校验、命令合并、贡献隔离、实际应用值、冲突拒绝、隐藏续租、目标替换、释放取消排队编辑、租期过期、并发发布、float32 精度、快速实际权重读回、隐藏降频及换装发现。预设回归另覆盖筛选、管理、永久删除、部分失败与管理栏的屏幕边界计算；呈现和操作手感仍由用户验证。
 
 用户已确认第二阶段修复版的界面与输入测试通过。此后界面交互、窗口呈现及实机测试统一交由用户执行，助手不启动或自动操作测试窗口。2026-10-20 用户确认第三阶段的调节、多部位控制、显隐／释放及换装后的列表更新正常，上述功能实机验收通过。该结果对应源码提交 `d30799d` 生成并部署的 DLL（SHA-256：`a35bdcde36690b591811ef7636725a11a3f583c93fa56ed5fa6ce78e2118b469`），后续重新构建的产物需另行验证。
 
@@ -42,7 +42,7 @@
 - 权重 API 只由普通后台线程调用。渲染与输入线程交换不可变快照和合并后的编辑命令，不直接枚举目标或提交权重。装备与键元数据约每 250ms 扫描；显示时约每 16ms 合并处理输入并读回已应用权重，快速读回不重复枚举装备与键。隐藏时停止快速读回，继续低频扫描和续租。会话复用现有控制会话逻辑，优先级 220、租期 2000ms。
 - 隐藏时跳过 ImGui 帧与 GPU 提交。GUI 停用会请求释放本面板来源。其他来源的贡献保持独立。
 - 快捷键只在游戏拥有焦点时注册；失焦解除注册。键盘／鼠标捕获沿用第二阶段已通过用户测试的路径；手柄和 GetRawInputBuffer 尚未接入。
-- 日志：`nativePC/plugins/MHWEquipmentMorph/logs/imgui-<PID>.ndjson`。本阶段标记为 `stage=5`，`preset_count`、`usable_presets`、`recycled_presets` 分别记录总数、可用数与回收区数量。正常为 `boot=1`、`error=none`、`window_ready=true`、`queue_ready=true`，快捷键注册为 `hotkey_registered=true`、`hotkey_error=0`。
+- 日志：`nativePC/plugins/MHWEquipmentMorph/logs/imgui-<PID>.ndjson`。本阶段标记为 `stage=6`，`preset_count`、`usable_presets`、`recycled_presets` 分别记录总数、可用数与回收区数量。正常为 `boot=1`、`error=none`、`window_ready=true`、`queue_ready=true`，快捷键注册为 `hotkey_registered=true`、`hotkey_error=0`。
 - 接口字段：`api_connected`、`control_ready`、`targets`、`source`、`control_result`、`snapshot_result`。只查看时 `source=0`；接管后为本面板来源，释放后回到 0。错误码沿用公共 API。
 - 依赖为固定 Dear ImGui v1.93.0，来源及逐文件摘要见 [UPSTREAM.json](../../research/imgui-v1.93.0/UPSTREAM.json)。系统字体使用 `msyh.ttc`，不重新分发字体。
 

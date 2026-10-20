@@ -241,7 +241,7 @@ DWORD WINAPI Worker(void* value){
     state->control.ConfigurePresets(folder.parent_path()/L"presets");
     std::error_code error;std::filesystem::create_directories(folder,error);
     std::ofstream log(folder/(L"imgui-"+std::to_wstring(GetCurrentProcessId())+L".ndjson"));
-    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":5,\"state\":\"starting\"}\n";log.flush();
+    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":6,\"state\":\"starting\"}\n";log.flush();
     try{state->boot=Install(static_cast<HINSTANCE>(value))?1:-1;if(state->boot<0)state->Disable("hook_install_failed");}catch(...){state->boot=-1;state->Disable("bootstrap_failed");}
     publishedBoot.store(state->boot.load());
     uint64_t nextConnect=0,nextLog=0;
@@ -259,7 +259,7 @@ DWORD WINAPI Worker(void* value){
         try{state->control.Service(now,state->input.visible.load());}catch(...){state->Disable("control_failed");}
         if(now>=nextLog){
         nextLog=now+2000;const auto controls=state->control.Snapshot();
-        log<<"{\"event\":\"imgui_status\",\"stage\":5,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
+        log<<"{\"event\":\"imgui_status\",\"stage\":6,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
            <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
            <<",\"captured_creations\":"<<state->creations.load()<<",\"unmatched_presents\":"<<state->unmatchedPresents.load()

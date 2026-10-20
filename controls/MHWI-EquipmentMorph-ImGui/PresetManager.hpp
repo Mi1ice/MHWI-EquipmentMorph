@@ -19,8 +19,8 @@ struct State {
     std::string activeId,activeName,message,lastId;
     bool available=false,dirty=false,success=false,selectLast=false;uint64_t completed=0;
 };
-enum class Action {Apply,Save,SaveAs,Rename,Trash,Restore};
-inline bool Management(Action action){return action==Action::Rename||action==Action::Trash||action==Action::Restore;}
+enum class Action {Apply,Save,SaveAs,Rename,Trash,Restore,Purge,PurgeAll};
+inline bool Management(Action action){return action==Action::Rename||action==Action::Trash||action==Action::Restore||action==Action::Purge||action==Action::PurgeAll;}
 struct Request {Action action=Action::Apply;std::string id,name;bool deleted=false;};
 // Worker-only. Disk IO, identity queries and batch submission never run in Draw.
 class Manager {
@@ -37,8 +37,19 @@ class Manager {
         if(!Utf8(name))throw std::runtime_error("请输入有效名称（最多 128 个 UTF-8 字节）");
         for(const auto& other:documents)if(other.id!=id&&other.name==name)throw std::runtime_error("同名预设已存在，请更换名称");
     }
-    void Manage(const Request& request){
-        const bool removed=request.action==Action::Restore||(request.action==Action::Rename&&request.deleted);
+    void Manage(const Request& request,mhmcontrol::Session* session){
+        if(request.action==Action::PurgeAll){
+            uint64_t renewAt=0;bool leaseLost=false;
+            const auto result=store->PurgeAll([&](){const auto now=GetTickCount64();if(session&&now>=renewAt){if(session->Heartbeat()!=MHM_OK)leaseLost=true;renewAt=now+500;}});
+            std::erase_if(deleted,[&](const auto& doc){return std::find(result.ids.begin(),result.ids.end(),doc.id)!=result.ids.end();});
+            PublishLibrary();state.lastId.clear();state.success=result.failed==0;
+            state.message="已永久删除 "+std::to_string(result.ids.size())+" 份回收区预设";
+            if(result.failed)state.message+="；"+std::to_string(result.failed)+" 份删除失败，原文件保留，请检查权限";
+            if(result.skipped)state.message+="；保留 "+std::to_string(result.skipped)+" 项非预设文件或目录";
+            if(leaseLost)state.message+="；控制租期已失效，请重新调节";
+            return;
+        }
+        const bool removed=request.action==Action::Restore||request.action==Action::Purge||(request.action==Action::Rename&&request.deleted);
         const auto* existing=Find(request.id,removed);if(!existing)throw std::runtime_error("预设不存在，请重新选择");Document doc=*existing;
         if(request.action==Action::Rename){
             CheckName(request.name,doc.id);doc.name=request.name;store->Save(doc,removed);
@@ -50,6 +61,8 @@ class Manager {
             store->Trash(doc.id);deleted.push_back(doc);std::erase_if(documents,[&](const auto& item){return item.id==doc.id;});
             if(state.activeId==doc.id){state.activeId.clear();state.activeName.clear();}
             state.message="已移入回收区："+doc.name+"；当前形态键控制保持";
+        }else if(request.action==Action::Purge){
+            store->Purge(doc.id);std::erase_if(deleted,[&](const auto& item){return item.id==doc.id;});state.message="已永久删除："+doc.name+"；当前形态键控制保持";
         }else{
             if(documents.size()>=256)throw std::runtime_error("预设数量已满，请先整理当前预设");
             if(Find(doc.id))throw std::runtime_error("当前列表已有相同编号，无法覆盖恢复");
@@ -89,7 +102,7 @@ public:
         state.completed=ticket;state.success=false;state.selectLast=false;
         try{
             if(!store)throw std::runtime_error("预设目录尚未就绪");
-            if(Management(request.action)){Manage(request);return MHM_OK;}
+            if(Management(request.action)){Manage(request,session);return state.success?MHM_OK:MHM_INVALID;}
             if(!session||!query||!ready)throw std::runtime_error("预设尚未就绪，请检查配套核心与装备绑定");
             const auto* existing=Find(request.id);Document doc;
             if(request.action==Action::Apply){
