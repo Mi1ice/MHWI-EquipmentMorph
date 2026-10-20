@@ -1,8 +1,8 @@
-# Dear ImGui 游戏内面板：第六阶段管理栏与回收区候选
+# Dear ImGui 游戏内面板：第七阶段预设传递与调宽候选
 
 提供独立、可选的 `MHWEquipmentMorphImGui.dll`。本阶段已通过公开 API 接入装备选择和形态键控制，使用默认 ImGui 样式；外观优化后置。核心插件继续独立提供形态键支持，不需要面板或旧控制桥接。
 
-2026-10-20 用户确认第四阶段整套保存／应用和第五阶段筛选／管理测试通过。第六阶段将[预设管理](../../docs/PRESETS.md)改为主面板右侧附随栏，并在回收区增加单项永久删除和删除全部，均有确认提示。批量删除不受搜索／匹配筛选限制，失败项保留；管理操作保持现有权重。复选框和显式零权重语义保留；新候选待用户实机测试。
+2026-10-20 用户确认第四／五阶段预设功能通过，第六阶段除希望增加调宽外其余项正常。第七阶段允许拖动右边缘调整附随栏宽度，并增加[预设导入／导出](../../docs/PRESETS.md)：游戏内预览／勾选／改名导入，单项或全部导出到独立目录。文件操作不自动应用、不覆盖现有预设、不改变当前未保存控制；复选框及显式零权重语义保留。新候选待用户实机测试。
 
 ## 使用
 
@@ -42,7 +42,7 @@
 - 权重 API 只由普通后台线程调用。渲染与输入线程交换不可变快照和合并后的编辑命令，不直接枚举目标或提交权重。装备与键元数据约每 250ms 扫描；显示时约每 16ms 合并处理输入并读回已应用权重，快速读回不重复枚举装备与键。隐藏时停止快速读回，继续低频扫描和续租。会话复用现有控制会话逻辑，优先级 220、租期 2000ms。
 - 隐藏时跳过 ImGui 帧与 GPU 提交。GUI 停用会请求释放本面板来源。其他来源的贡献保持独立。
 - 快捷键只在游戏拥有焦点时注册；失焦解除注册。键盘／鼠标捕获沿用第二阶段已通过用户测试的路径；手柄和 GetRawInputBuffer 尚未接入。
-- 日志：`nativePC/plugins/MHWEquipmentMorph/logs/imgui-<PID>.ndjson`。本阶段标记为 `stage=6`，`preset_count`、`usable_presets`、`recycled_presets` 分别记录总数、可用数与回收区数量。正常为 `boot=1`、`error=none`、`window_ready=true`、`queue_ready=true`，快捷键注册为 `hotkey_registered=true`、`hotkey_error=0`。
+- 日志：`nativePC/plugins/MHWEquipmentMorph/logs/imgui-<PID>.ndjson`。本阶段标记为 `stage=7`，`preset_count`、`usable_presets`、`recycled_presets` 分别记录总数、可用数与回收区数量。正常为 `boot=1`、`error=none`、`window_ready=true`、`queue_ready=true`，快捷键注册为 `hotkey_registered=true`、`hotkey_error=0`。
 - 接口字段：`api_connected`、`control_ready`、`targets`、`source`、`control_result`、`snapshot_result`。只查看时 `source=0`；接管后为本面板来源，释放后回到 0。错误码沿用公共 API。
 - 依赖为固定 Dear ImGui v1.93.0，来源及逐文件摘要见 [UPSTREAM.json](../../research/imgui-v1.93.0/UPSTREAM.json)。系统字体使用 `msyh.ttc`，不重新分发字体。
 

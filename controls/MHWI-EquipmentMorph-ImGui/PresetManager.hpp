@@ -1,5 +1,5 @@
 #pragma once
-#include "PresetStore.hpp"
+#include "PresetTransfer.hpp"
 #include "../../runtime/EquipmentMorphControlBridge/Session.hpp"
 #include <memory>
 
@@ -16,15 +16,17 @@ struct State {
     std::shared_ptr<const std::vector<Choice>> choices=std::make_shared<std::vector<Choice>>();
     std::shared_ptr<const std::vector<Choice>> removed=std::make_shared<std::vector<Choice>>();
     std::shared_ptr<const std::vector<Document>> library=std::make_shared<std::vector<Document>>(),trash=std::make_shared<std::vector<Document>>();
+    std::shared_ptr<const std::vector<Incoming>> incoming=std::make_shared<std::vector<Incoming>>();
     std::string activeId,activeName,message,lastId;
     bool available=false,dirty=false,success=false,selectLast=false;uint64_t completed=0;
 };
-enum class Action {Apply,Save,SaveAs,Rename,Trash,Restore,Purge,PurgeAll};
-inline bool Management(Action action){return action==Action::Rename||action==Action::Trash||action==Action::Restore||action==Action::Purge||action==Action::PurgeAll;}
-struct Request {Action action=Action::Apply;std::string id,name;bool deleted=false;};
+enum class Action {Apply,Save,SaveAs,Rename,Trash,Restore,Purge,PurgeAll,ScanImports,Import,Export,ExportAll};
+inline bool Management(Action action){return action!=Action::Apply&&action!=Action::Save&&action!=Action::SaveAs;}
+struct Request {Action action=Action::Apply;std::string id,name;bool deleted=false;std::vector<ImportEdit> imports;};
 // Worker-only. Disk IO, identity queries and batch submission never run in Draw.
 class Manager {
     std::unique_ptr<Store> store;std::vector<Document> documents,deleted;Identities identities{};
+    std::unique_ptr<Transfer> transfer;std::vector<Incoming> incoming;
     IdentityQuery query=nullptr;State state;
     std::array<uint64_t,5> identityHandles{};bool lastReady=false,choicesDirty=true;
     const Document* Find(const std::string& id,bool removed=false)const{const auto& list=removed?deleted:documents;const auto it=std::find_if(list.begin(),list.end(),[&](const auto& doc){return doc.id==id;});return it==list.end()?nullptr:&*it;}
@@ -37,7 +39,52 @@ class Manager {
         if(!Utf8(name))throw std::runtime_error("请输入有效名称（最多 128 个 UTF-8 字节）");
         for(const auto& other:documents)if(other.id!=id&&other.name==name)throw std::runtime_error("同名预设已存在，请更换名称");
     }
+    void Preview(const mhmcontrol::Response& data,bool ready){
+        auto result=std::make_shared<std::vector<Incoming>>(incoming);std::vector<std::string> names,signatures;
+        for(const auto& doc:documents){names.push_back(doc.name);if(!incoming.empty())signatures.push_back(Contents(doc,false));}
+        for(auto& item:*result)if(item.document){
+            const auto signature=Contents(*item.document,false);
+            for(unsigned suffix=0;suffix<=512;suffix++){
+                item.name=ImportName(item.document->name,suffix);item.duplicate=false;
+                for(size_t i=0;i<documents.size();i++)if(documents[i].name==item.name&&signatures[i]==signature){item.duplicate=true;break;}
+                if(item.duplicate||std::find(names.begin(),names.end(),item.name)==names.end())break;
+            }
+            names.push_back(item.name);const auto match=Check(*item.document,data,identities);
+            item.status=query&&ready?match.message:"当前无法评估装备匹配；仍可导入";
+        }state.incoming=std::move(result);
+    }
+    void Exchange(const Request& request,mhmcontrol::Session* session){
+        uint64_t renewAt=0;bool leaseLost=false;
+        const auto keepAlive=[&](){const auto now=GetTickCount64();if(session&&now>=renewAt){if(session->Heartbeat()!=MHM_OK)leaseLost=true;renewAt=now+500;}};
+        if(request.action==Action::ScanImports){auto scanned=transfer->Scan(keepAlive);incoming=std::move(scanned);choicesDirty=true;state.success=true;state.message="已刷新导入预览；修改源文件后请再次刷新";}
+        else if(request.action==Action::Import){
+            if(request.imports.empty()||request.imports.size()>256)throw std::runtime_error("请选择 1 至 256 份预设");
+            unsigned count=0,skipped=0,failed=0;std::set<std::string> seen;std::string firstError;
+            for(const auto& edit:request.imports){
+                keepAlive();try{
+                    if(!seen.insert(edit.token).second)throw std::runtime_error("同一导入条目重复提交");
+                    const auto it=std::find_if(incoming.begin(),incoming.end(),[&](const auto& item){return item.token==edit.token;});
+                    if(it==incoming.end()||!it->document)throw std::runtime_error("导入预览已失效或文件无效，请刷新");
+                    auto doc=*it->document;doc.name=edit.name;Validate(doc);const auto signature=Contents(doc);
+                    if(std::any_of(documents.begin(),documents.end(),[&](const auto& other){return other.name==doc.name&&Contents(other)==signature;})){skipped++;continue;}
+                    CheckName(doc.name,{});if(documents.size()>=256)throw std::runtime_error("预设库已满");
+                    do{doc.id=NewId();}while(Find(doc.id)||Find(doc.id,true));store->Save(doc,false,false);documents.push_back(std::move(doc));count++;
+                }catch(const std::exception& e){failed++;if(firstError.empty())firstError=e.what();}
+            }
+            PublishLibrary();state.success=failed==0;state.message="导入完成：新增 "+std::to_string(count)+"，重复跳过 "+std::to_string(skipped)+"，失败 "+std::to_string(failed);
+            if(!firstError.empty())state.message+="；"+firstError;
+        }else{
+            std::vector<Document> output;
+            if(request.action==Action::ExportAll)output=documents;
+            else{const auto* doc=Find(request.id);if(!doc)throw std::runtime_error("请选择正常列表中的预设");output.push_back(*doc);}
+            const auto result=transfer->Export(output,keepAlive);state.success=result.failed==0;
+            state.message="已导出 "+std::to_string(result.count)+" 份，失败 "+std::to_string(result.failed)+"；位置：nativePC/plugins/MHWEquipmentMorph/"+result.folder;
+            if(!result.error.empty())state.message+="；"+result.error;
+        }
+        state.lastId.clear();if(leaseLost)state.message+="；控制租期已失效，请重新调节";
+    }
     void Manage(const Request& request,mhmcontrol::Session* session){
+        if(request.action==Action::ScanImports||request.action==Action::Import||request.action==Action::Export||request.action==Action::ExportAll){Exchange(request,session);return;}
         if(request.action==Action::PurgeAll){
             uint64_t renewAt=0;bool leaseLost=false;
             const auto result=store->PurgeAll([&](){const auto now=GetTickCount64();if(session&&now>=renewAt){if(session->Heartbeat()!=MHM_OK)leaseLost=true;renewAt=now+500;}});
@@ -75,6 +122,7 @@ public:
     const State& Snapshot()const{return state;}
     void Configure(const std::filesystem::path& directory){
         store=std::make_unique<Store>(directory);
+        transfer=std::make_unique<Transfer>(directory);incoming.clear();state.incoming=std::make_shared<std::vector<Incoming>>();
         try{auto catalog=store->Load();auto removed=store->Load(true);documents=std::move(catalog.documents);deleted=std::move(removed.documents);PublishLibrary();if(catalog.invalid+removed.invalid)state.message="已跳过 "+std::to_string(catalog.invalid+removed.invalid)+" 个无效预设文件";}
         catch(const std::exception& e){state.message=e.what();}
     }
@@ -93,7 +141,7 @@ public:
                 result->push_back({doc.id,doc.name,query?(ready?match.message:"等待核心或装备绑定"):"核心不支持预设身份查询，请更新配套核心",query&&ready&&match.compatible,query&&ready?match.matched:0,match.total,std::move(match.parts)});
             }return result;
         };
-        if(choicesDirty){state.choices=choices(documents);state.removed=choices(deleted);choicesDirty=false;}
+        if(choicesDirty){state.choices=choices(documents);state.removed=choices(deleted);Preview(data,ready);choicesDirty=false;}
         const auto* active=Find(state.activeId);
         state.dirty=active?(!ready||!SameContributions(*active,data,identities)):std::any_of(data.keys.begin(),data.keys.begin()+data.keyCount,[](const auto& key){return key.owned!=0;});
     }

@@ -1,12 +1,14 @@
 #pragma once
 #include "Control.hpp"
 #include "PanelLayout.hpp"
+#include "PresetImportView.hpp"
 #include <imgui.h>
 #include <cstring>
 
 namespace morphgui {
 struct PresetBrowser {
     bool open=false,trash=false,renameDeleted=false;int filter=0;
+    float width=640;PresetImportView importer;
     char search[129]{},name[129]{};std::string selected,selectedTrash,renameId,error,purgeId,purgeName;bool purgeAll=false;
     void Submit(Control& control,morphpreset::Request request,uint64_t& waiting){
         error.clear();waiting=control.PostPreset(std::move(request));if(!waiting)error="预设请求过多，请稍后重试";
@@ -14,10 +16,10 @@ struct PresetBrowser {
     void Draw(Control& control,const ControlSnapshot& snapshot,uint64_t& waiting){
         if(!open)return;
         const auto* viewport=ImGui::GetMainViewport();const auto mainPosition=ImGui::GetWindowPos(),size=ImGui::GetWindowSize();
-        const auto pair=ArrangePanels({viewport->WorkPos.x,viewport->WorkPos.y,viewport->WorkSize.x,viewport->WorkSize.y},{mainPosition.x,mainPosition.y,size.x,size.y},ImGui::GetStyle().ItemSpacing.x);
+        const auto pair=ArrangePanels({viewport->WorkPos.x,viewport->WorkPos.y,viewport->WorkSize.x,viewport->WorkSize.y},{mainPosition.x,mainPosition.y,size.x,size.y},ImGui::GetStyle().ItemSpacing.x,width);
         ImGui::SetWindowPos(ImVec2(pair.main.x,pair.main.y));ImGui::SetWindowSize(ImVec2(pair.main.w,pair.main.h));
         ImGui::SetNextWindowPos(ImVec2(pair.side.x,pair.side.y));ImGui::SetNextWindowSize(ImVec2(pair.side.w,pair.side.h));
-        if(!ImGui::Begin("管理预设",&open,ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse)){ImGui::End();return;}
+        if(!ImGui::Begin("管理预设",&open,ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse)){ImGui::End();return;}
         const auto& state=snapshot.presets;
         const bool oldTrash=trash;
         if(ImGui::RadioButton("全部预设",!trash))trash=false;ImGui::SameLine();
@@ -25,6 +27,8 @@ struct PresetBrowser {
         if(oldTrash!=trash)filter=0;
         bool confirm=false;
         if(trash){ImGui::SameLine();ImGui::BeginDisabled(waiting!=0);if(ImGui::Button("删除全部")){purgeAll=true;purgeId.clear();confirm=true;error.clear();}ImGui::EndDisabled();}
+        else{ImGui::SameLine();ImGui::BeginDisabled(waiting!=0);if(ImGui::Button("导入…"))importer.Open(control,waiting);
+            ImGui::SameLine();if(ImGui::Button("导出全部"))Submit(control,{morphpreset::Action::ExportAll},waiting);ImGui::EndDisabled();}
         ImGui::TextDisabled("管理文件不会改变当前形态键权重");
         ImGui::SetNextItemWidth((std::max)(180.f,ImGui::GetContentRegionAvail().x-260));
         ImGui::InputTextWithHint("##search","按名称搜索",search,sizeof(search));ImGui::SameLine();ImGui::SetNextItemWidth(170);
@@ -60,7 +64,9 @@ struct PresetBrowser {
                 ImGui::SameLine();
                 if(trash){if(ImGui::Button("恢复"))Submit(control,{morphpreset::Action::Restore,doc->id,{},true},waiting);
                     ImGui::SameLine();if(ImGui::Button("永久删除")){purgeAll=false;purgeId=doc->id;purgeName=doc->name;confirm=true;error.clear();}}
-                else if(ImGui::Button("删除到回收区"))Submit(control,{morphpreset::Action::Trash,doc->id,{}},waiting);
+                else{if(ImGui::Button("删除到回收区"))Submit(control,{morphpreset::Action::Trash,doc->id,{}},waiting);
+                    if(ImGui::Button("导出"))Submit(control,{morphpreset::Action::Export,doc->id},waiting);
+                    if(ImGui::IsItemHovered())ImGui::SetTooltip("导出此预设已保存的内容；未保存的调节请先保存。");}
                 ImGui::EndDisabled();ImGui::Separator();
                 for(const auto& part:doc->parts){
                     ImGui::PushID(static_cast<int>(part.part));
@@ -96,6 +102,13 @@ struct PresetBrowser {
                 else{Submit(control,{morphpreset::Action::Rename,renameId,name,renameDeleted},waiting);ImGui::CloseCurrentPopup();}}
             if(cancel)ImGui::CloseCurrentPopup();if(!error.empty())ImGui::TextWrapped("%s",error.c_str());ImGui::EndPopup();
         }
+        importer.Draw(control,snapshot,waiting);
+        ImGui::PushClipRect(ImVec2(pair.side.x,pair.side.y),ImVec2(pair.side.x+pair.side.w,pair.side.y+pair.side.h),false);
+        ImGui::SetCursorScreenPos(ImVec2(pair.side.x+pair.side.w-9,pair.side.y+ImGui::GetFrameHeight()));
+        ImGui::InvisibleButton("##resize-right",ImVec2(8,(std::max)(1.f,pair.side.h-ImGui::GetFrameHeight()-1)));
+        if(ImGui::IsItemHovered()||ImGui::IsItemActive())ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        if(ImGui::IsItemActive())width=(std::clamp)(pair.side.w+ImGui::GetIO().MouseDelta.x,(std::min)(480.f,pair.side.w),(std::max)(pair.side.w,viewport->WorkPos.x+viewport->WorkSize.x-pair.side.x));
+        ImGui::PopClipRect();
         ImGui::End();
     }
 };

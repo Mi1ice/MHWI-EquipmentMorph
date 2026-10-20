@@ -6,6 +6,11 @@
 #include <functional>
 
 namespace morphpreset {
+inline std::filesystem::path PresetPath(const std::filesystem::path& path){
+    const auto native=std::filesystem::absolute(path).lexically_normal().wstring();
+    if(native.starts_with(L"\\\\?\\"))return native;
+    return native.starts_with(L"\\\\")?L"\\\\?\\UNC\\"+native.substr(2):L"\\\\?\\"+native;
+}
 inline std::string NewId(){
     GUID id{};if(FAILED(CoCreateGuid(&id)))throw std::runtime_error("无法生成预设编号");
     const auto* bytes=reinterpret_cast<const unsigned char*>(&id);constexpr char hex[]="0123456789abcdef";std::string text;
@@ -25,7 +30,7 @@ class Store {
             throw std::runtime_error("移动预设失败：文件不存在、目标编号已存在或目录不可写；原文件保留");
     }
 public:
-    explicit Store(std::filesystem::path directory):root(std::move(directory)){}
+    explicit Store(const std::filesystem::path& directory):root(PresetPath(directory)){}
     Catalog Load(bool deleted=false)const{
         const auto directory=Directory(deleted);Catalog catalog;if(!std::filesystem::exists(directory))return catalog;size_t entries=0;
         for(const auto& entry:std::filesystem::directory_iterator(directory)){
@@ -41,13 +46,13 @@ public:
         }
         std::sort(catalog.documents.begin(),catalog.documents.end(),[](const auto& a,const auto& b){return a.name==b.name?a.id<b.id:a.name<b.name;});return catalog;
     }
-    void Save(const Document& doc,bool deleted=false)const{
+    void Save(const Document& doc,bool deleted=false,bool replace=true)const{
         const auto text=Encode(doc);const auto directory=Directory(deleted);std::filesystem::create_directories(directory);NoLink(directory);
         const auto destination=directory/(doc.id+".json"),temporary=directory/(doc.id+"."+NewId()+".tmp");NoLink(destination);
         HANDLE file=CreateFileW(temporary.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
         if(file==INVALID_HANDLE_VALUE)throw std::runtime_error("无法写入预设目录，请检查权限");
         DWORD written=0;const bool ok=WriteFile(file,text.data(),static_cast<DWORD>(text.size()),&written,nullptr)&&written==text.size()&&FlushFileBuffers(file);CloseHandle(file);
-        if(!ok||!MoveFileExW(temporary.c_str(),destination.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
+        if(!ok||!MoveFileExW(temporary.c_str(),destination.c_str(),(replace?MOVEFILE_REPLACE_EXISTING:0)|MOVEFILE_WRITE_THROUGH)){
             DeleteFileW(temporary.c_str());throw std::runtime_error("预设保存失败，原文件保留");
         }
     }
