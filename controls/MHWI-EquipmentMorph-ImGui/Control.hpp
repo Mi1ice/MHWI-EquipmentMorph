@@ -33,6 +33,7 @@ class Control {
     uint64_t sequence=0,nextScan=0,nextWeights=0,nextHeartbeat=0;
     void Publish(){published.store(std::make_shared<ControlSnapshot>(current));}
     void Refresh(){
+        if(!session){current.ready=false;current.scan=MHM_NOT_READY;presets.Update(current.data,false);current.presets=presets.Snapshot();return;}
         mhmcontrol::Response next;current.scan=session->Snapshot(next);
         current.ready=current.scan==MHM_OK&&mhmcontrol::Valid(next,0,0);
         if(current.ready)current.data=next;
@@ -78,15 +79,15 @@ public:
         std::deque<Work> work;
         {std::scoped_lock lock(commands);work.swap(queued);if(releasePending||!pending.empty()){Work tail;tail.batch.swap(pending);tail.release=std::exchange(releasePending,false);tail.ticket=sequence;work.push_back(std::move(tail));}}
         const bool changed=!work.empty();
-        if(!session){if(changed){current.operation=MHM_NOT_READY;current.completed=work.back().ticket;Publish();}return;}
         bool expired=false;
-        if(now>=nextHeartbeat){const auto result=session->Heartbeat();nextHeartbeat=now+500;
+        if(session&&now>=nextHeartbeat){const auto result=session->Heartbeat();nextHeartbeat=now+500;
             if(result!=MHM_OK){current.operation=result;expired=true;}}
         for(const auto& item:work){
             if(item.ticket<canceledThrough.load()){current.completed=item.ticket;continue;}
-            if(item.release)current.operation=session->Release();
-            bool accepted=!expired;
-            if(!expired)for(const auto& [id,request]:item.batch){
+            if(item.release)current.operation=session?session->Release():MHM_NOT_READY;
+            bool accepted=session&&!expired;
+            if(!session&&!item.batch.empty())current.operation=MHM_NOT_READY;
+            if(session&&!expired)for(const auto& [id,request]:item.batch){
                 (void)id;Refresh();
                 if(!current.ready){current.operation=current.scan;accepted=false;continue;}
                 const auto end=current.data.keys.begin()+current.data.keyCount;
@@ -95,8 +96,8 @@ public:
             }
             if(item.preset){
                 Refresh();
-                if(!accepted)presets.Fail(item.ticket,"编辑未被接受或控制来源已失效，请重新调节后操作预设");
-                else current.operation=presets.Process(*item.preset,item.ticket,*session,current.data,current.ready);
+                if(!accepted&&!morphpreset::Management(item.preset->action))presets.Fail(item.ticket,"编辑未被接受或控制来源已失效，请重新调节后操作预设");
+                else{const auto result=presets.Process(*item.preset,item.ticket,session.get(),current.data,current.ready);if(!morphpreset::Management(item.preset->action))current.operation=result;}
             }
             current.completed=item.ticket;
         }

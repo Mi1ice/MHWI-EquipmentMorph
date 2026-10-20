@@ -2,6 +2,7 @@
 #include "Control.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/api.cpp"
 #include <cstdio>
+#include "preset_management_tests.hpp"
 
 namespace {
 MhmApi original{};unsigned submissions=0;
@@ -100,6 +101,7 @@ int wmain(int argc,wchar_t** argv){try{
     check(refused&&intact,"failed atomic overwrite retains the previous preset file");
     {std::ofstream file(directory/"malformed.json");file<<"broken";}
     check(store.Load().invalid==1,"one malformed file does not hide valid presets");
+    control.Post(Action::Release);service();checks+=managementtest::Run(directory/L"management",original,first);
     if(argc==2){
         const auto module=LoadLibraryW(argv[1]);check(module!=nullptr,"load built candidate without a game or test window");
         using Getter=decltype(&MhwMorphGetApi);Getter getter=nullptr;IdentityQuery identityGetter=nullptr;

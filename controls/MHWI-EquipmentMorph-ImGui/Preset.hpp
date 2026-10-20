@@ -104,7 +104,8 @@ inline std::string Encode(const Document& doc){
 }
 using Identities=std::array<MhmAssetIdentity,5>;
 inline bool ValidIdentity(const MhmAssetIdentity& identity,uint64_t handle){return identity.handle==handle&&identity.model_sha256[64]==0&&identity.pack_sha256[64]==0&&Hex(std::string_view(identity.model_sha256,64),64)&&Hex(std::string_view(identity.pack_sha256,64),64);}
-struct Match {bool compatible=false;std::string message;std::vector<MhmUpdate> updates;};
+struct PartMatch {uint32_t part=0;std::string reason;};
+struct Match {bool compatible=false;std::string message;std::vector<MhmUpdate> updates;unsigned matched=0,total=0;std::vector<PartMatch> parts;};
 inline Match Check(const Document& doc,const mhmcontrol::Response& data,const Identities& identities){
     Match result;unsigned matched=0;std::string reason;
     for(const auto& part:doc.parts){
@@ -119,8 +120,10 @@ inline Match Check(const Document& doc,const mhmcontrol::Response& data,const Id
             if(!found||key.weight<found->info.minimum||key.weight>found->info.maximum){failure="形态键缺失或权重越界";break;}
             result.updates.push_back({target->info.handle,found->index,key.weight});
         }
+        result.parts.push_back({part.part,failure.empty()?"匹配":failure});
         if(failure.empty())matched++;else{if(!reason.empty())reason+="；";reason+=std::string(PartName(part.part))+"："+failure;}
     }
+    result.matched=matched;result.total=static_cast<unsigned>(doc.parts.size());
     result.compatible=matched==doc.parts.size();result.message=result.compatible?"全部匹配（"+std::to_string(matched)+" 个部位）":"匹配 "+std::to_string(matched)+"／"+std::to_string(doc.parts.size())+" · "+reason;
     if(!result.compatible)result.updates.clear();return result;
 }

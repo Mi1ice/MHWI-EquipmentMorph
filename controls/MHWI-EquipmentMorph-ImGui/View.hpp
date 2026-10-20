@@ -1,5 +1,6 @@
 #pragma once
 #include "Control.hpp"
+#include "PresetBrowser.hpp"
 #include <imgui.h>
 #include <string>
 
@@ -11,7 +12,8 @@ inline const char* ResultText(MhmResult result){
 }
 struct View {
     uint64_t selected=0;
-    std::string selectedPreset,presetError;char presetName[129]{};uint64_t presetSeen=0,presetWaiting=0;
+    std::string selectedPreset,presetError;char presetName[129]{},presetSearch[129]{};uint64_t presetSeen=0,presetWaiting=0;
+    PresetBrowser browser;
     struct Edit {float value=0;uint64_t ticket=0;bool active=false;};
     std::array<Edit,64> edits{};
     static const char* Part(uint32_t part){const char* names[]={"头部","身体","腕部","腰部","腿部"};return part<5?names[part]:"装备";}
@@ -19,22 +21,29 @@ struct View {
     std::optional<morphpreset::Request> PresetBar(const ControlSnapshot& snapshot){
         const auto& presets=snapshot.presets;
         if(presetWaiting&&snapshot.completed>=presetWaiting)presetWaiting=0;
-        if(presets.completed!=presetSeen){presetSeen=presets.completed;if(presets.success)selectedPreset=presets.lastId;}
+        if(presets.completed!=presetSeen){presetSeen=presets.completed;if(presets.success&&presets.selectLast)selectedPreset=presets.lastId;}
         const morphpreset::Choice* chosen=nullptr;
         for(const auto& choice:*presets.choices)if(choice.id==selectedPreset)chosen=&choice;
-        if(!chosen&&!presets.choices->empty()){chosen=&presets.choices->front();selectedPreset=chosen->id;}
+        if(!chosen)selectedPreset.clear();
+        const auto available=std::count_if(presets.choices->begin(),presets.choices->end(),[](const auto& choice){return choice.compatible;});
+        const auto preview=chosen?chosen->name+(chosen->compatible?"":"（当前不可用）"):std::string(available?"选择可用预设":"当前装备没有匹配预设");
         const bool ready=snapshot.ready&&presets.available&&!presetWaiting;
         bool owned=false;for(uint32_t i=0;i<snapshot.data.keyCount;i++)owned=owned||snapshot.data.keys[i].owned!=0;
         std::optional<morphpreset::Request> intent;
         ImGui::TextUnformatted("整套预设");ImGui::SameLine();
-        const float buttons=ImGui::CalcTextSize("应用保存另存为…").x+ImGui::GetStyle().FramePadding.x*6+ImGui::GetStyle().ItemSpacing.x*3;
+        const float buttons=ImGui::CalcTextSize("应用保存另存为…管理…").x+ImGui::GetStyle().FramePadding.x*8+ImGui::GetStyle().ItemSpacing.x*4;
         ImGui::SetNextItemWidth((std::max)(120.f,ImGui::GetContentRegionAvail().x-buttons));
-        if(ImGui::BeginCombo("##presets",chosen?chosen->name.c_str():"尚无预设")){
-            for(const auto& choice:*presets.choices){ImGui::PushID(choice.id.c_str());
-                const auto label=choice.name+(choice.compatible?"":"（不匹配）");
-                if(ImGui::Selectable(label.c_str(),choice.id==selectedPreset)){selectedPreset=choice.id;chosen=&choice;presetError.clear();}
+        if(ImGui::BeginCombo("##presets",preview.c_str())){
+            if(ImGui::IsWindowAppearing())ImGui::SetKeyboardFocusHere();
+            ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##preset-search","搜索可用预设名称",presetSearch,sizeof(presetSearch));
+            unsigned shown=0;
+            for(const auto& choice:*presets.choices){if(!morphpreset::Visible(choice,presetSearch,morphpreset::Filter::Complete))continue;shown++;ImGui::PushID(choice.id.c_str());
+                if(ImGui::Selectable("##preset",choice.id==selectedPreset)){selectedPreset=choice.id;chosen=&choice;presetError.clear();}
+                ImGui::GetWindowDrawList()->AddText(ImGui::GetItemRectMin(),ImGui::GetColorU32(ImGuiCol_Text),choice.name.c_str());
                 if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",choice.status.c_str());ImGui::PopID();
-            }ImGui::EndCombo();
+            }
+            if(!shown)ImGui::TextWrapped(available?"没有符合名称的预设。":"当前装备没有匹配预设。");
+            ImGui::Separator();if(ImGui::Button("管理全部预设")){browser.open=true;ImGui::CloseCurrentPopup();}ImGui::EndCombo();
         }
         ImGui::SameLine();ImGui::BeginDisabled(!ready||!chosen||!chosen->compatible);
         if(ImGui::Button("应用")){intent=morphpreset::Request{morphpreset::Action::Apply,selectedPreset,{}};edits={};}ImGui::EndDisabled();
@@ -42,10 +51,12 @@ struct View {
         if(ImGui::Button("保存"))intent=morphpreset::Request{morphpreset::Action::Save,presets.activeId,{}};ImGui::EndDisabled();
         ImGui::SameLine();ImGui::BeginDisabled(!ready||!owned);
         if(ImGui::Button("另存为…")){presetName[0]=0;presetError.clear();ImGui::OpenPopup("另存为整套预设");}ImGui::EndDisabled();
+        ImGui::SameLine();if(ImGui::Button("管理…"))browser.open=true;
         if(!presets.available)ImGui::TextWrapped("预设需要配套核心提供 MOD 身份信息；普通形态键调节仍可使用。");
         else if(chosen)ImGui::TextWrapped("%s",chosen->status.c_str());
         else ImGui::TextWrapped("调节并接管形态键后，可将多个部位一起另存为预设。");
         if(!presets.activeId.empty())ImGui::TextWrapped("当前预设：%s%s",presets.activeName.c_str(),presets.dirty?" · 已修改，尚未保存":"");
+        else if(presets.dirty)ImGui::TextUnformatted("当前配置：未保存");
         if(presetWaiting)ImGui::TextUnformatted("正在处理预设…");
         else if(!presets.message.empty())ImGui::TextWrapped("%s",presets.message.c_str());
         if(!presetError.empty())ImGui::TextWrapped("%s",presetError.c_str());
@@ -67,6 +78,7 @@ struct View {
     void Draw(Control& control){
         const auto snapshot=control.Snapshot();const auto& data=snapshot->data;
         const auto preset=PresetBar(*snapshot);
+        browser.Draw(control,*snapshot,presetWaiting);
         ImGui::TextUnformatted("Ctrl + Shift + M 隐藏并保留权重；× 释放本面板控制。");
         if(!snapshot->connected){ImGui::TextUnformatted(ResultText(snapshot->scan));return;}
         if(!snapshot->ready){ImGui::TextUnformatted(ResultText(snapshot->scan));return;}
