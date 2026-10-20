@@ -2,6 +2,7 @@
 #include "Control.hpp"
 #include "PanelLayout.hpp"
 #include "PresetImportView.hpp"
+#include "Ui.hpp"
 #include <imgui.h>
 #include <cstring>
 
@@ -26,21 +27,20 @@ struct PresetBrowser {
         if(ImGui::RadioButton("回收区",trash))trash=true;
         if(oldTrash!=trash)filter=0;
         bool confirm=false;
-        if(trash){ImGui::SameLine();ImGui::BeginDisabled(waiting!=0);if(ImGui::Button("删除全部")){purgeAll=true;purgeId.clear();confirm=true;error.clear();}ImGui::EndDisabled();}
-        else{ImGui::SameLine();ImGui::BeginDisabled(waiting!=0);if(ImGui::Button("导入…"))importer.Open(control,waiting);
-            ImGui::SameLine();if(ImGui::Button("导出全部"))Submit(control,{morphpreset::Action::ExportAll},waiting);ImGui::EndDisabled();}
-        ImGui::TextDisabled("管理文件不会改变当前形态键权重");
-        ImGui::SetNextItemWidth((std::max)(180.f,ImGui::GetContentRegionAvail().x-260));
-        ImGui::InputTextWithHint("##search","按名称搜索",search,sizeof(search));ImGui::SameLine();ImGui::SetNextItemWidth(170);
-        ImGui::Combo("匹配状态",&filter,"全部\0完全匹配\0部分匹配\0无匹配\0");
+        if(trash){ImGui::BeginDisabled(waiting!=0);if(ImGui::Button("删除全部")){purgeAll=true;purgeId.clear();confirm=true;error.clear();}ImGui::EndDisabled();}
+        else{ImGui::BeginDisabled(waiting!=0);if(ImGui::Button("导入…"))importer.Open(control,waiting);
+            ui::NextButton("导出全部");if(ImGui::Button("导出全部"))Submit(control,{morphpreset::Action::ExportAll},waiting);ImGui::EndDisabled();}
+        ui::Line("仅整理文件和查看详情，不改变当前形态键。",ui::Tone::Muted);
+        ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##search","按预设名称搜索",search,sizeof(search));
+        ImGui::TextUnformatted("匹配状态");ImGui::SameLine();ImGui::SetNextItemWidth(-1);
+        ImGui::Combo("##match-filter",&filter,"全部\0完全匹配\0部分匹配\0无匹配\0");
         const auto& choices=trash?*state.removed:*state.choices;const auto& library=trash?*state.trash:*state.library;
         std::vector<const morphpreset::Choice*> visible;
         for(const auto& choice:choices)if(morphpreset::Visible(choice,search,static_cast<morphpreset::Filter>(filter)))visible.push_back(&choice);
         auto& chosenId=trash?selectedTrash:selected;const morphpreset::Choice* chosen=nullptr;
         for(const auto* choice:visible)if(choice->id==chosenId)chosen=choice;
         if(!chosen){chosenId=visible.empty()?std::string{}:visible.front()->id;if(!visible.empty())chosen=visible.front();}
-        if(waiting)ImGui::TextUnformatted("正在处理预设…");else if(!state.message.empty())ImGui::TextWrapped("%s",state.message.c_str());
-        if(!error.empty())ImGui::TextWrapped("%s",error.c_str());
+        ui::Notice(state,waiting,error);
         ImGui::TextDisabled("显示 %zu／%zu 项",visible.size(),choices.size());ImGui::Separator();
         const float listWidth=(std::max)(150.f,ImGui::GetContentRegionAvail().x*.36f);
         if(ImGui::BeginChild("preset-list",ImVec2(listWidth,0),ImGuiChildFlags_Borders)){
@@ -49,31 +49,33 @@ struct PresetBrowser {
             while(clipper.Step())for(int i=clipper.DisplayStart;i<clipper.DisplayEnd;i++){
                 const auto* choice=visible[static_cast<size_t>(i)];ImGui::PushID(choice->id.c_str());
                 if(ImGui::Selectable("##choose",choice->id==chosenId,0,ImVec2(0,line*2))){chosenId=choice->id;chosen=choice;error.clear();}
-                const auto position=ImGui::GetItemRectMin();auto* draw=ImGui::GetWindowDrawList();
-                draw->AddText(ImVec2(position.x+4,position.y),ImGui::GetColorU32(ImGuiCol_Text),choice->name.c_str());
-                draw->AddText(ImVec2(position.x+4,position.y+line),ImGui::GetColorU32(ImGuiCol_TextDisabled),choice->status.c_str());
-                if(ImGui::IsItemHovered())ImGui::SetTooltip("%s\n%s",choice->name.c_str(),choice->status.c_str());ImGui::PopID();
+                const auto position=ImGui::GetItemRectMin();const float rowWidth=ImGui::GetItemRectMax().x-position.x-8;
+                ui::TextAt(ImVec2(position.x+4,position.y),rowWidth,choice->name.c_str(),ImGui::GetColorU32(ImGuiCol_Text));
+                const auto status=choice->id==state.activeId?std::string(state.dirty?"当前配置 · 未保存 · ":"当前配置 · ")+choice->status:choice->status;
+                ui::TextAt(ImVec2(position.x+4,position.y+line),rowWidth,status.c_str(),ImGui::ColorConvertFloat4ToU32(ui::Color(choice->id==state.activeId&&state.dirty?ui::Tone::Warning:ui::Tone::Muted)));
+                if(ImGui::IsItemHovered())ui::Tooltip((choice->name+"\n"+status).c_str());ImGui::PopID();
             }
         }ImGui::EndChild();ImGui::SameLine();bool rename=false;
         if(ImGui::BeginChild("preset-details",ImVec2(0,0),ImGuiChildFlags_Borders)){
             const morphpreset::Document* doc=nullptr;if(chosen)for(const auto& item:library)if(item.id==chosenId)doc=&item;
             if(doc){
-                ImGui::TextWrapped("%s",doc->name.c_str());ImGui::TextWrapped("%s",chosen->status.c_str());
+                ui::Line(doc->name.c_str());ui::Wrapped(chosen->status.c_str(),chosen->compatible?ui::Tone::Success:ui::Tone::Warning);
+                if(doc->id==state.activeId)ui::Line(state.dirty?"当前配置 · 有未保存的修改":"当前配置关联此预设",state.dirty?ui::Tone::Warning:ui::Tone::Success);
+                else ui::Line("正在浏览详情，不会应用预设。",ui::Tone::Muted);
                 ImGui::BeginDisabled(waiting!=0);
                 if(ImGui::Button("重命名")){rename=true;renameId=doc->id;renameDeleted=trash;strcpy_s(name,doc->name.c_str());error.clear();}
-                ImGui::SameLine();
-                if(trash){if(ImGui::Button("恢复"))Submit(control,{morphpreset::Action::Restore,doc->id,{},true},waiting);
-                    ImGui::SameLine();if(ImGui::Button("永久删除")){purgeAll=false;purgeId=doc->id;purgeName=doc->name;confirm=true;error.clear();}}
-                else{if(ImGui::Button("删除到回收区"))Submit(control,{morphpreset::Action::Trash,doc->id,{}},waiting);
-                    if(ImGui::Button("导出"))Submit(control,{morphpreset::Action::Export,doc->id},waiting);
+                if(trash){ui::NextButton("恢复");if(ImGui::Button("恢复"))Submit(control,{morphpreset::Action::Restore,doc->id,{},true},waiting);
+                    ui::NextButton("永久删除");if(ImGui::Button("永久删除")){purgeAll=false;purgeId=doc->id;purgeName=doc->name;confirm=true;error.clear();}}
+                else{ui::NextButton("删除到回收区");if(ImGui::Button("删除到回收区"))Submit(control,{morphpreset::Action::Trash,doc->id,{}},waiting);
+                    ui::NextButton("导出");if(ImGui::Button("导出"))Submit(control,{morphpreset::Action::Export,doc->id},waiting);
                     if(ImGui::IsItemHovered())ImGui::SetTooltip("导出此预设已保存的内容；未保存的调节请先保存。");}
                 ImGui::EndDisabled();ImGui::Separator();
                 for(const auto& part:doc->parts){
                     ImGui::PushID(static_cast<int>(part.part));
                     if(ImGui::CollapsingHeader(morphpreset::PartName(part.part),ImGuiTreeNodeFlags_DefaultOpen)){
-                        ImGui::TextWrapped("模型：%s",part.model.c_str());
+                        ui::Line((std::string("模型：")+part.model).c_str(),ui::Tone::Muted);
                         for(const auto& result:chosen->parts)if(result.part==part.part)ImGui::TextWrapped("状态：%s",result.reason.c_str());
-                        ImGui::TextDisabled("保存了 %zu 个接管键（包括零权重）",part.keys.size());
+                        ui::Wrapped((std::string("保存了 ")+std::to_string(part.keys.size())+" 个接管键（包括零权重）").c_str(),ui::Tone::Muted);
                         if(ImGui::TreeNode("保存的权重")){for(const auto& key:part.keys)ImGui::Text("%s：%.9g",key.id.c_str(),key.weight);ImGui::TreePop();}
                         if(ImGui::TreeNode("资产指纹")){ImGui::TextWrapped("MOD3：%s",part.modelSha.c_str());ImGui::TextWrapped("形态键数据：%s",part.packSha.c_str());ImGui::TreePop();}
                     }ImGui::PopID();

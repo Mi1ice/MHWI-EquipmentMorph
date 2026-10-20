@@ -66,7 +66,7 @@ struct Renderer {
             const auto font=std::filesystem::path(windows)/L"Fonts"/L"msyh.ttc";
             const auto utf8=font.u8string();if(std::filesystem::exists(font))io.Fonts->AddFontFromFileTTF(reinterpret_cast<const char*>(utf8.c_str()),18.f);
         }
-        ImGui::StyleColorsDark();win32=ImGui_ImplWin32_Init(window);if(!win32)throw std::runtime_error("Win32 backend initialization failed");
+        ui::Style();win32=ImGui_ImplWin32_Init(window);if(!win32)throw std::runtime_error("Win32 backend initialization failed");
         ImGui_ImplDX12_InitInfo init{};init.Device=device.Get();init.CommandQueue=queue.Get();init.NumFramesInFlight=static_cast<int>(count);init.RTVFormat=description.BufferDesc.Format;
         init.SrvDescriptorHeap=srvs.Get();init.UserData=this;
         init.SrvDescriptorAllocFn=[](ImGui_ImplDX12_InitInfo* info,D3D12_CPU_DESCRIPTOR_HANDLE* cpu,D3D12_GPU_DESCRIPTOR_HANDLE* gpu){
@@ -88,7 +88,9 @@ struct Renderer {
         auto& frame=frames[sequence%count];if(frame.fence&&fence->GetCompletedValue()<frame.fence)return false;
         const auto index=swap->GetCurrentBackBufferIndex();if(index>=count)throw std::runtime_error("Invalid backbuffer index");
         ImGui::SetCurrentContext(input.context);ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
-        ImGui::SetNextWindowSize(ImVec2(860,540),ImGuiCond_FirstUseEver);bool opened=true;
+        const auto extent=ImGui::GetMainViewport()->WorkSize;
+        ImGui::SetNextWindowSize(ImVec2((std::min)(860.f,extent.x),(std::min)(620.f,extent.y)),ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(ImVec2((std::min)(480.f,extent.x),(std::min)(420.f,extent.y)),extent);bool opened=true;
         if(ImGui::Begin("MHWI EquipmentMorph",&opened,ImGuiWindowFlags_NoCollapse)){
             view.Draw(control);
         }ImGui::End();if(!opened){control.Post(mhmcontrol::Action::Release);input.RequestClose();}ImGui::Render();
@@ -241,7 +243,7 @@ DWORD WINAPI Worker(void* value){
     state->control.ConfigurePresets(folder.parent_path()/L"presets");
     std::error_code error;std::filesystem::create_directories(folder,error);
     std::ofstream log(folder/(L"imgui-"+std::to_wstring(GetCurrentProcessId())+L".ndjson"));
-    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":7,\"state\":\"starting\"}\n";log.flush();
+    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":8,\"state\":\"starting\"}\n";log.flush();
     try{state->boot=Install(static_cast<HINSTANCE>(value))?1:-1;if(state->boot<0)state->Disable("hook_install_failed");}catch(...){state->boot=-1;state->Disable("bootstrap_failed");}
     publishedBoot.store(state->boot.load());
     uint64_t nextConnect=0,nextLog=0;
@@ -259,7 +261,7 @@ DWORD WINAPI Worker(void* value){
         try{state->control.Service(now,state->input.visible.load());}catch(...){state->Disable("control_failed");}
         if(now>=nextLog){
         nextLog=now+2000;const auto controls=state->control.Snapshot();
-        log<<"{\"event\":\"imgui_status\",\"stage\":7,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
+        log<<"{\"event\":\"imgui_status\",\"stage\":8,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
            <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
            <<",\"captured_creations\":"<<state->creations.load()<<",\"unmatched_presents\":"<<state->unmatchedPresents.load()
