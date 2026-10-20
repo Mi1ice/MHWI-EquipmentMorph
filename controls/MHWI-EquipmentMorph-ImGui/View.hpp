@@ -59,7 +59,7 @@ struct View {
         else ui::Line("选择只用于浏览；点击“应用所选”才会改变形态键。",ui::Tone::Muted);
         const std::string name=presets.activeId.empty()?(owned?"未命名配置":"尚未接管形态键"):presets.activeName;
         const char* state=!owned?"未接管／已释放":presets.dirty?"未保存":"已保存";
-        ui::Line((std::string("当前配置 · ")+name+" · "+state).c_str(),owned&&presets.dirty?ui::Tone::Warning:owned?ui::Tone::Success:ui::Tone::Muted);
+        ui::Line((std::string("当前配置 · ")+state+" · "+name).c_str(),owned&&presets.dirty?ui::Tone::Warning:owned?ui::Tone::Success:ui::Tone::Muted);
         if(chosen&&chosen->id!=presets.activeId)ui::Line(!presets.activeId.empty()&&owned?"正在浏览另一份预设；当前形变保持，保存当前仍更新当前配置。":"尚未应用此预设；浏览不会接管形态键。",ui::Tone::Muted);
         ui::Notice(presets,presetWaiting,presetError);
         if(ImGui::BeginPopupModal("另存为整套预设",nullptr,ImGuiWindowFlags_AlwaysAutoResize)){
