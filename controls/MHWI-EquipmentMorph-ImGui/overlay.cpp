@@ -88,7 +88,7 @@ struct Renderer {
         auto& frame=frames[sequence%count];if(frame.fence&&fence->GetCompletedValue()<frame.fence)return false;
         const auto index=swap->GetCurrentBackBufferIndex();if(index>=count)throw std::runtime_error("Invalid backbuffer index");
         ImGui::SetCurrentContext(input.context);ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
-        ImGui::SetNextWindowSize(ImVec2(860,440),ImGuiCond_FirstUseEver);bool opened=true;
+        ImGui::SetNextWindowSize(ImVec2(860,540),ImGuiCond_FirstUseEver);bool opened=true;
         if(ImGui::Begin("MHWI EquipmentMorph",&opened,ImGuiWindowFlags_NoCollapse)){
             view.Draw(control);
         }ImGui::End();if(!opened){control.Post(mhmcontrol::Action::Release);input.RequestClose();}ImGui::Render();
@@ -238,9 +238,10 @@ DWORD WINAPI Worker(void* value){
     if(_wcsicmp(path.filename().c_str(),L"MonsterHunterWorld.exe")&&_wcsicmp(path.filename().c_str(),L"EquipmentMorphImGuiFixture.exe"))return 2;
     state=new State;
     const auto folder=path.parent_path()/L"nativePC"/L"plugins"/L"MHWEquipmentMorph"/L"logs";
+    state->control.ConfigurePresets(folder.parent_path()/L"presets");
     std::error_code error;std::filesystem::create_directories(folder,error);
     std::ofstream log(folder/(L"imgui-"+std::to_wstring(GetCurrentProcessId())+L".ndjson"));
-    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":3,\"state\":\"starting\"}\n";log.flush();
+    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":4,\"state\":\"starting\"}\n";log.flush();
     try{state->boot=Install(static_cast<HINSTANCE>(value))?1:-1;if(state->boot<0)state->Disable("hook_install_failed");}catch(...){state->boot=-1;state->Disable("bootstrap_failed");}
     publishedBoot.store(state->boot.load());
     uint64_t nextConnect=0,nextLog=0;
@@ -251,13 +252,14 @@ DWORD WINAPI Worker(void* value){
             if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN,L"MHWEquipmentMorphConfiguredPrototype.dll",&host)){
                 using Getter=MhmResult(MHM_CALL*)(uint32_t,uint32_t,MhmApi*);Getter getter=nullptr;
                 const auto address=GetProcAddress(host,"MhwMorphGetApi");std::memcpy(&getter,&address,sizeof(getter));MhmApi api{};
-                if(getter&&getter(MHM_API_VERSION,sizeof(api),&api)==MHM_OK)state->control.Connect(api);
+                morphpreset::IdentityQuery identity=nullptr;const auto identityAddress=GetProcAddress(host,"MhwMorphGetAssetIdentity");std::memcpy(&identity,&identityAddress,sizeof(identity));
+                if(getter&&getter(MHM_API_VERSION,sizeof(api),&api)==MHM_OK)state->control.Connect(api,identity);
             }
         }
         try{state->control.Service(now,state->input.visible.load());}catch(...){state->Disable("control_failed");}
         if(now>=nextLog){
         nextLog=now+2000;const auto controls=state->control.Snapshot();
-        log<<"{\"event\":\"imgui_status\",\"stage\":3,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
+        log<<"{\"event\":\"imgui_status\",\"stage\":4,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
            <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
            <<",\"captured_creations\":"<<state->creations.load()<<",\"unmatched_presents\":"<<state->unmatchedPresents.load()
@@ -269,7 +271,10 @@ DWORD WINAPI Worker(void* value){
            <<",\"hotkey_registered\":"<<(state->input.hotkeyRegistered.load()?"true":"false")<<",\"hotkey_error\":"<<state->input.hotkeyError.load()
            <<",\"blocked_polls\":"<<state->input.blockedPolls.load()
            <<",\"api_connected\":"<<(controls->connected?"true":"false")<<",\"control_ready\":"<<(controls->ready?"true":"false")
-           <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan<<"}\n";log.flush();
+           <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan
+           <<",\"identity_available\":"<<(controls->presets.available?"true":"false")<<",\"preset_count\":"<<controls->presets.choices->size()
+           <<",\"preset_completed\":"<<controls->presets.completed<<",\"preset_success\":"<<(controls->presets.success?"true":"false")
+           <<",\"preset_dirty\":"<<(controls->presets.dirty?"true":"false")<<"}\n";log.flush();
         }Sleep(state->input.visible.load()?16:100);
     }
 }

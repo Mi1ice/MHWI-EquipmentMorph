@@ -25,6 +25,8 @@ Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插�
 
 ## 使用与开发
 
+2026-10-20 新增[整套形态键预设候选](docs/PRESETS.md)：保存本面板已接管的多个部位，严格核对模型与形态键数据包后手动应用。复选框及显式零权重接管保留；需要配套核心和 GUI，待用户实机测试。
+
 运行环境为 Windows x64、已验证的 MHW Iceborne 游戏构建和 DX12，使用 Stracker's Loader。作者侧联合导出已验证 Blender 5.1.2 与源码摘要匹配的 MHW Model Editor 0.12；这些外部依赖需要自行安装。项目不包含游戏模型或 MHW Model Editor。
 
 - [作者操作、同名包和安装流程](docs/USAGE.md)

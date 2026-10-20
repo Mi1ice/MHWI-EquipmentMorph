@@ -1,6 +1,8 @@
-# Dear ImGui 游戏内面板：第三阶段
+# Dear ImGui 游戏内面板：第四阶段预设候选
 
 提供独立、可选的 `MHWEquipmentMorphImGui.dll`。本阶段已通过公开 API 接入装备选择和形态键控制，使用默认 ImGui 样式；外观优化后置。核心插件继续独立提供形态键支持，不需要面板或旧控制桥接。
+
+2026-10-20 增加[整套形态键预设](../../docs/PRESETS.md)：顶部下拉选择，全部部位严格匹配后手动应用，支持保存／另存为、修改状态及失败原因提示。复选框和显式零权重语义保留。预设需配套核心的可选身份查询扩展；本候选待用户实机测试。
 
 ## 使用
 
@@ -16,9 +18,9 @@
 
 ## 安装与回滚
 
-需要 Windows x64、DX12 模式和 Stracker's Loader。正常退出游戏后，仅将构建输出的 `MHWEquipmentMorphImGui.dll` 放入 `nativePC/plugins/`。保留已有 `MHWEquipmentMorphConfiguredPrototype.dll`、`runtime.ini` 与装备资产，不需要外部 EXE、Tauri、WebView2 或控制桥接。
+需要 Windows x64、DX12 模式和 Stracker's Loader。正常退出游戏后，将配套构建的 `MHWEquipmentMorphConfiguredPrototype.dll` 与 `MHWEquipmentMorphImGui.dll` 放入 `nativePC/plugins/`，保留 `runtime.ini` 与装备资产。旧核心搭配新面板仍可调节权重，但没有身份扩展时不能使用预设。不需要外部 EXE、Tauri、WebView2 或控制桥接。
 
-回滚：正常退出游戏后移除 GUI DLL，或恢复上一份 GUI 备份。核心仍可由其他插件通过公开 API 使用。许可证随源码／候选文件保留，不重新分发系统字体。
+回滚：正常退出游戏后恢复核心和 GUI 的配套备份，预设文件可保留。仅停用界面时可移除 GUI DLL；核心仍可由其他插件通过公开 API 使用。许可证随源码／候选文件保留，不重新分发系统字体。
 
 ## 构建与非界面验证
 
@@ -40,7 +42,7 @@
 - 权重 API 只由普通后台线程调用。渲染与输入线程交换不可变快照和合并后的编辑命令，不直接枚举目标或提交权重。装备与键元数据约每 250ms 扫描；显示时约每 16ms 合并处理输入并读回已应用权重，快速读回不重复枚举装备与键。隐藏时停止快速读回，继续低频扫描和续租。会话复用现有控制会话逻辑，优先级 220、租期 2000ms。
 - 隐藏时跳过 ImGui 帧与 GPU 提交。GUI 停用会请求释放本面板来源。其他来源的贡献保持独立。
 - 快捷键只在游戏拥有焦点时注册；失焦解除注册。键盘／鼠标捕获沿用第二阶段已通过用户测试的路径；手柄和 GetRawInputBuffer 尚未接入。
-- 日志：`nativePC/plugins/MHWEquipmentMorph/logs/imgui-<PID>.ndjson`。本阶段标记为 `stage=3`。正常为 `boot=1`、`error=none`、`window_ready=true`、`queue_ready=true`，快捷键注册为 `hotkey_registered=true`、`hotkey_error=0`。
+- 日志：`nativePC/plugins/MHWEquipmentMorph/logs/imgui-<PID>.ndjson`。本阶段标记为 `stage=4`。正常为 `boot=1`、`error=none`、`window_ready=true`、`queue_ready=true`，快捷键注册为 `hotkey_registered=true`、`hotkey_error=0`。
 - 接口字段：`api_connected`、`control_ready`、`targets`、`source`、`control_result`、`snapshot_result`。只查看时 `source=0`；接管后为本面板来源，释放后回到 0。错误码沿用公共 API。
 - 依赖为固定 Dear ImGui v1.93.0，来源及逐文件摘要见 [UPSTREAM.json](../../research/imgui-v1.93.0/UPSTREAM.json)。系统字体使用 `msyh.ttc`，不重新分发字体。
 

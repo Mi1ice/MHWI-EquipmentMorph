@@ -4,6 +4,9 @@
 #include <memory>
 #include <mutex>
 #include <utility>
+#include <deque>
+#include <optional>
+#include "PresetManager.hpp"
 
 namespace morphgui {
 struct ControlSnapshot {
@@ -11,17 +14,22 @@ struct ControlSnapshot {
     bool connected=false,ready=false;
     MhmResult operation=MHM_OK,scan=MHM_NOT_READY;
     uint64_t completed=0;
+    morphpreset::State presets;
 };
 // Only the ordinary plugin worker calls the API. Render/input threads exchange
 // immutable snapshots and coalesced commands; target handles prevent replay.
 class Control {
     std::unique_ptr<mhmcontrol::Session> session;
+    morphpreset::Manager presets;
     ControlSnapshot current;
     std::atomic<std::shared_ptr<const ControlSnapshot>> published{std::make_shared<ControlSnapshot>()};
     using Identity=std::pair<uint64_t,uint32_t>;
     std::mutex commands;
     std::map<Identity,mhmcontrol::Request> pending;
     bool releasePending=false;
+    struct Work {std::map<Identity,mhmcontrol::Request> batch;bool release=false;uint64_t ticket=0;std::optional<morphpreset::Request> preset;};
+    std::deque<Work> queued;
+    std::atomic_uint64_t canceledThrough=0;
     uint64_t sequence=0,nextScan=0,nextWeights=0,nextHeartbeat=0;
     void Publish(){published.store(std::make_shared<ControlSnapshot>(current));}
     void Refresh(){
@@ -29,6 +37,7 @@ class Control {
         current.ready=current.scan==MHM_OK&&mhmcontrol::Valid(next,0,0);
         if(current.ready)current.data=next;
         else if(current.scan==MHM_OK)current.scan=MHM_INVALID;
+        presets.Update(current.data,current.ready);current.presets=presets.Snapshot();
     }
     void RefreshWeights(){
         if(!current.ready){Refresh();return;}
@@ -39,18 +48,19 @@ class Control {
 public:
     std::shared_ptr<const ControlSnapshot> Snapshot()const{return published.load();}
     bool Connected()const{return current.connected;} // Worker only.
-    MhmResult Connect(const MhmApi& api){
+    void ConfigurePresets(const std::filesystem::path& directory){presets.Configure(directory);presets.Update(current.data,current.ready);current.presets=presets.Snapshot();Publish();}
+    MhmResult Connect(const MhmApi& api,morphpreset::IdentityQuery identity=nullptr){
         constexpr auto required=MHM_CAP_BATCH|MHM_CAP_LAYERS|MHM_CAP_LEASE|MHM_CAP_PART_LIFECYCLE;
         if(api.version!=MHM_API_VERSION||api.bytes!=sizeof(api)||(api.capabilities&required)!=required
            ||!api.limits||!api.target_at||!api.key_at||!api.open_source||!api.close_source||!api.heartbeat||!api.submit||!api.read_weights){current.scan=MHM_VERSION;Publish();return MHM_VERSION;}
         MhmLimits limits{};const auto result=api.limits(&limits);
         if(result!=MHM_OK)return result;
         if(!limits.targets||limits.targets>mhmcontrol::MaxTargets||!limits.keys_per_target||limits.keys_per_target>64||limits.batch_updates<mhmcontrol::MaxKeys){current.scan=MHM_CAPACITY;Publish();return MHM_CAPACITY;}
-        session=std::make_unique<mhmcontrol::Session>(api);current={};current.connected=true;Refresh();Publish();return current.scan;
+        session=std::make_unique<mhmcontrol::Session>(api);presets.SetQuery(identity);current={};current.connected=true;Refresh();Publish();return current.scan;
     }
     uint64_t Post(mhmcontrol::Action action,uint64_t target=0,uint32_t key=0,float weight=0){
         std::scoped_lock lock(commands);const auto ticket=++sequence;
-        if(action==mhmcontrol::Action::Release){pending.clear();releasePending=true;}
+        if(action==mhmcontrol::Action::Release){pending.clear();queued.clear();canceledThrough=ticket;releasePending=true;}
         else{
             const Identity id{target,key};
             if(pending.size()<mhmcontrol::MaxKeys||pending.contains(id)){
@@ -58,26 +68,39 @@ public:
             }
         }return ticket;
     }
+    uint64_t PostPreset(morphpreset::Request request){
+        std::scoped_lock lock(commands);if(queued.size()>=16)return 0;
+        Work work;work.batch.swap(pending);work.release=std::exchange(releasePending,false);work.ticket=++sequence;work.preset=std::move(request);queued.push_back(std::move(work));return sequence;
+    }
     // Lease renewal continues while the window is hidden. An expired source
     // loses ownership; no previous weights are automatically submitted again.
     void Service(uint64_t now,bool visible=false){
-        std::map<Identity,mhmcontrol::Request> batch;bool release=false;uint64_t completed=0;
-        {std::scoped_lock lock(commands);batch.swap(pending);release=std::exchange(releasePending,false);completed=sequence;}
-        const bool changed=release||!batch.empty();
-        if(!session){if(changed){current.operation=MHM_NOT_READY;current.completed=completed;Publish();}return;}
+        std::deque<Work> work;
+        {std::scoped_lock lock(commands);work.swap(queued);if(releasePending||!pending.empty()){Work tail;tail.batch.swap(pending);tail.release=std::exchange(releasePending,false);tail.ticket=sequence;work.push_back(std::move(tail));}}
+        const bool changed=!work.empty();
+        if(!session){if(changed){current.operation=MHM_NOT_READY;current.completed=work.back().ticket;Publish();}return;}
         bool expired=false;
         if(now>=nextHeartbeat){const auto result=session->Heartbeat();nextHeartbeat=now+500;
             if(result!=MHM_OK){current.operation=result;expired=true;}}
-        if(expired)batch.clear(); // Do not reopen an expired source for an old queued edit.
-        if(release)current.operation=session->Release();
-        for(const auto& [id,request]:batch){
-            (void)id;Refresh();
-            if(!current.ready){current.operation=current.scan;continue;}
-            const auto end=current.data.keys.begin()+current.data.keyCount;
-            const auto found=std::find_if(current.data.keys.begin(),end,[&](const auto& k){return k.target==request.target&&k.index==request.key;});
-            current.operation=found==end?MHM_STALE:session->Change(request);
+        for(const auto& item:work){
+            if(item.ticket<canceledThrough.load()){current.completed=item.ticket;continue;}
+            if(item.release)current.operation=session->Release();
+            bool accepted=!expired;
+            if(!expired)for(const auto& [id,request]:item.batch){
+                (void)id;Refresh();
+                if(!current.ready){current.operation=current.scan;accepted=false;continue;}
+                const auto end=current.data.keys.begin()+current.data.keyCount;
+                const auto found=std::find_if(current.data.keys.begin(),end,[&](const auto& k){return k.target==request.target&&k.index==request.key;});
+                current.operation=found==end?MHM_STALE:session->Change(request);if(current.operation!=MHM_OK)accepted=false;
+            }
+            if(item.preset){
+                Refresh();
+                if(!accepted)presets.Fail(item.ticket,"编辑未被接受或控制来源已失效，请重新调节后操作预设");
+                else current.operation=presets.Process(*item.preset,item.ticket,*session,current.data,current.ready);
+            }
+            current.completed=item.ticket;
         }
-        if(changed||expired||now>=nextScan){Refresh();nextScan=now+250;nextWeights=now+16;current.completed=completed;Publish();}
+        if(changed||expired||now>=nextScan){Refresh();nextScan=now+250;nextWeights=now+16;Publish();}
         else if(visible&&now>=nextWeights){RefreshWeights();nextWeights=now+16;Publish();}
     }
 };

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <map>
 #include <vector>
+#include <span>
 
 namespace mhmcontrol {
 class Session {
@@ -70,6 +71,17 @@ public:
         }
         next.source=source;output=next;return MHM_OK;
     }
+    MhmResult Replace(std::span<const MhmUpdate> updates){
+        if(updates.size()>MaxKeys)return MHM_CAPACITY;
+        std::map<Identity,float> candidate;
+        for(const auto& update:updates)if(!candidate.emplace(Identity{update.target,update.key},update.weight).second)return MHM_INVALID;
+        if(candidate.empty())return Release();
+        bool opened=false;MhmResult result=MHM_OK;
+        if(!source){result=api.open_source("MHWI-EquipmentMorph-ControlPanel",220,2000,&source);if(result!=MHM_OK)return result;opened=true;}
+        result=api.submit(source,updates.data(),static_cast<uint32_t>(updates.size()),&revision);
+        if(result==MHM_OK)owned.swap(candidate);else if(opened)Release();
+        return result;
+    }
     MhmResult Change(const Request& request){
         if(request.action==Action::Release)return Release();
         if(request.action==Action::Poll)return MHM_OK;
@@ -79,14 +91,9 @@ public:
         if(request.action==Action::Set)candidate[id]=request.weight;else candidate.erase(id);
         if(candidate.empty())return Release();
         if(candidate.size()>MaxKeys)return MHM_CAPACITY;
-        bool opened=false;
-        if(!source){result=api.open_source("MHWI-EquipmentMorph-ControlPanel",220,2000,&source);if(result!=MHM_OK)return result;opened=true;}
         std::vector<MhmUpdate> updates;updates.reserve(candidate.size());
         for(const auto& [identity,weight]:candidate)updates.push_back({identity.first,identity.second,weight});
-        result=api.submit(source,updates.data(),static_cast<uint32_t>(updates.size()),&revision);
-        if(result==MHM_OK)owned.swap(candidate);
-        else if(opened)Release();
-        return result;
+        return Replace(updates);
     }
 };
 }

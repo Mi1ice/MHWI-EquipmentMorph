@@ -164,6 +164,7 @@ inline Collection Load(const std::filesystem::path& root,const std::filesystem::
                 ||profileRaw.size()>maxInputBytes-collection.inputBytes-packBytes-modelBytes)throw std::runtime_error("Catalogue memory budget");
             auto asset=pack::Load(path/"asset.mhmpack",profile.packSha);
             ValidateModel(profile,asset,ReadFile(modelPath,128*1024*1024));
+            asset.modelSha=profile.modelSha;asset.packSha=profile.packSha;
             collection.basisBytes+=profile.vertexBytes;collection.inputBytes+=packBytes+modelBytes+profileRaw.size();
             collection.parts[part].push_back(std::make_shared<const Loaded>(Loaded{std::move(profile),std::move(asset)}));
         }catch(const std::exception& e){collection.failures.push_back({part,name,e.what()});}
