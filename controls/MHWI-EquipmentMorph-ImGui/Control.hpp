@@ -46,6 +46,10 @@ class Control {
         if(current.scan==MHM_OK&&mhmcontrol::Valid(next,0,0)){current.data=next;current.ready=true;}
         else Refresh(); // Retired handles require fresh discovery, never replay.
     }
+    void Automatic(){
+        if(presets.Automatic(session.get(),current.data,current.ready))Refresh();
+        else{presets.Update(current.data,current.ready);current.presets=presets.Snapshot();}
+    }
 public:
     std::shared_ptr<const ControlSnapshot> Snapshot()const{return published.load();}
     bool Connected()const{return current.connected;} // Worker only.
@@ -57,7 +61,7 @@ public:
         MhmLimits limits{};const auto result=api.limits(&limits);
         if(result!=MHM_OK)return result;
         if(!limits.targets||limits.targets>mhmcontrol::MaxTargets||!limits.keys_per_target||limits.keys_per_target>64||limits.batch_updates<mhmcontrol::MaxKeys){current.scan=MHM_CAPACITY;Publish();return MHM_CAPACITY;}
-        session=std::make_unique<mhmcontrol::Session>(api);presets.SetQuery(identity);current={};current.connected=true;Refresh();Publish();return current.scan;
+        session=std::make_unique<mhmcontrol::Session>(api);presets.SourceExpired();presets.SetQuery(identity);current={};current.connected=true;Refresh();Publish();return current.scan;
     }
     uint64_t Post(mhmcontrol::Action action,uint64_t target=0,uint32_t key=0,float weight=0){
         std::scoped_lock lock(commands);const auto ticket=++sequence;
@@ -74,17 +78,17 @@ public:
         Work work;work.batch.swap(pending);work.release=std::exchange(releasePending,false);work.ticket=++sequence;work.preset=std::move(request);queued.push_back(std::move(work));return sequence;
     }
     // Lease renewal continues while the window is hidden. An expired source
-    // loses ownership; no previous weights are automatically submitted again.
+    // loses old drafts; registered defaults are matched again from saved files.
     void Service(uint64_t now,bool visible=false){
         std::deque<Work> work;
         {std::scoped_lock lock(commands);work.swap(queued);if(releasePending||!pending.empty()){Work tail;tail.batch.swap(pending);tail.release=std::exchange(releasePending,false);tail.ticket=sequence;work.push_back(std::move(tail));}}
         const bool changed=!work.empty();
         bool expired=false;
         if(session&&now>=nextHeartbeat){const auto result=session->Heartbeat();nextHeartbeat=now+500;
-            if(result!=MHM_OK){current.operation=result;expired=true;}}
+            if(result!=MHM_OK){current.operation=result;expired=true;presets.SourceExpired();}}
         for(const auto& item:work){
             if(item.ticket<canceledThrough.load()){current.completed=item.ticket;continue;}
-            if(item.release)current.operation=session?session->Release():MHM_NOT_READY;
+            if(item.release){current.operation=session?session->Release():MHM_NOT_READY;presets.Pause();}
             bool accepted=session&&!expired;
             if(!session&&!item.batch.empty())current.operation=MHM_NOT_READY;
             if(session&&!expired)for(const auto& [id,request]:item.batch){
@@ -92,7 +96,7 @@ public:
                 if(!current.ready){current.operation=current.scan;accepted=false;continue;}
                 const auto end=current.data.keys.begin()+current.data.keyCount;
                 const auto found=std::find_if(current.data.keys.begin(),end,[&](const auto& k){return k.target==request.target&&k.index==request.key;});
-                current.operation=found==end?MHM_STALE:session->Change(request);if(current.operation!=MHM_OK)accepted=false;
+                current.operation=found==end?MHM_STALE:session->Change(request);if(current.operation!=MHM_OK)accepted=false;else presets.Edited(request.target,current.data);
             }
             if(item.preset){
                 Refresh();
@@ -101,7 +105,7 @@ public:
             }
             current.completed=item.ticket;
         }
-        if(changed||expired||now>=nextScan){Refresh();nextScan=now+250;nextWeights=now+16;Publish();}
+        if(changed||expired||now>=nextScan){Refresh();Automatic();nextScan=now+250;nextWeights=now+16;Publish();}
         else if(visible&&now>=nextWeights){RefreshWeights();nextWeights=now+16;Publish();}
     }
 };

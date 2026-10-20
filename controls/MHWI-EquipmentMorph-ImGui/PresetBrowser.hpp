@@ -30,7 +30,7 @@ struct PresetBrowser {
         if(trash){ImGui::BeginDisabled(waiting!=0);if(ImGui::Button("删除全部")){purgeAll=true;purgeId.clear();confirm=true;error.clear();}ImGui::EndDisabled();}
         else{ImGui::BeginDisabled(waiting!=0);if(ImGui::Button("导入…"))importer.Open(control,waiting);
             ui::NextButton("导出全部");if(ImGui::Button("导出全部"))Submit(control,{morphpreset::Action::ExportAll},waiting);ImGui::EndDisabled();}
-        ui::Line("仅整理文件和查看详情，不改变当前形态键。",ui::Tone::Muted);
+        ui::Line("管理中仅查看／整理；穿戴默认在启动或换装时恢复。",ui::Tone::Muted);
         ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##search","按预设名称搜索",search,sizeof(search));
         ImGui::TextUnformatted("匹配状态");ImGui::SameLine();ImGui::SetNextItemWidth(-1);
         ImGui::Combo("##match-filter",&filter,"全部\0完全匹配\0部分匹配\0无匹配\0");
@@ -51,7 +51,7 @@ struct PresetBrowser {
                 if(ImGui::Selectable("##choose",choice->id==chosenId,0,ImVec2(0,line*2))){chosenId=choice->id;chosen=choice;error.clear();}
                 const auto position=ImGui::GetItemRectMin();const float rowWidth=ImGui::GetItemRectMax().x-position.x-8;
                 ui::TextAt(ImVec2(position.x+4,position.y),rowWidth,choice->name.c_str(),ImGui::GetColorU32(ImGuiCol_Text));
-                const auto status=choice->id==state.activeId?std::string(state.dirty?"当前配置 · 未保存 · ":"当前配置 · ")+choice->status:choice->status;
+                const auto status=choice->id==state.activeId?std::string(state.dirty?"当前编辑 · 未保存 · ":"当前编辑 · ")+choice->status:choice->status;
                 ui::TextAt(ImVec2(position.x+4,position.y+line),rowWidth,status.c_str(),ImGui::ColorConvertFloat4ToU32(ui::Color(choice->id==state.activeId&&state.dirty?ui::Tone::Warning:ui::Tone::Muted)));
                 if(ImGui::IsItemHovered())ui::Tooltip((choice->name+"\n"+status).c_str());ImGui::PopID();
             }
@@ -60,7 +60,7 @@ struct PresetBrowser {
             const morphpreset::Document* doc=nullptr;if(chosen)for(const auto& item:library)if(item.id==chosenId)doc=&item;
             if(doc){
                 ui::Line(doc->name.c_str());ui::Wrapped(chosen->status.c_str(),chosen->compatible?ui::Tone::Success:ui::Tone::Warning);
-                if(doc->id==state.activeId)ui::Line(state.dirty?"当前配置 · 有未保存的修改":"当前配置关联此预设",state.dirty?ui::Tone::Warning:ui::Tone::Success);
+                if(doc->id==state.activeId)ui::Line(state.dirty?"当前编辑 · 有未保存的修改":"当前正在编辑此预设",state.dirty?ui::Tone::Warning:ui::Tone::Success);
                 else ui::Line("正在浏览详情，不会应用预设。",ui::Tone::Muted);
                 ImGui::BeginDisabled(waiting!=0);
                 if(ImGui::Button("重命名")){rename=true;renameId=doc->id;renameDeleted=trash;strcpy_s(name,doc->name.c_str());error.clear();}
@@ -69,6 +69,12 @@ struct PresetBrowser {
                 else{ui::NextButton("删除到回收区");if(ImGui::Button("删除到回收区"))Submit(control,{morphpreset::Action::Trash,doc->id,{}},waiting);
                     ui::NextButton("导出");if(ImGui::Button("导出"))Submit(control,{morphpreset::Action::Export,doc->id},waiting);
                     if(ImGui::IsItemHovered())ImGui::SetTooltip("导出此预设已保存的内容；未保存的调节请先保存。");}
+                if(!trash){
+                    if(ImGui::Button("设为穿戴默认"))Submit(control,{morphpreset::Action::SetDefault,doc->id},waiting);
+                    const auto registered=morphpreset::DefaultParts(*state.defaults,doc->id);ui::NextButton("取消默认");ImGui::BeginDisabled(registered.empty());
+                    if(ImGui::Button("取消默认"))Submit(control,{morphpreset::Action::ClearDefault,doc->id},waiting);ImGui::EndDisabled();
+                    ui::Wrapped((registered.empty()?std::string("未设为穿戴默认"):"穿戴默认部位："+registered).c_str(),ui::Tone::Muted);
+                }
                 ImGui::EndDisabled();ImGui::Separator();
                 for(const auto& part:doc->parts){
                     ImGui::PushID(static_cast<int>(part.part));

@@ -16,11 +16,22 @@ inline std::string NewId(){
     const auto* bytes=reinterpret_cast<const unsigned char*>(&id);constexpr char hex[]="0123456789abcdef";std::string text;
     for(size_t i=0;i<sizeof(id);i++){text+=hex[bytes[i]>>4];text+=hex[bytes[i]&15];}return text;
 }
+inline void NoPresetLink(const std::filesystem::path& path){const auto attributes=GetFileAttributesW(path.c_str());if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_REPARSE_POINT))throw std::runtime_error("预设目录或文件不能是链接");}
+inline void WritePresetText(const std::filesystem::path& destination,const std::string& text,bool replace=true){
+    NoPresetLink(destination.parent_path());NoPresetLink(destination);std::filesystem::create_directories(destination.parent_path());NoPresetLink(destination.parent_path());
+    const auto temporary=destination.parent_path()/(destination.filename().wstring()+L"."+std::filesystem::path(NewId()).wstring()+L".tmp");
+    HANDLE file=CreateFileW(temporary.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(file==INVALID_HANDLE_VALUE)throw std::runtime_error("无法写入预设目录，请检查权限");
+    DWORD written=0;const bool ok=WriteFile(file,text.data(),static_cast<DWORD>(text.size()),&written,nullptr)&&written==text.size()&&FlushFileBuffers(file);CloseHandle(file);
+    if(!ok||!MoveFileExW(temporary.c_str(),destination.c_str(),(replace?MOVEFILE_REPLACE_EXISTING:0)|MOVEFILE_WRITE_THROUGH)){
+        DeleteFileW(temporary.c_str());throw std::runtime_error("预设保存失败，原文件保留");
+    }
+}
 struct Catalog {std::vector<Document> documents;unsigned invalid=0;};
 struct Purged {std::vector<std::string> ids;unsigned failed=0,skipped=0;};
 class Store {
     std::filesystem::path root;
-    static void NoLink(const std::filesystem::path& path){const auto attributes=GetFileAttributesW(path.c_str());if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_REPARSE_POINT))throw std::runtime_error("预设目录或文件不能是链接");}
+    static void NoLink(const std::filesystem::path& path){NoPresetLink(path);}
     std::filesystem::path Directory(bool deleted)const{NoLink(root);const auto directory=deleted?root/L".trash":root;NoLink(directory);return directory;}
     void Move(const std::string& id,bool restore)const{
         if(!Hex(id,32))throw std::runtime_error("预设编号无效");
@@ -48,13 +59,7 @@ public:
     }
     void Save(const Document& doc,bool deleted=false,bool replace=true)const{
         const auto text=Encode(doc);const auto directory=Directory(deleted);std::filesystem::create_directories(directory);NoLink(directory);
-        const auto destination=directory/(doc.id+".json"),temporary=directory/(doc.id+"."+NewId()+".tmp");NoLink(destination);
-        HANDLE file=CreateFileW(temporary.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
-        if(file==INVALID_HANDLE_VALUE)throw std::runtime_error("无法写入预设目录，请检查权限");
-        DWORD written=0;const bool ok=WriteFile(file,text.data(),static_cast<DWORD>(text.size()),&written,nullptr)&&written==text.size()&&FlushFileBuffers(file);CloseHandle(file);
-        if(!ok||!MoveFileExW(temporary.c_str(),destination.c_str(),(replace?MOVEFILE_REPLACE_EXISTING:0)|MOVEFILE_WRITE_THROUGH)){
-            DeleteFileW(temporary.c_str());throw std::runtime_error("预设保存失败，原文件保留");
-        }
+        WritePresetText(directory/(doc.id+".json"),text,replace);
     }
     void Trash(const std::string& id)const{Move(id,false);}
     void Restore(const std::string& id)const{Move(id,true);}

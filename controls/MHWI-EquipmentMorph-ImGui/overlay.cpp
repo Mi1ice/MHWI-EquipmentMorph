@@ -89,11 +89,13 @@ struct Renderer {
         const auto index=swap->GetCurrentBackBufferIndex();if(index>=count)throw std::runtime_error("Invalid backbuffer index");
         ImGui::SetCurrentContext(input.context);ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
         const auto extent=ImGui::GetMainViewport()->WorkSize;
-        ImGui::SetNextWindowSize(ImVec2((std::min)(860.f,extent.x),(std::min)(620.f,extent.y)),ImGuiCond_FirstUseEver);
+        const float marginX=extent.x>528?24.f:0.f,marginY=extent.y>468?24.f:0.f;
+        ImGui::SetNextWindowPos(ImVec2(ImGui::GetMainViewport()->WorkPos.x+marginX,ImGui::GetMainViewport()->WorkPos.y+marginY),ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2((std::min)(860.f,extent.x-2*marginX),(std::min)(720.f,extent.y-2*marginY)),ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2((std::min)(480.f,extent.x),(std::min)(420.f,extent.y)),extent);bool opened=true;
         if(ImGui::Begin("MHWI EquipmentMorph",&opened,ImGuiWindowFlags_NoCollapse)){
             view.Draw(control);
-        }ImGui::End();if(!opened){control.Post(mhmcontrol::Action::Release);input.RequestClose();}ImGui::Render();
+        }ImGui::End();if(!opened)input.RequestClose();ImGui::Render();
         Require(frame.allocator->Reset());Require(list->Reset(frame.allocator.Get(),nullptr));
         D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition.pResource=buffers[index].Get();
         barrier.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_PRESENT;barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -111,7 +113,7 @@ struct State {
     std::atomic<const char*> bindingRoute="none";std::atomic_uint64_t creations=0,unmatchedPresents=0;
     std::atomic_int boot=0;std::atomic<const char*> error="none";std::atomic_bool resizing=false;
     std::atomic_uint64_t presents=0,drawn=0,busy=0,resizes=0;
-    void Disable(const char* reason){error=reason;input.available=false;control.Post(mhmcontrol::Action::Release);input.RequestClose();}
+    void Disable(const char* reason){error=reason;input.available=false;if(std::strcmp(reason,"control_failed")==0)control.Post(mhmcontrol::Action::Release);input.RequestClose();}
 };
 State* state=nullptr;
 std::atomic_int publishedBoot=0;
@@ -243,7 +245,7 @@ DWORD WINAPI Worker(void* value){
     state->control.ConfigurePresets(folder.parent_path()/L"presets");
     std::error_code error;std::filesystem::create_directories(folder,error);
     std::ofstream log(folder/(L"imgui-"+std::to_wstring(GetCurrentProcessId())+L".ndjson"));
-    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":8,\"state\":\"starting\"}\n";log.flush();
+    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":9,\"state\":\"starting\"}\n";log.flush();
     try{state->boot=Install(static_cast<HINSTANCE>(value))?1:-1;if(state->boot<0)state->Disable("hook_install_failed");}catch(...){state->boot=-1;state->Disable("bootstrap_failed");}
     publishedBoot.store(state->boot.load());
     uint64_t nextConnect=0,nextLog=0;
@@ -261,7 +263,7 @@ DWORD WINAPI Worker(void* value){
         try{state->control.Service(now,state->input.visible.load());}catch(...){state->Disable("control_failed");}
         if(now>=nextLog){
         nextLog=now+2000;const auto controls=state->control.Snapshot();
-        log<<"{\"event\":\"imgui_status\",\"stage\":8,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
+        log<<"{\"event\":\"imgui_status\",\"stage\":9,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
            <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
            <<",\"captured_creations\":"<<state->creations.load()<<",\"unmatched_presents\":"<<state->unmatchedPresents.load()
@@ -275,7 +277,9 @@ DWORD WINAPI Worker(void* value){
            <<",\"api_connected\":"<<(controls->connected?"true":"false")<<",\"control_ready\":"<<(controls->ready?"true":"false")
            <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan
            <<",\"identity_available\":"<<(controls->presets.available?"true":"false")<<",\"preset_count\":"<<controls->presets.choices->size()
-           <<",\"usable_presets\":"<<std::count_if(controls->presets.choices->begin(),controls->presets.choices->end(),[](const auto& choice){return choice.compatible;})
+           <<",\"usable_presets\":"<<std::count_if(controls->presets.choices->begin(),controls->presets.choices->end(),[](const auto& choice){return choice.matched>0;})
+           <<",\"default_links\":"<<controls->presets.defaults->size()<<",\"auto_paused\":"<<(controls->presets.paused?"true":"false")
+           <<",\"auto_message\":"<<morphpreset::Quote(controls->presets.autoMessage)<<",\"editor\":"<<morphpreset::Quote(controls->presets.activeId)
            <<",\"recycled_presets\":"<<controls->presets.removed->size()
            <<",\"preset_completed\":"<<controls->presets.completed<<",\"preset_success\":"<<(controls->presets.success?"true":"false")
            <<",\"preset_dirty\":"<<(controls->presets.dirty?"true":"false")<<"}\n";log.flush();
