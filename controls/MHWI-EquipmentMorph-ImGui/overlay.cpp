@@ -61,12 +61,13 @@ struct Renderer {
         Require(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&fence)));completed=CreateEventW(nullptr,FALSE,FALSE,nullptr);if(!completed)throw std::runtime_error("Fence event creation failed");
         IMGUI_CHECKVERSION();input.context=ImGui::CreateContext();ImGui::SetCurrentContext(input.context);
         auto& io=ImGui::GetIO();io.IniFilename=nullptr;io.LogFilename=nullptr; // No files beside the game executable.
-        io.ConfigFlags=ImGuiConfigFlags_NavEnableKeyboard;
+        io.ConfigFlags=ImGuiConfigFlags_NavEnableKeyboard|ImGuiConfigFlags_NoMouseCursorChange;
         wchar_t windows[32768]{};if(GetWindowsDirectoryW(windows,32768)){
             const auto font=std::filesystem::path(windows)/L"Fonts"/L"msyh.ttc";
             const auto utf8=font.u8string();if(std::filesystem::exists(font))io.Fonts->AddFontFromFileTTF(reinterpret_cast<const char*>(utf8.c_str()),18.f);
         }
         ui::Style();win32=ImGui_ImplWin32_Init(window);if(!win32)throw std::runtime_error("Win32 backend initialization failed");
+        ImGui::GetPlatformIO().Platform_SetImeDataFn=[](ImGuiContext*,ImGuiViewport* viewport,ImGuiPlatformImeData* data){Input::instance->ImeRequest(viewport,data);};
         ImGui_ImplDX12_InitInfo init{};init.Device=device.Get();init.CommandQueue=queue.Get();init.NumFramesInFlight=static_cast<int>(count);init.RTVFormat=description.BufferDesc.Format;
         init.SrvDescriptorHeap=srvs.Get();init.UserData=this;
         init.SrvDescriptorAllocFn=[](ImGui_ImplDX12_InitInfo* info,D3D12_CPU_DESCRIPTOR_HANDLE* cpu,D3D12_GPU_DESCRIPTOR_HANDLE* gpu){
@@ -97,9 +98,13 @@ struct Renderer {
         // A focus round trip during restoration must not close a newly reopened panel.
         if(!view.closeTicket)closeVisibility=input.toggles.load();
         if(ImGui::Begin("MHWI EquipmentMorph",&opened,ImGuiWindowFlags_NoCollapse)){
+            const auto position=ImGui::GetWindowPos(),size=ImGui::GetWindowSize();const auto* viewport=ImGui::GetMainViewport();
+            const auto inside=ContainPanel({viewport->WorkPos.x,viewport->WorkPos.y,extent.x,extent.y},{position.x,position.y,size.x,size.y});
+            ImGui::SetWindowPos(ImVec2(inside.x,inside.y));ImGui::SetWindowSize(ImVec2(inside.w,inside.h));
             view.Draw(control);
         }ImGui::End();if(!opened&&!view.closeTicket)view.closeRequested=true;
         if(std::exchange(view.hideReady,false)&&closeVisibility==input.toggles.load())input.RequestClose();ImGui::Render();
+        input.CursorRequest(ImGui::GetMouseCursor());
         Require(frame.allocator->Reset());Require(list->Reset(frame.allocator.Get(),nullptr));
         D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition.pResource=buffers[index].Get();
         barrier.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_PRESENT;barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -249,7 +254,7 @@ DWORD WINAPI Worker(void* value){
     state->control.ConfigurePresets(folder.parent_path()/L"presets");
     std::error_code error;std::filesystem::create_directories(folder,error);
     std::ofstream log(folder/(L"imgui-"+std::to_wstring(GetCurrentProcessId())+L".ndjson"));
-    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":10,\"state\":\"starting\"}\n";log.flush();
+    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":11,\"state\":\"starting\"}\n";log.flush();
     try{state->boot=Install(static_cast<HINSTANCE>(value))?1:-1;if(state->boot<0)state->Disable("hook_install_failed");}catch(...){state->boot=-1;state->Disable("bootstrap_failed");}
     publishedBoot.store(state->boot.load());
     uint64_t nextConnect=0,nextLog=0;
@@ -267,7 +272,7 @@ DWORD WINAPI Worker(void* value){
         try{state->control.Service(now,state->input.visible.load());}catch(...){state->Disable("control_failed");}
         if(now>=nextLog){
         nextLog=now+2000;const auto controls=state->control.Snapshot();
-        log<<"{\"event\":\"imgui_status\",\"stage\":10,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
+        log<<"{\"event\":\"imgui_status\",\"stage\":11,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
            <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
            <<",\"captured_creations\":"<<state->creations.load()<<",\"unmatched_presents\":"<<state->unmatchedPresents.load()
@@ -277,6 +282,8 @@ DWORD WINAPI Worker(void* value){
            <<",\"resizes\":"<<state->resizes.load()<<",\"toggles\":"<<state->input.toggles.load()<<",\"blocked_messages\":"<<state->input.blockedMessages.load()
            <<",\"hotkey_messages\":"<<state->input.hotkeyMessages.load()<<",\"last_hotkey_modifiers\":"<<state->input.lastHotkeyModifiers.load()
            <<",\"hotkey_registered\":"<<(state->input.hotkeyRegistered.load()?"true":"false")<<",\"hotkey_error\":"<<state->input.hotkeyError.load()
+           <<",\"hotkey_vk\":"<<VK_DELETE<<",\"text_input\":"<<(state->input.textInput.load()?"true":"false")
+           <<",\"ime_error\":"<<state->input.imeError.load()<<",\"ime_activations\":"<<state->input.imeActivations.load()<<",\"ime_compositions\":"<<state->input.imeCompositions.load()<<",\"language_changes\":"<<state->input.languageChanges.load()<<",\"drag_bounds\":"<<state->input.dragBounds.load()
            <<",\"blocked_polls\":"<<state->input.blockedPolls.load()
            <<",\"api_connected\":"<<(controls->connected?"true":"false")<<",\"control_ready\":"<<(controls->ready?"true":"false")
            <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan

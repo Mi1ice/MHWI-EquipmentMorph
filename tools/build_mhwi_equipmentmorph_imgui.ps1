@@ -34,6 +34,16 @@ if($LASTEXITCODE -ne 0){throw 'ImGui fixture compilation failed'}
 $taskArguments=@('/NOLOGO','/SUBSYSTEM:WINDOWS','/MACHINE:X64','/Brepro',('/OUT:"'+(Join-Path $taskOutput 'EquipmentMorphImGuiFixture.exe')+'"'),('"'+(Join-Path $taskOutput 'fixture.obj')+'"'))+@($taskLibraries|ForEach-Object{'/LIBPATH:"'+$_+'"'})+@('kernel32.lib','user32.lib','d3d12.lib','dxgi.lib','dxguid.lib','dinput8.lib')
 $taskResponse=Join-Path $taskOutput 'fixture-link.rsp';[IO.File]::WriteAllLines($taskResponse,$taskArguments,[Text.Encoding]::Unicode)
 & $taskLinker ('@'+$taskResponse);if($LASTEXITCODE -ne 0){throw 'ImGui fixture link failed'}
+& $taskCompiler @taskCommon '/W4' '/WX' '/c' (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui/input_tests.cpp') ('/Fo'+(Join-Path $taskOutput 'input-tests.obj'))
+if($LASTEXITCODE -ne 0){throw 'ImGui input tests compilation failed'}
+$taskArguments=@('/NOLOGO','/SUBSYSTEM:CONSOLE','/MACHINE:X64','/Brepro',('/OUT:"'+(Join-Path $taskOutput 'ImGuiInputTests.exe')+'"'),('"'+(Join-Path $taskOutput 'input-tests.obj')+'"'))+@($taskLibraries|ForEach-Object{'/LIBPATH:"'+$_+'"'})+@('kernel32.lib')
+$taskResponse=Join-Path $taskOutput 'input-tests-link.rsp';[IO.File]::WriteAllLines($taskResponse,$taskArguments,[Text.Encoding]::Unicode)
+& $taskLinker ('@'+$taskResponse);if($LASTEXITCODE -ne 0){throw 'ImGui input tests link failed'}
+$taskInputChecks=& (Join-Path $taskOutput ImGuiInputTests.exe)
+if($LASTEXITCODE -ne 0){$taskInputChecks|Write-Output;throw 'ImGui input tests failed'}
+$taskInputChecks|Write-Output
+if(($taskInputChecks -join "`n") -notmatch 'PASS: (\d+) input policy checks'){throw 'Missing input test summary'}
+$taskInputPassed=[int]$Matches[1]
 & $taskCompiler @taskCommon '/W4' '/WX' '/fp:strict' '/c' (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui/control_tests.cpp') ('/Fo'+(Join-Path $taskOutput 'control-tests.obj'))
 if($LASTEXITCODE -ne 0){throw 'ImGui control tests compilation failed'}
 $taskArguments=@('/NOLOGO','/SUBSYSTEM:CONSOLE','/MACHINE:X64','/Brepro',('/OUT:"'+(Join-Path $taskOutput 'ImGuiControlTests.exe')+'"'),('"'+(Join-Path $taskOutput 'control-tests.obj')+'"'))+@($taskLibraries|ForEach-Object{'/LIBPATH:"'+$_+'"'})+@('kernel32.lib','ole32.lib')
@@ -58,9 +68,9 @@ $taskPresetPassed=[int]$Matches[1]
 Copy-Item -LiteralPath (Join-Path $taskRoot 'research/imgui-v1.93.0/LICENSE.txt') -Destination (Join-Path $taskOutput 'LICENSE.ImGui.txt') -Force
 foreach($taskLicense in @('LICENSE.SafetyHook','LICENSE.Zydis')){Copy-Item -LiteralPath (Join-Path $taskRoot ('research/safetyhook-local-v0.7.0/'+$taskLicense)) -Destination $taskOutput -Force}
 Copy-Item -LiteralPath (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui/README.md') -Destination $taskOutput -Force
-$taskManifest=[ordered]@{schema='mhwi-equipmentmorph-imgui-candidate-v1';stage=10;panel_switch_persistent=$true;equipment_model_paths=$taskLabels.models;equipment_named_paths=$taskLabels.named;equipment_catalog_sha256=$taskLabels.catalog_sha256;preview_close_restores_defaults=$true;architecture='windows-x64';renderer='dx12';formal_acceptance_complete=$false;morph_api_connected=$true;control_checks=$taskPassed;preset_checks=$taskPresetPassed;identity_extension_version=1;visible_weight_read_ms=16;equipment_scan_ms=250;ui_testing='user-operated';imgui_commit=$taskUpstream.commit;files=@()}
-foreach($taskFile in @('MHWEquipmentMorphImGui.dll','EquipmentMorphImGuiFixture.exe','ImGuiControlTests.exe','ImGuiPresetTests.exe','README.md','LICENSE.ImGui.txt','LICENSE.SafetyHook','LICENSE.Zydis')){
+$taskManifest=[ordered]@{schema='mhwi-equipmentmorph-imgui-candidate-v1';stage=11;input_checks=$taskInputPassed;hotkey='Del';ime_window_thread=$true;panel_bounds='game-client';panel_switch_persistent=$true;equipment_model_paths=$taskLabels.models;equipment_named_paths=$taskLabels.named;equipment_catalog_sha256=$taskLabels.catalog_sha256;preview_close_restores_defaults=$true;architecture='windows-x64';renderer='dx12';formal_acceptance_complete=$false;morph_api_connected=$true;control_checks=$taskPassed;preset_checks=$taskPresetPassed;identity_extension_version=1;visible_weight_read_ms=16;equipment_scan_ms=250;ui_testing='user-operated';imgui_commit=$taskUpstream.commit;files=@()}
+foreach($taskFile in @('MHWEquipmentMorphImGui.dll','EquipmentMorphImGuiFixture.exe','ImGuiInputTests.exe','ImGuiControlTests.exe','ImGuiPresetTests.exe','README.md','LICENSE.ImGui.txt','LICENSE.SafetyHook','LICENSE.Zydis')){
     $taskManifest.files+=@{path=$taskFile;sha256=(Get-FileHash -LiteralPath (Join-Path $taskOutput $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()}
 }
 [IO.File]::WriteAllText((Join-Path $taskOutput 'manifest.json'),($taskManifest|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
-Write-Output ('PASS: optional stage-10 ImGui DLL built at '+$taskOutput+'; UI tests left to user')
+Write-Output ('PASS: optional stage-11 ImGui DLL built at '+$taskOutput+'; UI tests left to user')

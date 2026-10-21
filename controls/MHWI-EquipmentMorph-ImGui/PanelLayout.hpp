@@ -4,6 +4,11 @@
 namespace morphgui {
 struct PanelRect {float x,y,w,h;};
 struct PanelPair {PanelRect main,side;};
+inline PanelRect ContainPanel(PanelRect viewport,PanelRect panel){
+    panel.w=(std::clamp)(panel.w,0.f,(std::max)(0.f,viewport.w));panel.h=(std::clamp)(panel.h,0.f,(std::max)(0.f,viewport.h));
+    panel.x=(std::clamp)(panel.x,viewport.x,viewport.x+(std::max)(0.f,viewport.w-panel.w));
+    panel.y=(std::clamp)(panel.y,viewport.y,viewport.y+(std::max)(0.f,viewport.h-panel.h));return panel;
+}
 // Keep a right-hand companion inside the game's viewport; very narrow views
 // retain an overlapping, reachable manager rather than moving it off screen.
 inline PanelPair ArrangePanels(PanelRect viewport,PanelRect main,float gap,float preferred=640.f){
