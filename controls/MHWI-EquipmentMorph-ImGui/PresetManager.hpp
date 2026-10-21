@@ -19,11 +19,11 @@ struct State {
     std::shared_ptr<const std::vector<Document>> library=std::make_shared<std::vector<Document>>(),trash=std::make_shared<std::vector<Document>>();
     std::shared_ptr<const std::vector<Incoming>> incoming=std::make_shared<std::vector<Incoming>>();
     std::shared_ptr<const std::vector<DefaultRef>> defaults=std::make_shared<std::vector<DefaultRef>>();
-    std::array<std::string,5> worn{};std::string autoMessage;bool paused=false,canSave=false;
+    std::array<std::string,5> worn{};std::string autoMessage;bool paused=false,canSave=false,preview=false;
     std::string activeId,activeName,message,lastId;
     bool available=false,dirty=false,success=false,selectLast=false;uint64_t completed=0;
 };
-enum class Action {Apply,Save,SaveAs,Rename,Trash,Restore,Purge,PurgeAll,ScanImports,Import,Export,ExportAll,Select,SetDefault,ClearDefault,Pause,Resume};
+enum class Action {Apply,Save,SaveAs,Rename,Trash,Restore,Purge,PurgeAll,ScanImports,Import,Export,ExportAll,Select,SetDefault,ClearDefault,Pause,Resume,EndPreview};
 inline bool Management(Action action){return action!=Action::Apply&&action!=Action::Select&&action!=Action::Save&&action!=Action::SaveAs;}
 struct Request {Action action=Action::Apply;std::string id,name;bool deleted=false;std::vector<ImportEdit> imports;bool saveBefore=false,discard=false;std::string editor;bool checkEditor=false;};
 // Worker-only. Disk IO, identity queries and batch submission never run in Draw.
@@ -94,8 +94,8 @@ class Manager {
         if(!matched)throw std::runtime_error("当前没有与此预设匹配的部位");
         const auto result=session.Replace(updates);if(result!=MHM_OK){state.message="选择应用失败，原权重保持（接口结果 "+std::to_string(result)+"）";return result;}
         origins=std::move(next);for(uint32_t i=0;i<data.targetCount;i++)observed[data.targets[i].info.part]=data.targets[i].info.handle;
-        state.activeId=doc.id;state.activeName=doc.name;state.lastId=doc.id;state.success=true;state.selectLast=true;
-        state.message="已选择并应用："+doc.name+"（"+std::to_string(matched)+" 个匹配部位）；修改请点击保存当前";return MHM_OK;
+        state.activeId=doc.id;state.activeName=doc.name;state.lastId=doc.id;state.success=true;state.selectLast=true;state.preview=true;
+        state.message="正在预览："+doc.name+"（"+std::to_string(matched)+" 个匹配部位）；修改请保存，关闭窗口恢复穿戴默认";return MHM_OK;
     }
     void Preview(const mhmcontrol::Response& data,bool ready){
         auto result=std::make_shared<std::vector<Incoming>>(incoming);std::vector<std::string> names,signatures;
@@ -141,7 +141,27 @@ class Manager {
         }
         state.lastId.clear();if(leaseLost)state.message+="；控制租期已失效，请重新调节";
     }
+    void ChooseEditor(){
+        std::string candidate;bool mixed=false;for(const auto& origin:origins)if(!origin.preset.empty()){if(candidate.empty())candidate=origin.preset;else if(candidate!=origin.preset)mixed=true;}
+        if(!mixed)if(const auto* doc=Find(candidate)){state.activeId=doc->id;state.activeName=doc->name;}
+    }
     void Manage(const Request& request,mhmcontrol::Session* session,const mhmcontrol::Response& data){
+        if(request.action==Action::EndPreview){
+            if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新关闭窗口");
+            if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再关闭预览");SaveDocument(EditedDocument(*doc,data));}
+            std::vector<MhmUpdate> updates;std::array<Origin,5> next{};
+            if(query&&lastReady&&!state.paused)for(uint32_t part=0;part<5;part++)for(const auto& ref:defaults){
+                if(ref.part!=part)continue;const auto* doc=Find(ref.preset);const auto* asset=doc?FindPart(*doc,part):nullptr;if(!asset)continue;
+                const auto match=PartCheck(*doc,*asset,data);if(!match.compatible)continue;
+                updates.insert(updates.end(),match.updates.begin(),match.updates.end());next[part]={doc->id,match.updates.front().target,true};break;
+            }
+            const auto result=session?session->Replace(updates):MHM_OK;
+            if(result!=MHM_OK)throw std::runtime_error("恢复穿戴默认失败（接口结果 "+std::to_string(result)+"）；窗口保持打开，请重试");
+            origins=std::move(next);observed={};force=0;
+            if(lastReady)for(uint32_t i=0;i<data.targetCount;i++)observed[data.targets[i].info.part]=data.targets[i].info.handle;
+            state.activeId.clear();state.activeName.clear();ChooseEditor();state.preview=false;state.success=true;
+            state.message=state.paused?"预览已结束；自动使用仍暂停":updates.empty()?"预览已结束；无匹配默认，已释放临时控制":"预览已结束；已恢复各部位的穿戴默认";return;
+        }
         if(request.action==Action::Pause){
             if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新操作");
             if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再暂时还原");SaveDocument(EditedDocument(*doc,data));}
@@ -230,9 +250,9 @@ public:
             state.worn[part]=std::string(PartName(part))+" · "+(doc?(origins[part].automatic&&registered?"自动：":"编辑／临时：")+doc->name:"未命名控制");
         }
     }
-    void Pause(){state.paused=true;origins={};state.canSave=false;}
-    void SourceExpired(){origins={};observed={};state.activeId.clear();state.activeName.clear();}
-    void Edited(uint64_t target,const mhmcontrol::Response& data){const auto part=PartOf(data,target);if(part<5){observed[part]=target;origins[part]={state.activeId,target,false};}}
+    void Pause(){state.paused=true;origins={};state.canSave=false;state.preview=false;}
+    void SourceExpired(){origins={};observed={};state.activeId.clear();state.activeName.clear();state.preview=false;}
+    void Edited(uint64_t target,const mhmcontrol::Response& data){const auto part=PartOf(data,target);if(part<5){observed[part]=target;origins[part]={state.activeId,target,false};state.preview=true;}}
     bool Automatic(mhmcontrol::Session* session,const mhmcontrol::Response& data,bool ready){
         if(!session||!query||!ready||state.paused)return false;
         std::array<uint64_t,5> handles{};for(uint32_t i=0;i<data.targetCount;i++)handles[data.targets[i].info.part]=data.targets[i].info.handle;
@@ -254,8 +274,7 @@ public:
         const bool editable=std::any_of(origins.begin(),origins.end(),[&](const auto& origin){return !state.activeId.empty()&&origin.preset==state.activeId;});
         if(state.activeId.empty()||!editable){
             state.activeId.clear();state.activeName.clear();
-            std::string candidate;bool mixed=false;for(const auto& origin:origins)if(!origin.preset.empty()){if(candidate.empty())candidate=origin.preset;else if(candidate!=origin.preset)mixed=true;}
-            if(!mixed)if(const auto* doc=Find(candidate)){state.activeId=doc->id;state.activeName=doc->name;}
+            ChooseEditor();
         }return true;
     }
     void Fail(uint64_t ticket,const std::string& message){state.completed=ticket;state.success=false;state.selectLast=false;state.message=message;}
@@ -281,7 +300,7 @@ public:
                 CheckName(name,id);
                 if(request.action==Action::SaveAs&&documents.size()>=256)throw std::runtime_error("最多支持 256 个预设");
                 if(request.action==Action::Save){if(!state.canSave)throw std::runtime_error("当前没有可保存的编辑部位");doc=EditedDocument(*existing,data);SaveDocument(doc);}
-                else{doc=Capture(data,identities,id,name);store->Save(doc);documents.push_back(doc);PublishLibrary();AssociateOwned(doc.id,data,true);}
+                else{doc=Capture(data,identities,id,name);store->Save(doc);documents.push_back(doc);PublishLibrary();AssociateOwned(doc.id,data,true);state.preview=true;}
                 state.message="已保存："+doc.name;
             }
             state.activeId=doc.id;state.activeName=doc.name;state.lastId=doc.id;state.success=true;state.selectLast=true;return MHM_OK;

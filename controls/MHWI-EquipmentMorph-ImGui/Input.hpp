@@ -20,7 +20,7 @@ struct Input {
     std::recursive_mutex gui;
     ImGuiContext* context=nullptr;
     std::atomic<HWND> window=nullptr;std::atomic<WNDPROC> previous=nullptr;
-    std::atomic_bool visible=false,available=false,releaseKeys=false,releaseMouse=false;
+    std::atomic_bool visible=false,available=false,releaseKeys=false,releaseMouse=false,closeRequested=false;
     std::atomic_uint64_t toggles=0,blockedMessages=0,blockedPolls=0,hotkeyMessages=0;
     std::atomic_uint lastHotkeyModifiers=0;
     std::atomic_bool hotkeyRegistered=false;std::atomic_uint hotkeyError=0;
@@ -57,7 +57,7 @@ struct Input {
             while(cursorAdjustments<32){cursorAdjustments++;if(hooks[CursorCount].original<decltype(&ShowCursor)>()(TRUE)>=0)break;}
             hooks[CursorShape].original<decltype(&SetCursor)>()(LoadCursorW(nullptr,IDC_ARROW));
         }else{
-            visible=false;
+            visible=false;closeRequested=false;
             releaseKeys=true;releaseMouse=true;
             if(GetCapture()==window)ReleaseCapture();
             while(cursorAdjustments>0){hooks[CursorCount].original<decltype(&ShowCursor)>()(FALSE);cursorAdjustments--;}
@@ -83,12 +83,13 @@ struct Input {
         }else if(hotkeyRegistered.exchange(false))UnregisterHotKey(window,hotkeyId);
     }
     void RequestClose(){if(window)PostMessageW(window,message,0,0);}
+    void Toggle(){if(visible.load())closeRequested=true;else Visibility(true);}
     static LRESULT CALLBACK Procedure(HWND w,UINT m,WPARAM a,LPARAM b){
         auto& self=*instance;
-        if(m==self.message){if(a==3)self.SynchronizeHotkey();else self.Visibility(a==2?!self.visible.load():a!=0);return 0;}
+        if(m==self.message){if(a==3)self.SynchronizeHotkey();else if(a==2)self.Toggle();else self.Visibility(a!=0);return 0;}
         if(m==WM_SETFOCUS||m==WM_ACTIVATE)self.SynchronizeHotkey();
         if(m==WM_HOTKEY&&a==hotkeyId&&self.hotkeyRegistered){
-            self.hotkeyMessages++;self.lastHotkeyModifiers=3;self.Visibility(!self.visible.load());return 0;
+            self.hotkeyMessages++;self.lastHotkeyModifiers=3;self.Toggle();return 0;
         }
         // The host has already called TranslateMessage: ImmGetVirtualKey may
         // now return VK_PROCESSKEY. The original scan code is still available.
@@ -96,7 +97,7 @@ struct Input {
         if(!self.hotkeyRegistered&&(m==WM_KEYDOWN||m==WM_SYSKEYDOWN)&&virtualKey=='M'&&!(b&(1ll<<30))){
             const auto modifiers=((self.MessageKey(VK_CONTROL)&0x8000)?1u:0u)|((self.MessageKey(VK_SHIFT)&0x8000)?2u:0u);
             self.hotkeyMessages++;self.lastHotkeyModifiers=modifiers;
-            if(modifiers==3){self.Visibility(!self.visible.load());return 0;}
+            if(modifiers==3){self.Toggle();return 0;}
         }
         if(m==WM_KILLFOCUS||m==WM_CANCELMODE||(m==WM_SIZE&&a==SIZE_MINIMIZED)){
             self.Visibility(false);if(m!=WM_CANCELMODE&&self.hotkeyRegistered.exchange(false))UnregisterHotKey(w,hotkeyId);

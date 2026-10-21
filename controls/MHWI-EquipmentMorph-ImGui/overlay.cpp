@@ -29,7 +29,7 @@ struct Renderer {
     std::array<Frame,8> frames;
     std::array<bool,64> descriptors{};
     UINT count=0,rtvStep=0,srvStep=0;UINT64 stamp=0,sequence=0;HANDLE completed=nullptr;
-    bool win32=false,dx12=false;
+    bool win32=false,dx12=false;uint64_t closeVisibility=0;
     Renderer(Input& value,Control& controller):input(value),control(controller){}
     bool Drain(){
         if(!fence||!stamp||fence->GetCompletedValue()>=stamp)return true;
@@ -93,9 +93,13 @@ struct Renderer {
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetMainViewport()->WorkPos.x+marginX,ImGui::GetMainViewport()->WorkPos.y+marginY),ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2((std::min)(860.f,extent.x-2*marginX),(std::min)(720.f,extent.y-2*marginY)),ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2((std::min)(480.f,extent.x),(std::min)(420.f,extent.y)),extent);bool opened=true;
+        if(input.closeRequested.exchange(false)&&!view.closeTicket)view.closeRequested=true;
+        // A focus round trip during restoration must not close a newly reopened panel.
+        if(!view.closeTicket)closeVisibility=input.toggles.load();
         if(ImGui::Begin("MHWI EquipmentMorph",&opened,ImGuiWindowFlags_NoCollapse)){
             view.Draw(control);
-        }ImGui::End();if(!opened)input.RequestClose();ImGui::Render();
+        }ImGui::End();if(!opened&&!view.closeTicket)view.closeRequested=true;
+        if(std::exchange(view.hideReady,false)&&closeVisibility==input.toggles.load())input.RequestClose();ImGui::Render();
         Require(frame.allocator->Reset());Require(list->Reset(frame.allocator.Get(),nullptr));
         D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition.pResource=buffers[index].Get();
         barrier.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_PRESENT;barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -279,7 +283,7 @@ DWORD WINAPI Worker(void* value){
            <<",\"identity_available\":"<<(controls->presets.available?"true":"false")<<",\"preset_count\":"<<controls->presets.choices->size()
            <<",\"usable_presets\":"<<std::count_if(controls->presets.choices->begin(),controls->presets.choices->end(),[](const auto& choice){return choice.matched>0;})
            <<",\"default_links\":"<<controls->presets.defaults->size()<<",\"auto_paused\":"<<(controls->presets.paused?"true":"false")
-           <<",\"auto_message\":"<<morphpreset::Quote(controls->presets.autoMessage)<<",\"editor\":"<<morphpreset::Quote(controls->presets.activeId)
+           <<",\"auto_message\":"<<morphpreset::Quote(controls->presets.autoMessage)<<",\"editor\":"<<morphpreset::Quote(controls->presets.activeId)<<",\"preview\":"<<(controls->presets.preview?"true":"false")
            <<",\"recycled_presets\":"<<controls->presets.removed->size()
            <<",\"preset_completed\":"<<controls->presets.completed<<",\"preset_success\":"<<(controls->presets.success?"true":"false")
            <<",\"preset_dirty\":"<<(controls->presets.dirty?"true":"false")<<"}\n";log.flush();

@@ -100,7 +100,7 @@ public:
             }
             if(item.preset){
                 Refresh();
-                if(!accepted&&!morphpreset::Management(item.preset->action))presets.Fail(item.ticket,"编辑未被接受或控制来源已失效，请重新调节后操作预设");
+                if(!accepted&&(!morphpreset::Management(item.preset->action)||(item.preset->action==morphpreset::Action::EndPreview&&!item.batch.empty())))presets.Fail(item.ticket,"编辑未被接受或控制来源已失效，请重新调节后操作预设");
                 else{const auto result=presets.Process(*item.preset,item.ticket,session.get(),current.data,current.ready);if(!morphpreset::Management(item.preset->action))current.operation=result;}
             }
             current.completed=item.ticket;
