@@ -93,6 +93,7 @@ public:
             if(!session&&!item.batch.empty())current.operation=MHM_NOT_READY;
             if(session&&!expired)for(const auto& [id,request]:item.batch){
                 (void)id;Refresh();
+                if(!current.presets.enabled){current.operation=MHM_NOT_READY;accepted=false;continue;}
                 if(!current.ready){current.operation=current.scan;accepted=false;continue;}
                 const auto end=current.data.keys.begin()+current.data.keyCount;
                 const auto found=std::find_if(current.data.keys.begin(),end,[&](const auto& k){return k.target==request.target&&k.index==request.key;});
@@ -100,8 +101,8 @@ public:
             }
             if(item.preset){
                 Refresh();
-                if(!accepted&&(!morphpreset::Management(item.preset->action)||(item.preset->action==morphpreset::Action::EndPreview&&!item.batch.empty())))presets.Fail(item.ticket,"编辑未被接受或控制来源已失效，请重新调节后操作预设");
-                else{const auto result=presets.Process(*item.preset,item.ticket,session.get(),current.data,current.ready);if(!morphpreset::Management(item.preset->action))current.operation=result;}
+                if(!accepted&&(!morphpreset::Management(item.preset->action)||((item.preset->action==morphpreset::Action::EndPreview||item.preset->action==morphpreset::Action::DisableMorph)&&!item.batch.empty())))presets.Fail(item.ticket,"编辑未被接受或控制来源已失效，请重新调节后操作预设");
+                else{const auto result=presets.Process(*item.preset,item.ticket,session.get(),current.data,current.ready);if(!morphpreset::Management(item.preset->action)||(result==MHM_OK&&(item.preset->action==morphpreset::Action::EnableMorph||item.preset->action==morphpreset::Action::DisableMorph)))current.operation=result;}
             }
             current.completed=item.ticket;
         }

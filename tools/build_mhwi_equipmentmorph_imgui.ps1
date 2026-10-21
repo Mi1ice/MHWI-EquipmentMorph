@@ -10,7 +10,8 @@ foreach($taskEntry in $taskUpstream.files){
 $taskTools=Get-EquipmentMorphToolchain
 $taskOutput=if($OutputDirectory){[IO.Path]::GetFullPath($OutputDirectory)}else{Join-Path $taskRoot '.build/current-validation/imgui'}
 New-Item -ItemType Directory -Path $taskOutput -Force|Out-Null
-$taskIncludes=@((Join-Path $taskTools.CompilerRoot 'include'),(Join-Path $taskRoot 'research/safetyhook-local-v0.7.0'),(Join-Path $taskRoot 'research/imgui-v1.93.0'))
+$taskLabels=& (Join-Path $PSScriptRoot 'build_imgui_equipment_labels.ps1') -Output (Join-Path $taskOutput 'EquipmentLabels.generated.hpp')
+$taskIncludes=@($taskOutput,(Join-Path $taskTools.CompilerRoot 'include'),(Join-Path $taskRoot 'research/safetyhook-local-v0.7.0'),(Join-Path $taskRoot 'research/imgui-v1.93.0'))
 foreach($taskPart in @('ucrt','shared','um','winrt')){$taskIncludes+=Join-Path $taskTools.SdkRoot ('Include/'+$taskTools.SdkVersion+'/'+$taskPart)}
 $taskLibraries=@((Join-Path $taskTools.CompilerRoot 'lib/x64'))
 foreach($taskPart in @('ucrt','um')){$taskLibraries+=Join-Path $taskTools.SdkRoot ('Lib/'+$taskTools.SdkVersion+'/'+$taskPart+'/x64')}
@@ -57,9 +58,9 @@ $taskPresetPassed=[int]$Matches[1]
 Copy-Item -LiteralPath (Join-Path $taskRoot 'research/imgui-v1.93.0/LICENSE.txt') -Destination (Join-Path $taskOutput 'LICENSE.ImGui.txt') -Force
 foreach($taskLicense in @('LICENSE.SafetyHook','LICENSE.Zydis')){Copy-Item -LiteralPath (Join-Path $taskRoot ('research/safetyhook-local-v0.7.0/'+$taskLicense)) -Destination $taskOutput -Force}
 Copy-Item -LiteralPath (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui/README.md') -Destination $taskOutput -Force
-$taskManifest=[ordered]@{schema='mhwi-equipmentmorph-imgui-candidate-v1';stage=9;preview_close_restores_defaults=$true;architecture='windows-x64';renderer='dx12';formal_acceptance_complete=$false;morph_api_connected=$true;control_checks=$taskPassed;preset_checks=$taskPresetPassed;identity_extension_version=1;visible_weight_read_ms=16;equipment_scan_ms=250;ui_testing='user-operated';imgui_commit=$taskUpstream.commit;files=@()}
+$taskManifest=[ordered]@{schema='mhwi-equipmentmorph-imgui-candidate-v1';stage=10;panel_switch_persistent=$true;equipment_model_paths=$taskLabels.models;equipment_named_paths=$taskLabels.named;equipment_catalog_sha256=$taskLabels.catalog_sha256;preview_close_restores_defaults=$true;architecture='windows-x64';renderer='dx12';formal_acceptance_complete=$false;morph_api_connected=$true;control_checks=$taskPassed;preset_checks=$taskPresetPassed;identity_extension_version=1;visible_weight_read_ms=16;equipment_scan_ms=250;ui_testing='user-operated';imgui_commit=$taskUpstream.commit;files=@()}
 foreach($taskFile in @('MHWEquipmentMorphImGui.dll','EquipmentMorphImGuiFixture.exe','ImGuiControlTests.exe','ImGuiPresetTests.exe','README.md','LICENSE.ImGui.txt','LICENSE.SafetyHook','LICENSE.Zydis')){
     $taskManifest.files+=@{path=$taskFile;sha256=(Get-FileHash -LiteralPath (Join-Path $taskOutput $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()}
 }
 [IO.File]::WriteAllText((Join-Path $taskOutput 'manifest.json'),($taskManifest|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
-Write-Output ('PASS: optional stage-9 ImGui DLL built at '+$taskOutput+'; UI tests left to user')
+Write-Output ('PASS: optional stage-10 ImGui DLL built at '+$taskOutput+'; UI tests left to user')

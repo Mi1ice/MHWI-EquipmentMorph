@@ -51,8 +51,8 @@ inline void Notice(const morphpreset::State& state,uint64_t waiting,const std::s
     const std::string message=!error.empty()?error:waiting?"正在处理预设，请稍候…":state.message;
     if(message.empty())return;
     ImGui::PushID("operation-result");
-    const char* label=waiting?"处理中":!error.empty()?"操作未完成":state.completed?(state.success?"操作完成":"操作未完成"):"提示";
-    Line((std::string(label)+" · "+message).c_str(),tone);
-    if(ImGui::TreeNode("查看完整结果")){Wrapped(message.c_str(),tone);ImGui::TreePop();}ImGui::PopID();
+    const bool details=(!error.empty()||(!waiting&&!state.success))&&ImGui::CalcTextSize(message.c_str()).x>ImGui::GetContentRegionAvail().x;
+    Line(message.c_str(),tone);
+    if(details&&ImGui::TreeNode("错误详情")){Wrapped(message.c_str(),tone);ImGui::TreePop();}ImGui::PopID();
 }
 }

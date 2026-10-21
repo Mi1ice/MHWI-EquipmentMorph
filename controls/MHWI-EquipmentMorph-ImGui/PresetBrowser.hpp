@@ -70,10 +70,10 @@ struct PresetBrowser {
                     ui::NextButton("导出");if(ImGui::Button("导出"))Submit(control,{morphpreset::Action::Export,doc->id},waiting);
                     if(ImGui::IsItemHovered())ImGui::SetTooltip("导出此预设已保存的内容；未保存的调节请先保存。");}
                 if(!trash){
-                    if(ImGui::Button("设为穿戴默认"))Submit(control,{morphpreset::Action::SetDefault,doc->id},waiting);
-                    const auto registered=morphpreset::DefaultParts(*state.defaults,doc->id);ui::NextButton("取消默认");ImGui::BeginDisabled(registered.empty());
-                    if(ImGui::Button("取消默认"))Submit(control,{morphpreset::Action::ClearDefault,doc->id},waiting);ImGui::EndDisabled();
-                    ui::Wrapped((registered.empty()?std::string("未设为穿戴默认"):"穿戴默认部位："+registered).c_str(),ui::Tone::Muted);
+                    if(ImGui::Button("应用预设"))Submit(control,{morphpreset::Action::SetDefault,doc->id},waiting);
+                    const auto registered=morphpreset::DefaultParts(*state.defaults,doc->id);ui::NextButton("取消应用");ImGui::BeginDisabled(registered.empty());
+                    if(ImGui::Button("取消应用"))Submit(control,{morphpreset::Action::ClearDefault,doc->id},waiting);ImGui::EndDisabled();
+                    ui::Wrapped((registered.empty()?std::string("未应用"):"应用部位："+registered).c_str(),ui::Tone::Muted);
                 }
                 ImGui::EndDisabled();ImGui::Separator();
                 for(const auto& part:doc->parts){

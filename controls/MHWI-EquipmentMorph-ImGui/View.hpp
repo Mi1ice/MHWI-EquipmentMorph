@@ -20,18 +20,24 @@ struct View {
     struct Edit {float value=0;uint64_t ticket=0;bool active=false;};
     std::array<Edit,64> edits{};
     static const char* Part(uint32_t part){const char* names[]={"头部","身体","腕部","腰部","腿部"};return part<5?names[part]:"装备";}
-    static std::string Label(const mhmcontrol::Target& target){return std::string(Part(target.info.part))+" · "+target.info.model_id;}
+    static std::string Label(const mhmcontrol::Target& target){return std::string(Part(target.info.part))+" · "+morphequipment::Label(target.info.model_id);}
     std::optional<morphpreset::Request> PresetBar(const ControlSnapshot& snapshot){
         const auto& presets=snapshot.presets;
         if(presetWaiting&&snapshot.completed>=presetWaiting)presetWaiting=0;
         selectedPreset=presets.activeId;
         const morphpreset::Choice* chosen=nullptr;for(const auto& choice:*presets.choices)if(choice.id==selectedPreset)chosen=&choice;
         const auto available=std::count_if(presets.choices->begin(),presets.choices->end(),[](const auto& choice){return choice.matched>0;});
-        const auto preview=chosen?chosen->name+(chosen->matched?"":"（等待匹配装备）"):std::string(available?"选择预设，立即预览匹配部位":"当前没有匹配的预设");
-        const bool ready=snapshot.ready&&presets.available&&!presetWaiting;
+        const auto preview=chosen?chosen->name+(presets.dirty?"*":"")+(chosen->matched?"":"（等待匹配装备）"):std::string(presets.dirty?"未命名*":available?"选择预设":"无匹配预设");
+        const bool ready=snapshot.ready&&presets.available&&presets.enabled&&!presetWaiting;
         bool owned=false;for(uint32_t i=0;i<snapshot.data.keyCount;i++)owned=owned||snapshot.data.keys[i].owned!=0;
         std::optional<morphpreset::Request> intent;bool ask=false;
-        ImGui::SeparatorText("预设预览与穿戴默认");ImGui::TextUnformatted("预览预设");ImGui::SameLine();ImGui::SetNextItemWidth(-1);
+        ImGui::BeginDisabled(presetWaiting!=0);bool enabled=presets.enabled;
+        if(ImGui::Checkbox("启用捏人",&enabled)){
+            const bool pending=std::any_of(edits.begin(),edits.end(),[&](const auto& edit){return edit.ticket>snapshot.completed;});
+            if(!enabled&&(presets.dirty||pending)){pendingAction=morphpreset::Action::DisableMorph;pendingId.clear();pendingName.clear();pendingEditor=presets.activeId;ask=true;}
+            else{morphpreset::Request request{enabled?morphpreset::Action::EnableMorph:morphpreset::Action::DisableMorph};request.editor=presets.activeId;request.checkEditor=!enabled;intent=std::move(request);}
+        }ImGui::EndDisabled();
+        ImGui::TextUnformatted("预览预设");ImGui::SameLine();ImGui::SetNextItemWidth(-1);
         ImGui::BeginDisabled(!ready);
         if(ImGui::BeginCombo("##presets",preview.c_str())){
             if(ImGui::IsWindowAppearing())ImGui::SetKeyboardFocusHere();
@@ -55,27 +61,18 @@ struct View {
         ui::NextButton("另存为…");ImGui::BeginDisabled(!ready||!owned);
         if(ImGui::Button("另存为…")){presetName[0]=0;presetError.clear();ImGui::OpenPopup("另存为整套预设");}ImGui::EndDisabled();
         ui::NextButton("管理…");if(ImGui::Button("管理…"))browser.open=true;
-        const auto name=presets.activeId.empty()?(owned?std::string("组合控制；选择预设后编辑，或另存为"):std::string("尚未接管形态键")):presets.activeName;
-        const char* status=presets.paused?"自动已暂停":presets.dirty?"未保存":presets.canSave?"已保存":"等待匹配部位";
-        ui::Line((std::string(presets.preview?"当前预览 · ":"当前编辑 · ")+status+" · "+name).c_str(),presets.dirty||presets.paused?ui::Tone::Warning:ui::Tone::Normal);
-        if(chosen)ui::Line(chosen->status.c_str(),chosen->matched?ui::Tone::Muted:ui::Tone::Warning);
+        if(chosen&&!chosen->compatible)ui::Line(chosen->status.c_str(),ui::Tone::Warning);
         const auto registered=morphpreset::DefaultParts(*presets.defaults,presets.activeId);
         ImGui::BeginDisabled(presetWaiting||presets.activeId.empty());
-        if(ImGui::Button("设为穿戴默认"))intent=morphpreset::Request{morphpreset::Action::SetDefault,presets.activeId};ImGui::EndDisabled();
-        if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ui::Tooltip("记录此预设涉及部位的自动关联；相同模型的旧关联被替换。启动／换装恢复已保存版本，不自动保存当前修改。");
-        ui::NextButton("取消默认");ImGui::BeginDisabled(presetWaiting||registered.empty());
-        if(ImGui::Button("取消默认"))intent=morphpreset::Request{morphpreset::Action::ClearDefault,presets.activeId};ImGui::EndDisabled();
-        ui::Line((registered.empty()?std::string("此预设尚未设为穿戴默认"):"穿戴默认部位 · "+registered).c_str(),ui::Tone::Muted);
-        ImGui::BeginDisabled(presetWaiting!=0);
-        if(ImGui::Button(presets.paused?"恢复自动使用":!presets.autoMessage.empty()?"重试自动使用":"暂时还原")){
-            if(presets.paused||!presets.autoMessage.empty())intent=morphpreset::Request{morphpreset::Action::Resume};
-            else if(presets.dirty){pendingAction=morphpreset::Action::Pause;pendingId.clear();pendingName.clear();pendingEditor=presets.activeId;ask=true;}
-            else intent=morphpreset::Request{morphpreset::Action::Pause};
-        }ImGui::EndDisabled();
-        if(!presets.autoMessage.empty())ui::Line(presets.autoMessage.c_str(),ui::Tone::Warning);
-        else ui::Line(presets.paused?"本次游戏自动使用已暂停；关闭预览后保持还原。":presets.defaults->empty()?"未设置穿戴默认；关闭主窗口后释放临时控制。":"关闭主窗口恢复穿戴默认；预览和保存不会改变默认关联。",presets.paused?ui::Tone::Warning:ui::Tone::Muted);
-        if(ImGui::TreeNode("各部位当前配置")){bool any=false;for(const auto& line:presets.worn)if(!line.empty()){ui::Line(line.c_str());any=true;}if(!any)ui::Wrapped("当前没有接管的部位。",ui::Tone::Muted);ImGui::TreePop();}
-        ui::Notice(presets,presetWaiting,presetError);
+        if(ImGui::Button("应用预设"))intent=morphpreset::Request{morphpreset::Action::SetDefault,presets.activeId};ImGui::EndDisabled();
+        if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ui::Tooltip("为对应装备登记自动使用的预设；使用已保存的权重。");
+        ui::NextButton("取消应用");ImGui::BeginDisabled(presetWaiting||registered.empty());
+        if(ImGui::Button("取消应用"))intent=morphpreset::Request{morphpreset::Action::ClearDefault,presets.activeId};ImGui::EndDisabled();
+        if(!presets.autoMessage.empty()&&presets.enabled){ui::NextButton("重试");ImGui::BeginDisabled(presetWaiting!=0);if(ImGui::Button("重试"))intent=morphpreset::Request{morphpreset::Action::Resume};ImGui::EndDisabled();}
+        ImGui::SeparatorText("各部位当前配置");bool any=false;
+        for(const auto& line:presets.worn)if(!line.empty()){ui::Line(line.c_str());any=true;}
+        if(!any)ui::Line("无形态键装备",ui::Tone::Muted);
+        ui::Notice(presets,presetWaiting,presetError.empty()?presets.autoMessage:presetError);
         if(closeRequested&&!presetWaiting&&!intent&&!ImGui::IsPopupOpen("",ImGuiPopupFlags_AnyPopupId)){
             closeRequested=false;presetError.clear();
             const bool pending=std::any_of(edits.begin(),edits.end(),[&](const auto& edit){return edit.ticket>snapshot.completed;});
@@ -85,18 +82,17 @@ struct View {
         if(ask)ImGui::OpenPopup("未保存的修改");
         if(ImGui::BeginPopupModal("未保存的修改",nullptr,ImGuiWindowFlags_AlwaysAutoResize)){
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX()+400);
-            ui::Wrapped(pendingAction==morphpreset::Action::Select?("切换到“"+pendingName+"”前，如何处理当前未保存修改？").c_str():pendingAction==morphpreset::Action::EndPreview?"结束预览并恢复穿戴默认前，如何处理当前未保存修改？":"暂时还原前，如何处理当前未保存修改？");
+            ui::Wrapped(pendingAction==morphpreset::Action::Select?("切换到“"+pendingName+"”前，如何处理未保存修改？").c_str():pendingAction==morphpreset::Action::EndPreview?"关闭预览前，如何处理未保存修改？":"关闭捏人前，如何处理未保存修改？");
             if(pendingEditor.empty())ui::Wrapped("当前配置尚未命名，可取消后另存为。",ui::Tone::Warning);
             ImGui::PopTextWrapPos();ImGui::BeginDisabled(presetWaiting||pendingEditor.empty()||!presets.canSave);
-            if(ImGui::Button(pendingAction==morphpreset::Action::Select?"保存并切换":pendingAction==morphpreset::Action::EndPreview?"保存并关闭":"保存并还原")){
+            if(ImGui::Button(pendingAction==morphpreset::Action::Select?"保存并切换":pendingAction==morphpreset::Action::EndPreview?"保存并关闭":"保存并关闭捏人")){
                 morphpreset::Request request{pendingAction,pendingId};request.saveBefore=true;request.editor=pendingEditor;request.checkEditor=true;intent=std::move(request);ImGui::CloseCurrentPopup();
             }ImGui::EndDisabled();ui::NextButton("放弃修改");ImGui::BeginDisabled(presetWaiting!=0);
-            if(ImGui::Button(pendingAction==morphpreset::Action::Select?"放弃并切换":pendingAction==morphpreset::Action::EndPreview?"放弃并关闭":"放弃并还原")){
+            if(ImGui::Button(pendingAction==morphpreset::Action::Select?"放弃并切换":pendingAction==morphpreset::Action::EndPreview?"放弃并关闭":"放弃并关闭捏人")){
                 morphpreset::Request request{pendingAction,pendingId};request.discard=true;request.editor=pendingEditor;request.checkEditor=true;intent=std::move(request);ImGui::CloseCurrentPopup();
             }ImGui::EndDisabled();ui::NextButton("取消");if(ImGui::Button("取消")){closeRequested=false;ImGui::CloseCurrentPopup();}ImGui::EndPopup();
         }
         if(ImGui::BeginPopupModal("另存为整套预设",nullptr,ImGuiWindowFlags_AlwaysAutoResize)){
-            ui::Wrapped("将本面板当前接管的全部部位另存为，包含零权重；不会自动设为穿戴默认。");
             ImGui::SetNextItemWidth(320);const bool enter=ImGui::InputText("名称",presetName,sizeof(presetName),ImGuiInputTextFlags_EnterReturnsTrue);
             const bool save=ImGui::Button("保存新预设");ImGui::SameLine();const bool cancel=ImGui::Button("取消");
             if(save||enter){if(!morphpreset::Utf8(presetName))presetError="请输入有效名称（最多 128 个 UTF-8 字节）";else{intent=morphpreset::Request{morphpreset::Action::SaveAs,{},presetName};ImGui::CloseCurrentPopup();}}
@@ -124,6 +120,7 @@ struct View {
         if(!target){selected=data.targetCount?data.targets[0].info.handle:0;edits={};if(data.targetCount)target=&data.targets[0];}
         const auto label=target?Label(*target):std::string("当前没有已绑定的形态键装备");
         ImGui::SetNextItemWidth(-1);
+        ImGui::BeginDisabled(!snapshot->presets.enabled);
         if(ImGui::BeginCombo("##equipment",label.c_str())){
             for(uint32_t i=0;i<data.targetCount;i++){
                 const auto& item=data.targets[i];const bool chosen=item.info.handle==selected;
@@ -132,12 +129,11 @@ struct View {
                 if(chosen)ImGui::SetItemDefaultFocus();ImGui::PopID();
             }ImGui::EndCombo();
         }
-        if(ImGui::IsItemHovered())ui::Tooltip(label.c_str());
-        ui::Wrapped("勾选表示本面板接管，取消勾选释放单键；精确输入按回车应用。",ui::Tone::Muted);
-        ui::Line("Ctrl + Shift + M 或 × 结束预览，恢复穿戴默认并关闭窗口。",ui::Tone::Muted);
-        if(target&&!snapshot->presets.worn[target->info.part].empty())ui::Line(snapshot->presets.worn[target->info.part].c_str());
-        if(snapshot->operation!=MHM_OK)ui::Wrapped(ResultText(snapshot->operation),ui::Tone::Error);
+        ImGui::EndDisabled();
+        if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&target)ui::Tooltip(target->info.model_id);
+        if(snapshot->presets.enabled&&snapshot->operation!=MHM_OK)ui::Wrapped(ResultText(snapshot->operation),ui::Tone::Error);
         if(!target){FinishPreset(control,preset);return;}
+        ImGui::BeginDisabled(!snapshot->presets.enabled);
         if(ImGui::BeginTable("shape-keys",4,ImGuiTableFlags_BordersInnerV|ImGuiTableFlags_RowBg|ImGuiTableFlags_Resizable|ImGuiTableFlags_ScrollY,ImVec2(0,-1))){
             ImGui::TableSetupColumn("形态键",ImGuiTableColumnFlags_WidthStretch,1.3f);
             ImGui::TableSetupColumn("目标权重",ImGuiTableColumnFlags_WidthStretch,1.8f);
@@ -165,7 +161,7 @@ struct View {
                 ImGui::PopID();
             }ImGui::PopID();ImGui::EndTable();
         }
-        FinishPreset(control,preset);
+        ImGui::EndDisabled();FinishPreset(control,preset);
     }
 };
 }

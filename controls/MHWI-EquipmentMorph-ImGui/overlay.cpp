@@ -249,7 +249,7 @@ DWORD WINAPI Worker(void* value){
     state->control.ConfigurePresets(folder.parent_path()/L"presets");
     std::error_code error;std::filesystem::create_directories(folder,error);
     std::ofstream log(folder/(L"imgui-"+std::to_wstring(GetCurrentProcessId())+L".ndjson"));
-    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":9,\"state\":\"starting\"}\n";log.flush();
+    log<<"{\"event\":\"imgui_bootstrap\",\"stage\":10,\"state\":\"starting\"}\n";log.flush();
     try{state->boot=Install(static_cast<HINSTANCE>(value))?1:-1;if(state->boot<0)state->Disable("hook_install_failed");}catch(...){state->boot=-1;state->Disable("bootstrap_failed");}
     publishedBoot.store(state->boot.load());
     uint64_t nextConnect=0,nextLog=0;
@@ -267,7 +267,7 @@ DWORD WINAPI Worker(void* value){
         try{state->control.Service(now,state->input.visible.load());}catch(...){state->Disable("control_failed");}
         if(now>=nextLog){
         nextLog=now+2000;const auto controls=state->control.Snapshot();
-        log<<"{\"event\":\"imgui_status\",\"stage\":9,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
+        log<<"{\"event\":\"imgui_status\",\"stage\":10,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
            <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
            <<",\"captured_creations\":"<<state->creations.load()<<",\"unmatched_presents\":"<<state->unmatchedPresents.load()
@@ -282,7 +282,7 @@ DWORD WINAPI Worker(void* value){
            <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan
            <<",\"identity_available\":"<<(controls->presets.available?"true":"false")<<",\"preset_count\":"<<controls->presets.choices->size()
            <<",\"usable_presets\":"<<std::count_if(controls->presets.choices->begin(),controls->presets.choices->end(),[](const auto& choice){return choice.matched>0;})
-           <<",\"default_links\":"<<controls->presets.defaults->size()<<",\"auto_paused\":"<<(controls->presets.paused?"true":"false")
+           <<",\"default_links\":"<<controls->presets.defaults->size()<<",\"auto_paused\":"<<(controls->presets.paused?"true":"false")<<",\"morph_enabled\":"<<(controls->presets.enabled?"true":"false")
            <<",\"auto_message\":"<<morphpreset::Quote(controls->presets.autoMessage)<<",\"editor\":"<<morphpreset::Quote(controls->presets.activeId)<<",\"preview\":"<<(controls->presets.preview?"true":"false")
            <<",\"recycled_presets\":"<<controls->presets.removed->size()
            <<",\"preset_completed\":"<<controls->presets.completed<<",\"preset_success\":"<<(controls->presets.success?"true":"false")

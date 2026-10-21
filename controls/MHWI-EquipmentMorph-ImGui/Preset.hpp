@@ -38,7 +38,7 @@ inline std::string Quote(std::string_view text){
 // Small bounded JSON reader for the preset schema; no external dependency or
 // file access. Object order is irrelevant; duplicate properties are rejected.
 namespace json {
-struct Value {enum Kind{String,Number,Object,Array} kind=String;std::string text;double number=0;std::map<std::string,Value> object;std::vector<Value> array;};
+struct Value {enum Kind{String,Number,Object,Array,Boolean} kind=String;std::string text;double number=0;std::map<std::string,Value> object;std::vector<Value> array;};
 class Reader {
     std::string_view input;size_t at=0,nodes=0;
     [[noreturn]] static void Fail(){throw std::runtime_error("预设 JSON 格式无效");}
@@ -66,6 +66,8 @@ class Reader {
     Value Read(unsigned depth){
         if(depth>8||++nodes>4096)Fail();Space();if(at==input.size())Fail();Value value;
         if(input[at]=='"'){value.text=String();return value;}
+        if(input.substr(at,4)=="true"){at+=4;value.kind=Value::Boolean;value.number=1;return value;}
+        if(input.substr(at,5)=="false"){at+=5;value.kind=Value::Boolean;return value;}
         if(Take('{')){value.kind=Value::Object;if(Take('}'))return value;do{auto key=String();if(!Take(':')||value.object.size()>=16)Fail();auto item=Read(depth+1);if(!value.object.emplace(std::move(key),std::move(item)).second)Fail();if(Take('}'))return value;}while(Take(','));Fail();}
         if(Take('[')){value.kind=Value::Array;if(Take(']'))return value;do{if(value.array.size()>=320)Fail();value.array.push_back(Read(depth+1));if(Take(']'))return value;}while(Take(','));Fail();}
         const auto start=at;if(input[at]=='-')at++;if(at==input.size())Fail();

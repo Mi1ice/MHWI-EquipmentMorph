@@ -1,6 +1,8 @@
 #pragma once
 #include "PresetTransfer.hpp"
 #include "PresetDefaults.hpp"
+#include "PanelSettings.hpp"
+#include "EquipmentLabels.hpp"
 #include "../../runtime/EquipmentMorphControlBridge/Session.hpp"
 #include <memory>
 
@@ -19,11 +21,11 @@ struct State {
     std::shared_ptr<const std::vector<Document>> library=std::make_shared<std::vector<Document>>(),trash=std::make_shared<std::vector<Document>>();
     std::shared_ptr<const std::vector<Incoming>> incoming=std::make_shared<std::vector<Incoming>>();
     std::shared_ptr<const std::vector<DefaultRef>> defaults=std::make_shared<std::vector<DefaultRef>>();
-    std::array<std::string,5> worn{};std::string autoMessage;bool paused=false,canSave=false,preview=false;
+    std::array<std::string,5> worn{};std::string autoMessage;bool paused=false,canSave=false,preview=false,enabled=true;
     std::string activeId,activeName,message,lastId;
     bool available=false,dirty=false,success=false,selectLast=false;uint64_t completed=0;
 };
-enum class Action {Apply,Save,SaveAs,Rename,Trash,Restore,Purge,PurgeAll,ScanImports,Import,Export,ExportAll,Select,SetDefault,ClearDefault,Pause,Resume,EndPreview};
+enum class Action {Apply,Save,SaveAs,Rename,Trash,Restore,Purge,PurgeAll,ScanImports,Import,Export,ExportAll,Select,SetDefault,ClearDefault,Pause,Resume,EndPreview,EnableMorph,DisableMorph};
 inline bool Management(Action action){return action!=Action::Apply&&action!=Action::Select&&action!=Action::Save&&action!=Action::SaveAs;}
 struct Request {Action action=Action::Apply;std::string id,name;bool deleted=false;std::vector<ImportEdit> imports;bool saveBefore=false,discard=false;std::string editor;bool checkEditor=false;};
 // Worker-only. Disk IO, identity queries and batch submission never run in Draw.
@@ -31,6 +33,7 @@ class Manager {
     std::unique_ptr<Store> store;std::vector<Document> documents,deleted;Identities identities{};
     std::unique_ptr<Transfer> transfer;std::vector<Incoming> incoming;
     std::unique_ptr<DefaultsStore> defaultsStore;std::vector<DefaultRef> defaults;
+    std::unique_ptr<PanelSettings> settings;std::array<std::string,5> appliedIds{};
     struct Origin {std::string preset;uint64_t handle=0;bool automatic=false;};std::array<Origin,5> origins{};
     std::array<uint64_t,5> observed{};uint32_t force=0;bool policyLoadFailed=false;
     IdentityQuery query=nullptr;State state;
@@ -45,7 +48,7 @@ class Manager {
         if(!Utf8(name))throw std::runtime_error("请输入有效名称（最多 128 个 UTF-8 字节）");
         for(const auto& other:documents)if(other.id!=id&&other.name==name)throw std::runtime_error("同名预设已存在，请更换名称");
     }
-    void PublishDefaults(){state.defaults=std::make_shared<std::vector<DefaultRef>>(defaults);}
+    void PublishDefaults(){state.defaults=std::make_shared<std::vector<DefaultRef>>(defaults);choicesDirty=true;}
     void StoreDefaults(std::vector<DefaultRef> next){next=ResolveDefaults(next,documents);defaultsStore->Save(next);defaults=std::move(next);policyLoadFailed=false;PublishDefaults();}
     static uint32_t PartOf(const mhmcontrol::Response& data,uint64_t handle){for(uint32_t i=0;i<data.targetCount;i++)if(data.targets[i].info.handle==handle)return data.targets[i].info.part;return 5;}
     static std::vector<MhmUpdate> Owned(const mhmcontrol::Response& data){std::vector<MhmUpdate> result;for(uint32_t i=0;i<data.keyCount;i++){const auto& key=data.keys[i];if(key.owned)result.push_back({key.target,key.index,key.contribution});}return result;}
@@ -95,7 +98,7 @@ class Manager {
         const auto result=session.Replace(updates);if(result!=MHM_OK){state.message="选择应用失败，原权重保持（接口结果 "+std::to_string(result)+"）";return result;}
         origins=std::move(next);for(uint32_t i=0;i<data.targetCount;i++)observed[data.targets[i].info.part]=data.targets[i].info.handle;
         state.activeId=doc.id;state.activeName=doc.name;state.lastId=doc.id;state.success=true;state.selectLast=true;state.preview=true;
-        state.message="正在预览："+doc.name+"（"+std::to_string(matched)+" 个匹配部位）；修改请保存，关闭窗口恢复穿戴默认";return MHM_OK;
+        state.message.clear();return MHM_OK;
     }
     void Preview(const mhmcontrol::Response& data,bool ready){
         auto result=std::make_shared<std::vector<Incoming>>(incoming);std::vector<std::string> names,signatures;
@@ -146,11 +149,23 @@ class Manager {
         if(!mixed)if(const auto* doc=Find(candidate)){state.activeId=doc->id;state.activeName=doc->name;}
     }
     void Manage(const Request& request,mhmcontrol::Session* session,const mhmcontrol::Response& data){
+        if(request.action==Action::DisableMorph){
+            if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新关闭捏人");
+            if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再关闭捏人");SaveDocument(EditedDocument(*doc,data));}
+            settings->Save(false);state.enabled=false;SourceExpired();
+            const auto result=session?session->Release():MHM_OK;
+            if(result!=MHM_OK)throw std::runtime_error("关闭状态已保存，但释放控制失败；请等待控制租期结束");
+            state.success=true;state.message="已关闭捏人";return;
+        }
+        if(request.action==Action::EnableMorph){
+            if(policyLoadFailed){defaults=ResolveDefaults(defaultsStore->Load(),documents);PublishDefaults();policyLoadFailed=false;}
+            settings->Save(true);state.enabled=true;state.paused=false;SourceExpired();force=31;state.autoMessage.clear();state.success=true;state.message="已开启捏人";return;
+        }
         if(request.action==Action::EndPreview){
             if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新关闭窗口");
             if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再关闭预览");SaveDocument(EditedDocument(*doc,data));}
             std::vector<MhmUpdate> updates;std::array<Origin,5> next{};
-            if(query&&lastReady&&!state.paused)for(uint32_t part=0;part<5;part++)for(const auto& ref:defaults){
+            if(query&&lastReady&&state.enabled&&!state.paused)for(uint32_t part=0;part<5;part++)for(const auto& ref:defaults){
                 if(ref.part!=part)continue;const auto* doc=Find(ref.preset);const auto* asset=doc?FindPart(*doc,part):nullptr;if(!asset)continue;
                 const auto match=PartCheck(*doc,*asset,data);if(!match.compatible)continue;
                 updates.insert(updates.end(),match.updates.begin(),match.updates.end());next[part]={doc->id,match.updates.front().target,true};break;
@@ -167,13 +182,13 @@ class Manager {
             if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再暂时还原");SaveDocument(EditedDocument(*doc,data));}
             if(session&&session->Release()!=MHM_OK)throw std::runtime_error("暂时还原失败，请稍后重试");Pause();state.success=true;state.message="已暂时还原并暂停自动使用；恢复自动使用或重启游戏后按已保存预设恢复";return;
         }
-        if(request.action==Action::Resume){if(policyLoadFailed){defaults=ResolveDefaults(defaultsStore->Load(),documents);PublishDefaults();policyLoadFailed=false;}state.paused=false;observed={};force=31;state.autoMessage.clear();state.success=true;state.message="已恢复自动使用，等待匹配装备";return;}
+        if(request.action==Action::Resume){if(!state.enabled)throw std::runtime_error("请先开启捏人");if(policyLoadFailed){defaults=ResolveDefaults(defaultsStore->Load(),documents);PublishDefaults();policyLoadFailed=false;}state.paused=false;observed={};force=31;state.autoMessage.clear();state.success=true;state.message="已重试应用";return;}
         if(request.action==Action::SetDefault||request.action==Action::ClearDefault){
             const auto* doc=Find(request.id);if(!doc)throw std::runtime_error("预设不存在");auto next=defaults;
             std::erase_if(next,[&](const auto& ref){return ref.preset==doc->id;});
             if(request.action==Action::SetDefault)for(const auto& part:doc->parts)next.push_back({doc->id,part.part});
             StoreDefaults(std::move(next));state.autoMessage.clear();state.success=true;
-            state.message=request.action==Action::SetDefault?"已设为穿戴默认："+doc->name+"；启动／换装使用已保存版本，当前未保存修改保持":"已取消穿戴默认："+doc->name+"；当前效果保留";return;
+            state.message=request.action==Action::SetDefault?"已应用预设":"已取消应用";return;
         }
         if(request.action==Action::ScanImports||request.action==Action::Import||request.action==Action::Export||request.action==Action::ExportAll){Exchange(request,session);return;}
         if(request.action==Action::PurgeAll){
@@ -220,6 +235,7 @@ public:
         try{auto catalog=store->Load();auto removed=store->Load(true);documents=std::move(catalog.documents);deleted=std::move(removed.documents);PublishLibrary();if(catalog.invalid+removed.invalid)state.message="已跳过 "+std::to_string(catalog.invalid+removed.invalid)+" 个无效预设文件";}
         catch(const std::exception& e){state.message=e.what();}
         policyLoadFailed=false;try{defaults=ResolveDefaults(defaultsStore->Load(),documents);state.autoMessage.clear();}catch(const std::exception& e){policyLoadFailed=true;state.autoMessage=std::string("自动配置读取失败，本次未启用自动使用：")+e.what();}PublishDefaults();
+        settings=std::make_unique<PanelSettings>(directory);try{state.enabled=settings->Load();}catch(const std::exception& e){state.enabled=false;state.autoMessage=std::string("开关配置读取失败，捏人已关闭：")+e.what();}
     }
     void SetQuery(IdentityQuery value){query=value;state.available=query!=nullptr;identityHandles={};lastReady=false;choicesDirty=true;}
     void Update(const mhmcontrol::Response& data,bool ready){
@@ -236,7 +252,11 @@ public:
                 result->push_back({doc.id,doc.name,query?(ready?match.message:"等待核心或装备绑定"):"核心不支持预设身份查询，请更新配套核心",query&&ready&&match.compatible,query&&ready?match.matched:0,match.total,std::move(match.parts)});
             }return result;
         };
-        if(choicesDirty){state.choices=choices(documents);state.removed=choices(deleted);Preview(data,ready);choicesDirty=false;}
+        if(choicesDirty){
+            state.choices=choices(documents);state.removed=choices(deleted);Preview(data,ready);appliedIds={};
+            if(query&&ready)for(const auto& ref:defaults){const auto* doc=Find(ref.preset);const auto* asset=doc?FindPart(*doc,ref.part):nullptr;if(asset&&PartCheck(*doc,*asset,data).compatible)appliedIds[ref.part]=doc->id;}
+            choicesDirty=false;
+        }
         const auto* active=Find(state.activeId);state.canSave=false;
         for(uint32_t i=0;i<data.targetCount;i++){const auto& target=data.targets[i];if(active&&origins[target.info.part].preset==active->id&&origins[target.info.part].handle==target.info.handle)state.canSave=ready;}
         if(active){try{state.dirty=state.canSave&&Contents(EditedDocument(*active,data))!=Contents(*active);}catch(const std::exception&){state.dirty=state.canSave;}}
@@ -245,16 +265,18 @@ public:
         }
         state.worn={};for(uint32_t i=0;i<data.targetCount;i++){
             const auto& target=data.targets[i];const auto part=target.info.part;bool owned=false;for(uint32_t k=0;k<target.count;k++)owned=owned||data.keys[target.first+k].owned!=0;
-            if(!owned)continue;const auto* doc=origins[part].handle==target.info.handle?Find(origins[part].preset):nullptr;
-            const bool registered=doc&&std::find(defaults.begin(),defaults.end(),DefaultRef{doc->id,part})!=defaults.end();
-            state.worn[part]=std::string(PartName(part))+" · "+(doc?(origins[part].automatic&&registered?"自动：":"编辑／临时：")+doc->name:"未命名控制");
+            const auto* doc=origins[part].handle==target.info.handle?Find(origins[part].preset):nullptr;const auto* applied=Find(appliedIds[part]);
+            auto line=std::string(PartName(part))+" · "+morphequipment::Label(target.info.model_id)+" · "+(applied?"应用："+applied->name:"未应用");
+            const bool dirty=state.dirty&&(!doc||doc->id==state.activeId);
+            if(owned&&(!doc||!applied||doc->id!=applied->id||dirty))line+=" · 预览："+(doc?doc->name:std::string("未命名"))+(dirty?"*":"");
+            state.worn[part]=std::move(line);
         }
     }
     void Pause(){state.paused=true;origins={};state.canSave=false;state.preview=false;}
     void SourceExpired(){origins={};observed={};state.activeId.clear();state.activeName.clear();state.preview=false;}
     void Edited(uint64_t target,const mhmcontrol::Response& data){const auto part=PartOf(data,target);if(part<5){observed[part]=target;origins[part]={state.activeId,target,false};state.preview=true;}}
     bool Automatic(mhmcontrol::Session* session,const mhmcontrol::Response& data,bool ready){
-        if(!session||!query||!ready||state.paused)return false;
+        if(!session||!query||!ready||state.paused||!state.enabled)return false;
         std::array<uint64_t,5> handles{};for(uint32_t i=0;i<data.targetCount;i++)handles[data.targets[i].info.part]=data.targets[i].info.handle;
         auto updates=Owned(data);auto next=origins;bool changed=false;
         for(uint32_t part=0;part<5;part++){
@@ -283,6 +305,7 @@ public:
         try{
             if(!store)throw std::runtime_error("预设目录尚未就绪");
             if(Management(request.action)){Manage(request,session,data);return state.success?MHM_OK:MHM_INVALID;}
+            if(!state.enabled)throw std::runtime_error("请先开启捏人");
             if(!session||!query||!ready)throw std::runtime_error("预设尚未就绪，请检查配套核心与装备绑定");
             if(request.action==Action::Select)return Select(request,*session,data);
             const auto* existing=Find(request.id);Document doc;
@@ -301,7 +324,7 @@ public:
                 if(request.action==Action::SaveAs&&documents.size()>=256)throw std::runtime_error("最多支持 256 个预设");
                 if(request.action==Action::Save){if(!state.canSave)throw std::runtime_error("当前没有可保存的编辑部位");doc=EditedDocument(*existing,data);SaveDocument(doc);}
                 else{doc=Capture(data,identities,id,name);store->Save(doc);documents.push_back(doc);PublishLibrary();AssociateOwned(doc.id,data,true);state.preview=true;}
-                state.message="已保存："+doc.name;
+                state.message="保存成功";
             }
             state.activeId=doc.id;state.activeName=doc.name;state.lastId=doc.id;state.success=true;state.selectLast=true;return MHM_OK;
         }catch(const std::exception& e){state.message=e.what();return MHM_INVALID;}
