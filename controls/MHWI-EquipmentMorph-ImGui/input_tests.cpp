@@ -18,6 +18,32 @@ int main(){try{
     check(!ImeMessage(WM_CHAR)&&!ImeMessage(WM_KEYDOWN)&&!ImeMessage(WM_INPUTLANGCHANGE),"committed text and language updates take their dedicated routes");
     for(UINT message:{WM_MOUSELEAVE,WM_NCMOUSELEAVE,WM_CAPTURECHANGED})check(PanelMouseNotice(message),"panel mouse notices are isolated from host input while capturing");
     for(UINT message:{WM_KILLFOCUS,WM_ACTIVATE,WM_SIZE,WM_CANCELMODE})check(!PanelMouseNotice(message),"real host focus and window lifecycle notifications remain available");
+    const std::array<UINT,5> downs={WM_LBUTTONDOWN,WM_RBUTTONDOWN,WM_MBUTTONDOWN,WM_XBUTTONDOWN,WM_XBUTTONDOWN};
+    const std::array<UINT,5> ups={WM_LBUTTONUP,WM_RBUTTONUP,WM_MBUTTONUP,WM_XBUTTONUP,WM_XBUTTONUP};
+    const std::array<UINT,5> doubles={WM_LBUTTONDBLCLK,WM_RBUTTONDBLCLK,WM_MBUTTONDBLCLK,WM_XBUTTONDBLCLK,WM_XBUTTONDBLCLK};
+    for(unsigned i=0;i<5;i++){
+        const WPARAM value=i<3?0:MAKEWPARAM(0,i==3?XBUTTON1:XBUTTON2);
+        check(MouseButton(downs[i],value).button==static_cast<int>(i)&&MouseButton(downs[i],value).down,"native mouse down maps to the matching physical channel");
+        check(MouseButton(ups[i],value).button==static_cast<int>(i)&&!MouseButton(ups[i],value).down,"native mouse up maps to the matching physical channel");
+        check(MouseButton(doubles[i],value).button==static_cast<int>(i)&&MouseButton(doubles[i],value).down,"double click preserves native button ordering");
+        const unsigned bit=1u<<i;
+        check(MouseRepairs(bit,0,0)==bit&&MouseRepairs(0,bit,0)==bit,"lost down and lost up are both repairable for each mouse button");
+        check(MouseRepairs(0,bit,bit)==0&&MouseRepairs(bit,0,bit)==0,"queued native presses and releases are consumed before polling correction");
+    }
+    check(MouseButton(WM_MOUSEMOVE,0).button<0&&MouseButton(WM_XBUTTONDOWN,MAKEWPARAM(0,3)).button<0,"movement and invalid X buttons cannot invent button transitions");
+    check(MouseRepairs(31,31,0)==0&&MouseRepairs(0,0,0)==0,"matching physical and rendered mouse state never duplicates a click");
+    check(MouseRepairs(31,0,30)==1&&MouseRepairs(0,31,1)==30,"one queued button does not prevent repair of independent idle channels");
+    check(MouseRepairs(0xffff,0,0)==31,"only five supported mouse channels can be repaired");
+    unsigned rendered=0,delivered=0;
+    for(unsigned physical:{0u,1u,1u,1u,0u,0u}){const auto repair=MouseRepairs(physical,rendered,0);if(repair&1)delivered++;rendered=(rendered&~repair)|(physical&repair);}
+    check(rendered==0&&delivered==2,"a click missing all native messages produces exactly one press and release across frames");
+    check(MouseRepairs(0,0,1)==0,"a complete short native click queued between frames is preserved without adding physical events");
+    check(LogicalMouse(1,false)==1&&LogicalMouse(2,false)==2,"ordinary physical left and right match native logical buttons");
+    check(LogicalMouse(1,true)==2&&LogicalMouse(2,true)==1,"swapped system buttons match the logical Win32 event channels");
+    check(LogicalMouse(31,true)==31&&LogicalMouse(28,true)==28,"button swapping preserves simultaneous presses and auxiliary buttons");
+    check(!SupersededMouse(100,0),"native clicks are not discarded before any physical repair");
+    check(SupersededMouse(100,200)&&!SupersededMouse(200,200)&&!SupersededMouse(201,200),"only events older than a physical repair are retired");
+    check(SupersededMouse(0xfffffff0u,20)&&!SupersededMouse(20,0xfffffff0u),"mouse event ordering tolerates the Windows tick counter wrap");
     MouseReleaseHandoff drag;
     check(!drag.Waiting()&&!drag.Ready(false,false),"idle cursor handoff cannot request an unclip");
     drag.Begin();check(!drag.Waiting()&&!drag.Ready(false,false),"a held drag cannot be released by a render frame");

@@ -5,6 +5,7 @@
 #include <optional>
 #include <atomic>
 #include <cstdint>
+#include <array>
 
 namespace morphgui {
 inline bool ToggleKey(UINT key,bool repeated,bool textInput,unsigned modifiers){return key==VK_DELETE&&!repeated&&!textInput&&modifiers==0;}
@@ -12,6 +13,21 @@ inline bool ImeMessage(UINT message){
     return (message>=WM_IME_STARTCOMPOSITION&&message<=WM_IME_COMPOSITION)||(message>=WM_IME_SETCONTEXT&&message<=WM_IME_KEYUP);
 }
 inline bool PanelMouseNotice(UINT message){return message==WM_MOUSELEAVE||message==WM_NCMOUSELEAVE||message==WM_CAPTURECHANGED;}
+inline constexpr std::array<int,5> MouseVirtualKeys={VK_LBUTTON,VK_RBUTTON,VK_MBUTTON,VK_XBUTTON1,VK_XBUTTON2};
+struct MouseButtonMessage {int button=-1;bool down=false;};
+inline MouseButtonMessage MouseButton(UINT message,WPARAM value){
+    switch(message){
+    case WM_LBUTTONDOWN:case WM_LBUTTONDBLCLK:return {0,true};case WM_LBUTTONUP:return {0,false};
+    case WM_RBUTTONDOWN:case WM_RBUTTONDBLCLK:return {1,true};case WM_RBUTTONUP:return {1,false};
+    case WM_MBUTTONDOWN:case WM_MBUTTONDBLCLK:return {2,true};case WM_MBUTTONUP:return {2,false};
+    case WM_XBUTTONDOWN:case WM_XBUTTONDBLCLK:case WM_XBUTTONUP:
+        if(HIWORD(value)==XBUTTON1||HIWORD(value)==XBUTTON2)return {HIWORD(value)==XBUTTON1?3:4,message!=WM_XBUTTONUP};
+    }return {};
+}
+// Preserve native click sequences queued between frames; repair only idle channels.
+inline unsigned MouseRepairs(unsigned physical,unsigned rendered,unsigned queued){return (physical^rendered)&~queued&31u;}
+inline unsigned LogicalMouse(unsigned physical,bool swapped){return swapped?(physical&~3u)|((physical&1u)<<1)|((physical&2u)>>1):physical;}
+inline bool SupersededMouse(uint32_t messageTick,uint32_t repairedTick){return repairedTick!=0&&static_cast<int32_t>(messageTick-repairedTick)<0;}
 // Unclip only after NewFrame has consumed the release, including trickled events.
 class MouseReleaseHandoff {
     std::mutex mutex;uint64_t generation=0;bool held=false,pending=false,posted=false;

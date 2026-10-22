@@ -35,6 +35,10 @@ struct Input {
     MouseReleaseHandoff dragHandoff;InputTrace trace;
     std::atomic_uint64_t mouseLeaves=0,captureChanges=0,dragReleases=0;
     std::atomic_bool renderedLeft=false;std::atomic_uint queuedLeft=0;
+    std::atomic_uint nativeMouse=0,physicalMouse=0;std::atomic_bool mouseSyncQueued=false;
+    std::atomic_uint64_t mouseRepairs=0,nativeLeftDown=0,nativeLeftUp=0;
+    std::array<std::atomic_uint32_t,5> mouseRepairTick{};std::atomic_uint64_t staleMouseMessages=0;
+    std::atomic_int mouseX=0,mouseY=0;
     HIMC panelIme=nullptr,previousIme=nullptr;
     std::atomic<HCURSOR> nativeCursor=nullptr;
     std::atomic_uint imeError=0;std::atomic_uint64_t imeActivations=0,imeCompositions=0,languageChanges=0,dragBounds=0;
@@ -93,6 +97,27 @@ struct Input {
             OffsetRect(&client,corner.x,corner.y);if(hooks[Clip].original<decltype(&ClipCursor)>()(&client)){dragClipped=true;dragBounds++;}
         }else if(dragClipped){hooks[Clip].original<decltype(&ClipCursor)>()(nullptr);dragClipped=false;}
     }
+    unsigned PhysicalMouse()const{unsigned mask=0;for(unsigned i=0;i<MouseVirtualKeys.size();i++)if(Physical(MouseVirtualKeys[i])&0x8000)mask|=1u<<i;return LogicalMouse(mask,GetSystemMetrics(SM_SWAPBUTTON)!=0);}
+    void PostMouseSync(){if(!mouseSyncQueued.exchange(true))if(!PostMessageW(window,message,6,0))mouseSyncQueued=false;}
+    void SyncMouse(){
+        OwnCalls own;mouseSyncQueued=false;if(!Capturing())return;
+        const auto mask=PhysicalMouse(),before=nativeMouse.exchange(mask);
+        if((mask&1)&&!(before&1)){dragHandoff.Begin();BoundDrag(true);}
+        else if(!(mask&1)&&(before&1))dragHandoff.End();
+        if(!mask&&GetCapture()==window)ReleaseCapture();
+    }
+    // Ordinary messages remain the fast path, including clicks wholly between frames.
+    void PollMouse(){
+        if(!Capturing())return;OwnCalls own;POINT point{};
+        if(!GetCursorPos(&point)||!ScreenToClient(window,&point))return;
+        mouseX=point.x;mouseY=point.y;ImGui::GetIO().AddMousePosEvent(static_cast<float>(point.x),static_cast<float>(point.y));
+        unsigned queued=0,rendered=0;auto& io=ImGui::GetIO();
+        for(const auto& event:context->InputEventsQueue)if(event.Type==ImGuiInputEventType_MouseButton)queued|=1u<<event.MouseButton.Button;
+        for(unsigned i=0;i<MouseVirtualKeys.size();i++)if(io.MouseDown[i])rendered|=1u<<i;
+        const auto physical=PhysicalMouse(),repair=MouseRepairs(physical,rendered,queued);physicalMouse=physical;
+        for(unsigned i=0;i<MouseVirtualKeys.size();i++)if(repair&(1u<<i)){mouseRepairTick[i]=static_cast<uint32_t>(GetTickCount64());io.AddMouseButtonEvent(static_cast<int>(i),(physical&(1u<<i))!=0);mouseRepairs++;}
+        if(repair||nativeMouse.load()!=physical)PostMouseSync();
+    }
     // Called under gui after NewFrame; never calls native cursor APIs on render.
     void FrameInput(){
         renderedLeft=ImGui::GetIO().MouseDown[0];unsigned waiting=0;
@@ -129,7 +154,7 @@ struct Input {
             WakePlatform();
         }else{
             releaseKeys=true;releaseMouse=true;
-            dragHandoff.Cancel();BoundDrag(false);textInput=false;RestoreIme();
+            dragHandoff.Cancel();BoundDrag(false);nativeMouse=0;mouseSyncQueued=false;textInput=false;RestoreIme();
             if(GetCapture()==window)ReleaseCapture();
             while(cursorAdjustments>0){hooks[CursorCount].original<decltype(&ShowCursor)>()(FALSE);cursorAdjustments--;}
             RECT restore{};bool unrestricted=false;{std::scoped_lock lock(cursorState);restore=clip;unrestricted=clipNull;}
@@ -158,9 +183,12 @@ struct Input {
         InputTrace::Scope trace(self.trace,m);
         if(m==self.message){
             trace.Phase(InputPhase::Platform);
-            if(a==5){if(self.dragHandoff.Complete(static_cast<uint64_t>(b),(self.Physical(VK_LBUTTON)&0x8000)!=0)){self.BoundDrag(false);self.dragReleases++;}}
+            if(a==6)self.SyncMouse();
+            else if(a==5){if(self.dragHandoff.Complete(static_cast<uint64_t>(b),(self.PhysicalMouse()&1)!=0)){self.BoundDrag(false);self.dragReleases++;}}
             else if(a==4)self.ApplyPlatform();else if(a==3)self.SynchronizeHotkey();else if(a==2)self.Toggle();else self.Visibility(a!=0);return 0;
         }
+        const auto mouseButton=MouseButton(m,a);const auto mouseTick=mouseButton.button>=0?static_cast<uint32_t>(GetMessageTime()):0;
+        if(self.Capturing()&&mouseButton.button>=0&&SupersededMouse(mouseTick,self.mouseRepairTick[mouseButton.button].load())){self.staleMouseMessages++;self.PostMouseSync();return 0;}
         trace.Phase(InputPhase::Hotkey);
         if(m==WM_SETFOCUS||m==WM_ACTIVATE)self.SynchronizeHotkey();
         if(m==WM_HOTKEY&&a==hotkeyId&&self.hotkeyRegistered){
@@ -176,11 +204,12 @@ struct Input {
         bool resetMouse=false;
         if(self.Capturing()){
             trace.Phase(InputPhase::Drag);
+            if(const auto button=MouseButton(m,a);button.button>=0){const auto bit=1u<<button.button;if(button.down)self.nativeMouse.fetch_or(bit);else self.nativeMouse.fetch_and(~bit);if(button.button==0){if(button.down)self.nativeLeftDown++;else self.nativeLeftUp++;}}
             if(m==WM_LBUTTONDOWN||m==WM_LBUTTONDBLCLK){self.dragHandoff.Begin();self.BoundDrag(true);}
             else if(m==WM_LBUTTONUP)self.dragHandoff.End();
             else if(m==WM_CAPTURECHANGED){
                 self.captureChanges++;
-                if(!self.dragHandoff.Waiting()||b!=0){self.dragHandoff.Cancel();self.BoundDrag(false);resetMouse=true;}
+                if(!self.dragHandoff.Waiting()||b!=0){self.dragHandoff.Cancel();self.BoundDrag(false);self.nativeMouse=0;resetMouse=true;}
             }else if(m==WM_SIZE&&self.dragClipped)self.BoundDrag(true);
             if(m==WM_MOUSELEAVE||m==WM_NCMOUSELEAVE)self.mouseLeaves++;
             if(m==WM_INPUTLANGCHANGEREQUEST){OwnCalls own;return DefWindowProcW(w,m,a,b);}
@@ -191,9 +220,12 @@ struct Input {
             trace.Phase(InputPhase::GuiWait);
             std::scoped_lock lock(self.gui);OwnCalls own;
             trace.Phase(InputPhase::Backend);
-            if(self.context){ImGui::SetCurrentContext(self.context);if(resetMouse)for(int button=0;button<5;button++)ImGui::GetIO().AddMouseButtonEvent(button,false);ImGui_ImplWin32_WndProcHandler(w,m,a,b);}
+            const bool staleMouse=self.Capturing()&&mouseButton.button>=0&&SupersededMouse(mouseTick,self.mouseRepairTick[mouseButton.button].load());
+            if(staleMouse){self.staleMouseMessages++;self.PostMouseSync();}
+            else if(self.context){ImGui::SetCurrentContext(self.context);if(resetMouse)for(int button=0;button<5;button++)ImGui::GetIO().AddMouseButtonEvent(button,false);ImGui_ImplWin32_WndProcHandler(w,m,a,b);}
         }
         trace.Phase(InputPhase::Route);
+        if(const auto button=MouseButton(m,a);self.Capturing()&&button.button>=0&&!button.down&&self.nativeMouse.load()==0)self.PostMouseSync();
         const bool keyboard=m==WM_KEYDOWN||m==WM_KEYUP||m==WM_SYSKEYDOWN||m==WM_SYSKEYUP||m==WM_CHAR||m==WM_SYSCHAR||m==WM_UNICHAR;
         const bool mouse=m>=WM_MOUSEFIRST&&m<=WM_MOUSELAST;
         if(self.Capturing()&&(keyboard||mouse||m==WM_INPUT||m==WM_SETCURSOR||PanelMouseNotice(m))){

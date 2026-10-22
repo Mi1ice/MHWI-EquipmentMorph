@@ -88,7 +88,7 @@ struct Renderer {
         if(!count)Initialize(swap,commands,window);
         auto& frame=frames[sequence%count];if(frame.fence&&fence->GetCompletedValue()<frame.fence)return false;
         const auto index=swap->GetCurrentBackBufferIndex();if(index>=count)throw std::runtime_error("Invalid backbuffer index");
-        ImGui::SetCurrentContext(input.context);ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();input.FrameInput();
+        ImGui::SetCurrentContext(input.context);ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();input.PollMouse();ImGui::NewFrame();input.FrameInput();
         const auto extent=ImGui::GetMainViewport()->WorkSize;
         const float marginX=extent.x>528?24.f:0.f,marginY=extent.y>468?24.f:0.f;
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetMainViewport()->WorkPos.x+marginX,ImGui::GetMainViewport()->WorkPos.y+marginY),ImGuiCond_FirstUseEver);
@@ -288,6 +288,9 @@ DWORD WINAPI Worker(void* value){
            <<",\"drag_releases\":"<<state->input.dragReleases.load()<<",\"drag_release_pending\":"<<(state->input.dragHandoff.Waiting()?"true":"false")
            <<",\"mouse_leaves\":"<<state->input.mouseLeaves.load()<<",\"capture_changes\":"<<state->input.captureChanges.load()<<",\"rendered_left\":"<<(state->input.renderedLeft.load()?"true":"false")<<",\"queued_left\":"<<state->input.queuedLeft.load()
            <<",\"wndproc_message\":"<<(probe&0xffff)<<",\"wndproc_phase\":"<<((probe>>16)&0xffff)<<",\"wndproc_age_ms\":"<<probeAge<<",\"wndproc_max_ms\":"<<state->input.trace.longest.load()
+           <<",\"tracked_mouse_buttons\":"<<state->input.nativeMouse.load()<<",\"physical_mouse_buttons\":"<<state->input.physicalMouse.load()<<",\"mouse_repairs\":"<<state->input.mouseRepairs.load()
+           <<",\"native_left_down\":"<<state->input.nativeLeftDown.load()<<",\"native_left_up\":"<<state->input.nativeLeftUp.load()<<",\"mouse_x\":"<<state->input.mouseX.load()<<",\"mouse_y\":"<<state->input.mouseY.load()<<",\"stale_mouse_messages\":"<<state->input.staleMouseMessages.load()
+           <<",\"wndproc_outermost\":"<<(reinterpret_cast<WNDPROC>(GetWindowLongPtrW(state->input.window,GWLP_WNDPROC))==&Input::Procedure?"true":"false")
            <<",\"blocked_polls\":"<<state->input.blockedPolls.load()
            <<",\"api_connected\":"<<(controls->connected?"true":"false")<<",\"control_ready\":"<<(controls->ready?"true":"false")
            <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan
