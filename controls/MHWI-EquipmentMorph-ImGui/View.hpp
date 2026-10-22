@@ -160,11 +160,10 @@ struct View {
         ui::NextItem(countWidth);ImGui::AlignTextToFramePadding();ImGui::TextDisabled("显示 %u／%u",count,target->count);
         if(!count){ui::Line("没有符合条件的形态键",ui::Tone::Muted);if(ImGui::Button("清除筛选"))keys.Clear();FinishPreset(control,preset);return;}
         ImGui::BeginDisabled(!snapshot->presets.enabled);
-        if(ImGui::BeginTable("shape-keys",4,ImGuiTableFlags_BordersInnerV|ImGuiTableFlags_RowBg|ImGuiTableFlags_Resizable|ImGuiTableFlags_ScrollY,ImVec2(0,-1))){
+        if(ImGui::BeginTable("shape-keys",2,ImGuiTableFlags_BordersInnerV|ImGuiTableFlags_RowBg|ImGuiTableFlags_Resizable|ImGuiTableFlags_ScrollY,ImVec2(0,-1))){
             ImGui::TableSetupColumn("形态键",ImGuiTableColumnFlags_WidthStretch,1.3f);
-            ImGui::TableSetupColumn("目标权重",ImGuiTableColumnFlags_WidthStretch,1.8f);
-            ImGui::TableSetupColumn("精确输入",ImGuiTableColumnFlags_WidthFixed,120);
-            ImGui::TableSetupColumn("实际权重",ImGuiTableColumnFlags_WidthFixed,90);ImGui::TableSetupScrollFreeze(0,1);ImGui::TableHeadersRow();
+            ImGui::TableSetupColumn("权重",ImGuiTableColumnFlags_WidthStretch,1.8f);
+            ImGui::TableSetupScrollFreeze(0,1);ImGui::TableHeadersRow();
             ImGui::PushID(reinterpret_cast<void*>(static_cast<uintptr_t>(target->info.handle)));
             for(uint32_t row=0;row<count;row++){
                 const auto i=visible[row];const auto& key=data.keys[target->first+i];auto& edit=edits[i];
@@ -174,16 +173,22 @@ struct View {
                 if(ImGui::Checkbox("##owned",&owned))edit.ticket=control.Post(owned?mhmcontrol::Action::Set:mhmcontrol::Action::Drop,key.target,key.index,edit.value);
                 if(ImGui::IsItemHovered())ImGui::SetTooltip("%s：勾选时保留本面板贡献，零权重也可接管；取消仅释放本键。",key.info.id);
                 ImGui::SameLine();ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().FramePadding.y);ui::Line(key.info.id);
-                ImGui::TableSetColumnIndex(1);ImGui::SetNextItemWidth(-1);
-                if(ImGui::SliderFloat("##slider",&edit.value,key.info.minimum,key.info.maximum,"%.3f",ImGuiSliderFlags_AlwaysClamp|ImGuiSliderFlags_NoRoundToFormat|ImGuiSliderFlags_NoInput))
+                ImGui::TableSetColumnIndex(1);
+                const float width=ImGui::GetContentRegionAvail().x,gap=ImGui::GetStyle().ItemInnerSpacing.x;
+                const bool stacked=width<190.f;
+                const float inputWidth=stacked?width:(std::min)(120.f,(std::max)(90.f,width*.3f));
+                const auto details=[&](){
+                    if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                        ImGui::SetTooltip("编辑目标：%.9g\n当前请求：%.9g\n实际权重：%.9g\n%s",edit.value,key.state.requested,key.state.applied,key.owned&&key.state.source!=data.source?"其他来源优先":"");
+                };
+                ImGui::SetNextItemWidth(stacked?width:(std::max)(1.f,width-inputWidth-gap));
+                if(ImGui::SliderFloat("##slider",&edit.value,key.info.minimum,key.info.maximum,"",ImGuiSliderFlags_AlwaysClamp|ImGuiSliderFlags_NoRoundToFormat|ImGuiSliderFlags_NoInput))
                     edit.ticket=control.Post(mhmcontrol::Action::Set,key.target,key.index,edit.value);
-                bool active=ImGui::IsItemActive();
-                ImGui::TableSetColumnIndex(2);ImGui::SetNextItemWidth(-1);
+                const bool sliderActive=ImGui::IsItemActive();details();
+                if(!stacked)ImGui::SameLine(0,gap);ImGui::SetNextItemWidth(inputWidth);
                 const bool entered=ImGui::InputFloat("##weight",&edit.value,0,0,"%.9g",ImGuiInputTextFlags_EnterReturnsTrue);
                 if(entered)edit.ticket=control.Post(mhmcontrol::Action::Set,key.target,key.index,edit.value);
-                edit.active=active||ImGui::IsItemActive();
-                ImGui::TableSetColumnIndex(3);ImGui::Text("%.3f",key.state.applied);
-                if(ImGui::IsItemHovered())ImGui::SetTooltip("请求：%.9g\n已应用：%.9g\n%s",key.state.requested,key.state.applied,key.owned&&key.state.source!=data.source?"其他来源优先":"");
+                edit.active=sliderActive||ImGui::IsItemActive();details();
                 ImGui::PopID();
             }ImGui::PopID();ImGui::EndTable();
         }
