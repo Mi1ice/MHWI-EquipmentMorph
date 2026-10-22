@@ -5,6 +5,7 @@
 #include "EquipmentLabels.hpp"
 #include "../../runtime/EquipmentMorphControlBridge/Session.hpp"
 #include <memory>
+#include <utility>
 
 namespace morphpreset {
 using IdentityQuery=decltype(&MhwMorphGetAssetIdentity);
@@ -36,6 +37,7 @@ class Manager {
     std::unique_ptr<PanelSettings> settings;std::array<std::string,5> appliedIds{};
     struct Origin {std::string preset;uint64_t handle=0;bool automatic=false;};std::array<Origin,5> origins{};
     std::array<uint64_t,5> observed{};uint32_t force=0;bool policyLoadFailed=false;
+    MhmResult leaseFailure=MHM_OK;
     IdentityQuery query=nullptr;State state;
     std::array<uint64_t,5> identityHandles{};bool lastReady=false,choicesDirty=true;
     const Document* Find(const std::string& id,bool removed=false)const{const auto& list=removed?deleted:documents;const auto it=std::find_if(list.begin(),list.end(),[&](const auto& doc){return doc.id==id;});return it==list.end()?nullptr:&*it;}
@@ -116,7 +118,7 @@ class Manager {
     }
     void Exchange(const Request& request,mhmcontrol::Session* session){
         uint64_t renewAt=0;bool leaseLost=false;
-        const auto keepAlive=[&](){const auto now=GetTickCount64();if(session&&now>=renewAt){if(session->Heartbeat()!=MHM_OK)leaseLost=true;renewAt=now+500;}};
+        const auto keepAlive=[&](){const auto now=GetTickCount64();if(session&&now>=renewAt){if(const auto result=session->Heartbeat();result!=MHM_OK){leaseLost=true;leaseFailure=result;SourceExpired();}renewAt=now+500;}};
         if(request.action==Action::ScanImports){auto scanned=transfer->Scan(keepAlive);incoming=std::move(scanned);choicesDirty=true;state.success=true;state.message="已刷新导入预览；修改源文件后请再次刷新";}
         else if(request.action==Action::Import){
             if(request.imports.empty()||request.imports.size()>256)throw std::runtime_error("请选择 1 至 256 份预设");
@@ -142,7 +144,7 @@ class Manager {
             state.message="已导出 "+std::to_string(result.count)+" 份，失败 "+std::to_string(result.failed)+"；位置：nativePC/plugins/MHWEquipmentMorph/"+result.folder;
             if(!result.error.empty())state.message+="；"+result.error;
         }
-        state.lastId.clear();if(leaseLost)state.message+="；控制租期已失效，请重新调节";
+        state.lastId.clear();if(leaseLost)state.message+="；控制租期已失效，临时编辑已清除";
     }
     void ChooseEditor(){
         std::string candidate;bool mixed=false;for(const auto& origin:origins)if(!origin.preset.empty()){if(candidate.empty())candidate=origin.preset;else if(candidate!=origin.preset)mixed=true;}
@@ -163,6 +165,7 @@ class Manager {
         }
         if(request.action==Action::EndPreview){
             if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新关闭窗口");
+            if(session&&state.enabled&&!lastReady)throw std::runtime_error("装备状态尚未就绪，无法确认穿戴默认；请稍后重试关闭");
             if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再关闭预览");SaveDocument(EditedDocument(*doc,data));}
             std::vector<MhmUpdate> updates;std::array<Origin,5> next{};
             if(query&&lastReady&&state.enabled&&!state.paused)for(uint32_t part=0;part<5;part++)for(const auto& ref:defaults){
@@ -193,13 +196,13 @@ class Manager {
         if(request.action==Action::ScanImports||request.action==Action::Import||request.action==Action::Export||request.action==Action::ExportAll){Exchange(request,session);return;}
         if(request.action==Action::PurgeAll){
             uint64_t renewAt=0;bool leaseLost=false;
-            const auto result=store->PurgeAll([&](){const auto now=GetTickCount64();if(session&&now>=renewAt){if(session->Heartbeat()!=MHM_OK)leaseLost=true;renewAt=now+500;}});
+            const auto result=store->PurgeAll([&](){const auto now=GetTickCount64();if(session&&now>=renewAt){if(const auto renewed=session->Heartbeat();renewed!=MHM_OK){leaseLost=true;leaseFailure=renewed;SourceExpired();}renewAt=now+500;}});
             std::erase_if(deleted,[&](const auto& doc){return std::find(result.ids.begin(),result.ids.end(),doc.id)!=result.ids.end();});
             PublishLibrary();state.lastId.clear();state.success=result.failed==0;
             state.message="已永久删除 "+std::to_string(result.ids.size())+" 份回收区预设";
             if(result.failed)state.message+="；"+std::to_string(result.failed)+" 份删除失败，原文件保留，请检查权限";
             if(result.skipped)state.message+="；保留 "+std::to_string(result.skipped)+" 项非预设文件或目录";
-            if(leaseLost)state.message+="；控制租期已失效，请重新调节";
+            if(leaseLost)state.message+="；控制租期已失效，临时编辑已清除";
             return;
         }
         const bool removed=request.action==Action::Restore||request.action==Action::Purge||(request.action==Action::Rename&&request.deleted);
@@ -228,12 +231,17 @@ class Manager {
     }
 public:
     const State& Snapshot()const{return state;}
+    MhmResult ConsumeLeaseFailure(){return std::exchange(leaseFailure,MHM_OK);}
     void Configure(const std::filesystem::path& directory){
         store=std::make_unique<Store>(directory);
         transfer=std::make_unique<Transfer>(directory);incoming.clear();state.incoming=std::make_shared<std::vector<Incoming>>();
         defaultsStore=std::make_unique<DefaultsStore>(directory);defaults.clear();observed={};force=0;
-        try{auto catalog=store->Load();auto removed=store->Load(true);documents=std::move(catalog.documents);deleted=std::move(removed.documents);PublishLibrary();if(catalog.invalid+removed.invalid)state.message="已跳过 "+std::to_string(catalog.invalid+removed.invalid)+" 个无效预设文件";}
-        catch(const std::exception& e){state.message=e.what();}
+        documents.clear();deleted.clear();state.message.clear();unsigned invalid=0;
+        for(const bool removed:{false,true}){
+            try{auto catalog=store->Load(removed);invalid+=catalog.invalid;(removed?deleted:documents)=std::move(catalog.documents);}
+            catch(const std::exception& e){if(!state.message.empty())state.message+="；";state.message+=(removed?std::string("回收区读取失败："):std::string("预设库读取失败："))+e.what();}
+        }
+        PublishLibrary();if(invalid){if(!state.message.empty())state.message+="；";state.message+="已跳过 "+std::to_string(invalid)+" 个无效预设文件";}
         policyLoadFailed=false;try{defaults=ResolveDefaults(defaultsStore->Load(),documents);state.autoMessage.clear();}catch(const std::exception& e){policyLoadFailed=true;state.autoMessage=std::string("自动配置读取失败，本次未启用自动使用：")+e.what();}PublishDefaults();
         settings=std::make_unique<PanelSettings>(directory);try{state.enabled=settings->Load();}catch(const std::exception& e){state.enabled=false;state.autoMessage=std::string("开关配置读取失败，捏人已关闭：")+e.what();}
     }
@@ -259,9 +267,12 @@ public:
         }
         const auto* active=Find(state.activeId);state.canSave=false;
         for(uint32_t i=0;i<data.targetCount;i++){const auto& target=data.targets[i];if(active&&origins[target.info.part].preset==active->id&&origins[target.info.part].handle==target.info.handle)state.canSave=ready;}
-        if(active){try{state.dirty=state.canSave&&Contents(EditedDocument(*active,data))!=Contents(*active);}catch(const std::exception&){state.dirty=state.canSave;}}
-        else{
-            state.dirty=false;for(uint32_t i=0;i<data.keyCount;i++)if(data.keys[i].owned){const auto part=PartOf(data,data.keys[i].target);if(part>=5||origins[part].handle!=data.keys[i].target||!origins[part].automatic||!Find(origins[part].preset)){state.dirty=true;break;}}
+        // A failed read is not evidence that an existing draft was saved or discarded.
+        if(ready){
+            if(active){try{state.dirty=state.canSave&&Contents(EditedDocument(*active,data))!=Contents(*active);}catch(const std::exception&){state.dirty=state.canSave;}}
+            else{
+                state.dirty=false;for(uint32_t i=0;i<data.keyCount;i++)if(data.keys[i].owned){const auto part=PartOf(data,data.keys[i].target);if(part>=5||origins[part].handle!=data.keys[i].target||!origins[part].automatic||!Find(origins[part].preset)){state.dirty=true;break;}}
+            }
         }
         state.worn={};for(uint32_t i=0;i<data.targetCount;i++){
             const auto& target=data.targets[i];const auto part=target.info.part;bool owned=false;for(uint32_t k=0;k<target.count;k++)owned=owned||data.keys[target.first+k].owned!=0;
@@ -272,8 +283,8 @@ public:
             state.worn[part]=std::move(line);
         }
     }
-    void Pause(){state.paused=true;origins={};state.canSave=false;state.preview=false;}
-    void SourceExpired(){origins={};observed={};state.activeId.clear();state.activeName.clear();state.preview=false;}
+    void Pause(){state.paused=true;origins={};state.canSave=false;state.preview=false;state.dirty=false;}
+    void SourceExpired(){origins={};observed={};state.activeId.clear();state.activeName.clear();state.preview=false;state.dirty=false;state.canSave=false;}
     void Edited(uint64_t target,const mhmcontrol::Response& data){const auto part=PartOf(data,target);if(part<5){observed[part]=target;origins[part]={state.activeId,target,false};state.preview=true;}}
     bool Automatic(mhmcontrol::Session* session,const mhmcontrol::Response& data,bool ready){
         if(!session||!query||!ready||state.paused||!state.enabled)return false;
