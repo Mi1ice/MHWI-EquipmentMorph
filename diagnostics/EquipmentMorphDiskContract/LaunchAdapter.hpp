@@ -25,6 +25,11 @@ inline bool ParseWeight(std::string_view text,float& weight) {
     weight=candidate==0?0:candidate;return true;
 }
 // Runtime gate serializes these methods; no native calls while held.
+struct InputCycleRejection {
+    bool open=false,syncSeen=false,dispatch=false;
+    unsigned kind=0,launches=0,waits=0,compute=0,draw=0,dispatches=0;
+    std::uint64_t before=0,after=0,counter=0,lastSignal=0;
+};
 class LaunchAdapter {
     std::uint64_t bindingEpoch=1;
     launchpool::Pool pool;
@@ -38,6 +43,7 @@ class LaunchAdapter {
     unsigned launches=0,nextWait=0;
     std::uint64_t counter=0,lastSignal=0,boundaries=0,signals=0,inputs=0,dispatches=0,uploadDone=0,drawDone=0,originalBypasses=0;
     const char* reason="none";
+    std::optional<InputCycleRejection> inputRejection;
     bool Bad(const char* why){if(failed)return false;failed=true;ready=false;open=false;reason=why;pool.Invalidate();return false;}
     bool Same(Frame f)const{return f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.workers==fixed.workers&&f.thread==fixed.thread;}
     bool Batch(Frame f)const{return Same(f)&&f.mode==batch.mode&&f.before==counter;}
@@ -51,6 +57,7 @@ public:
     bool Started()const{return started&&!failed;}
     bool HasLaunched()const{return started;}
     const char* Reason()const{return reason;}
+    std::optional<InputCycleRejection> InputRejection()const{return inputRejection;}
     Frame Fixed()const{return fixed;}
     unsigned PendingWaits()const{return nextWait;}
     std::uint64_t Boundaries()const{return boundaries;}
@@ -122,7 +129,12 @@ public:
         if(!Started()||seen.owner!=target.owner)return passed;
         const auto actual=target;
         if(seen!=actual){Bad("target_identity_changed");return passed;}
-        if(!open||before!=after||before!=counter){Bad("input_outside_launch_cycle");return passed;}
+        if(!open||before!=after||before!=counter){
+            // Retain the first rejected proof before Bad closes the cycle.
+            // No formatting, allocation or logging on the native callback.
+            inputRejection=InputCycleRejection{open,syncSeen,dispatch,kind,launches,nextWait,cycleCompute,cycleDraw,cycleDispatch,before,after,counter,lastSignal};
+            Bad("input_outside_launch_cycle");return passed;
+        }
         const auto slot=pool.Input(before,after);
         if(!pool.Get().live){Bad("pool_input_rejected");return passed;}
         const auto expected=slot?handles[*slot]:actual.source;

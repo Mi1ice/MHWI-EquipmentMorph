@@ -257,6 +257,14 @@ bool CanSubmit(const launchpool::View& view){
 std::string Weights(const std::array<float,64>& values,unsigned count){
     std::string result="[";char text[40]{};for(unsigned i=0;i<count;i++){if(i)result+=',';std::snprintf(text,sizeof(text),"%.9g",double(values[i]));result+=text;}return result+"]";
 }
+template<class Log> void WriteInputCycleRejection(Log& log,Part& part){
+    const auto rejected=[&]{std::lock_guard lock(gate);return part.adapter->InputRejection();}();
+    if(!rejected)return;
+    const auto& r=*rejected;char line[1000]{};
+    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"input_cycle_rejected\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"observed_tick\":%llu,\"cycle_open\":%s,\"sync_seen\":%s,\"dispatch\":%s,\"kind\":%u,\"launches\":%u,\"waits\":%u,\"compute_inputs\":%u,\"draw_inputs\":%u,\"dispatch_inputs\":%u,\"before\":%llu,\"after\":%llu,\"tracked_counter\":%llu,\"last_signal\":%llu}\n",
+        part.asset->part,part.epoch,part.target,::GetTickCount64(),r.open?"true":"false",r.syncSeen?"true":"false",r.dispatch?"true":"false",r.kind,r.launches,r.waits,r.compute,r.draw,r.dispatches,r.before,r.after,r.counter,r.lastSignal);
+    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Input cycle rejection log");
+}
 template<class Log> void WriteState(Log& log,Part& part,const char* event){
     // Two 64-float arrays plus bounded integer/identity fields fit in 4096 bytes.
     const auto [v,id,live,ready,started,reason,replacements,originalBypasses]=[&]{

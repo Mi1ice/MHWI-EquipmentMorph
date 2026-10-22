@@ -52,6 +52,7 @@ void ActivateWanted(Part& part){
     part.payload.clear();ResetPartLocked(part);
 }
 void EndPart(privateprobe::Log& log,Part& part,privateprobe::UploadFence& upload,DrawingFence& drawing){
+    WriteInputCycleRejection(log,part); // Once per retired generation, outside native callbacks.
     const auto oldTarget=part.target;part.binding.reset();part.target=0;
     if(oldTarget){MhmApi api{};MhmWeightState values[64]{};std::uint32_t count=0;std::uint64_t req=0,app=0;
         if(MhwMorphGetApi(MHM_API_VERSION,sizeof(api),&api)!=MHM_OK||api.read_weights(oldTarget,values,64,&count,&req,&app)!=MHM_STALE)throw std::runtime_error("Part handle not retired");}
