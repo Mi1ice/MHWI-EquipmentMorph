@@ -23,7 +23,7 @@ python -m venv .venv
 
 统一入口构建宿主、检查器、桥接、窗口和 SDK 示例，执行原生、作者、日志、控制会话、管道、窗口及模拟安装回滚检查。提供 `-Blender` 时，还会启动独立后台合成场景，检查配对导出、ID迁移和MOD安装冲突；不会打开或保存用户工程。
 
-当前0.5.1-dev12候选使用同一入口，新增[无关绘制回调早退](DRAW_FILTER.md)及29项原生回归，保留[输入计时与资源诊断](INPUT_DIAGNOSTICS.md)和既有优化。包位于 `.build/packages/MHWI-EquipmentMorph-0.5.1-dev12-source`。用户已确认已测试dev12载荷的调节、释放和换装重绑通过，本轮性能优化结束；重新构建的包仍需按实际变更核验，不自动继承该载荷验收，也不覆盖正式0.5.0发行。当前版本关系见[项目状态](PROJECT_STATUS.md)。
+当前0.6.0-rc1候选包含已验证的dev12[无关绘制回调早退](DRAW_FILTER.md)、[输入计时与资源诊断](INPUT_DIAGNOSTICS.md)和既有优化，以及后续ImGui与预设功能。组件包位于 `.build/packages/MHWI-EquipmentMorph-0.6.0-rc1-core` 与 `-imgui`。用户已确认已测试dev12载荷的调节、释放和换装重绑通过，本轮性能优化结束；重新构建的包仍需按实际变更核验，不自动继承该载荷验收，也不覆盖正式0.5.0发行。当前版本关系见[项目状态](PROJECT_STATUS.md)。
 
 装备目录结构与选择器检查不需要工作簿或解包资源。提供 Blender 时额外执行精简／Debug 导出、公共配置归属、安装回滚及独立副本预览回归。目录重建才需要用户提供的六列工作簿、openpyxl和解包文件名，见[装备目录说明](EQUIPMENT_CATALOG.md)。
 
@@ -35,7 +35,7 @@ python -m venv .venv
 
 ImGui 构建入口自动执行无窗口的输入、控制和预设检查：当前为99项输入、33项控制和307项合成预设检查；指定 `-CoreCandidate` 时另核对2项本地核心导出，共309项。图形窗口程序仅编译，不启动。用户指定后续界面／实机测试由其手动完成；助手不执行会创建窗口的历史 `test_mhwi_equipmentmorph_imgui.ps1`。历史先／后加载和队列回归的记录仍保留。
 
-当前面板的完整源码验证使用 `./tools/check_source.ps1 -ImGui -Python './.venv/Scripts/python.exe'`，会构建核心和ImGui，生成仅核心与核心＋ImGui两种包，并执行合成目录安装、升级添加组件、回退、卸载和冲突检查。与 `-Desktop` 互斥，不启动游戏或界面。只重复打包时使用 `python ./tools/package_source.py --core-only` 或 `--imgui`；后者读取 `.build/current-validation/imgui/MHWEquipmentMorphImGui.dll`。包输出分别为 `.build/packages/MHWI-EquipmentMorph-0.5.1-dev12-source-core` 与 `-imgui`，使用说明见[组件安装说明](IMGUI_INSTALLATION.md)。这些包不携带旧预设或配置迁移器。
+当前面板的完整源码验证使用 `./tools/check_source.ps1 -ImGui -Python './.venv/Scripts/python.exe'`，会构建核心和ImGui，生成仅核心与核心＋ImGui两种包，并执行合成目录安装、升级添加组件、回退、卸载和冲突检查。与 `-Desktop` 互斥，不启动游戏或界面。只重复打包时使用 `python ./tools/package_source.py --core-only` 或 `--imgui`；后者读取 `.build/current-validation/imgui/MHWEquipmentMorphImGui.dll`。包输出分别为 `.build/packages/MHWI-EquipmentMorph-0.6.0-rc1-core` 与 `-imgui`，使用说明见[组件安装说明](IMGUI_INSTALLATION.md)。这些包不携带旧预设或配置迁移器。
 
 Tauri 控制窗口候选另需 Node.js 22.12+、Rust stable MSVC 和 WebView2。使用 `./tools/check_source.ps1 -Desktop` 可追加前后端构建、独立四文件候选包与 39 项模拟安装检查，默认入口仍构建原三文件包。浏览器交互及软件联动检查的操作见[控制中心说明](../controls/MHWI-EquipmentMorph-Desktop/README.md)。
 
