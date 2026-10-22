@@ -41,7 +41,7 @@ class LaunchAdapter {
     std::array<std::uintptr_t,8> launchEvents{},waitEvents{};
     bool armed=false,ready=false,started=false,failed=false,open=false,syncSeen=false,originalCycle=false;
     unsigned launches=0,nextWait=0;
-    std::uint64_t counter=0,lastSignal=0,boundaries=0,signals=0,inputs=0,dispatches=0,uploadDone=0,drawDone=0,originalBypasses=0;
+    std::uint64_t counter=0,lastSignal=0,boundaries=0,signals=0,inputs=0,dispatches=0,uploadDone=0,drawDone=0,originalBypasses=0,postSignalDraws=0;
     const char* reason="none";
     std::optional<InputCycleRejection> inputRejection;
     bool Bad(const char* why){if(failed)return false;failed=true;ready=false;open=false;reason=why;pool.Invalidate();return false;}
@@ -65,6 +65,7 @@ public:
     std::uint64_t Inputs()const{return inputs;}
     std::uint64_t Dispatches()const{return dispatches;}
     std::uint64_t OriginalBypasses()const{return originalBypasses;}
+    std::uint64_t PostSignalDraws()const{return postSignalDraws;}
     bool PassOriginalInput(){
         if(!Started()||!open||!originalCycle)return false;
         originalBypasses++;return true;
@@ -129,6 +130,12 @@ public:
         if(!Started()||seen.owner!=target.owner)return passed;
         const auto actual=target;
         if(seen!=actual){Bad("target_identity_changed");return passed;}
+        // Native draws can arrive after Signal and before the next Launch.
+        // Keep their original source; private inputs remain cycle-bound so no
+        // uncovered GPU use can outlive the completed retirement proof.
+        if(!open&&!dispatch&&kind==2&&passed==actual.source&&before==after&&before==lastSignal&&lastSignal==counter+1){
+            postSignalDraws++;return passed;
+        }
         if(!open||before!=after||before!=counter){
             // Retain the first rejected proof before Bad closes the cycle.
             // No formatting, allocation or logging on the native callback.
