@@ -32,7 +32,8 @@ struct View {
         bool owned=false;for(uint32_t i=0;i<snapshot.data.keyCount;i++)owned=owned||snapshot.data.keys[i].owned!=0;
         std::optional<morphpreset::Request> intent;bool ask=false;
         const auto& style=ImGui::GetStyle();
-        const float tools=ui::ButtonWidth("保存当前")+ui::ButtonWidth("另存为…")+ui::ButtonWidth("管理…")+ImGui::CalcTextSize("启用捏人").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x+style.ItemSpacing.x*4;
+        const float manageWidth=ui::ButtonWidth("收起管理");
+        const float tools=ui::ButtonWidth("保存当前")+ui::ButtonWidth("另存为…")+manageWidth+ImGui::CalcTextSize("启用捏人").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x+style.ItemSpacing.x*4;
         ImGui::AlignTextToFramePadding();ImGui::TextUnformatted("预览预设");ImGui::SameLine();
         const bool inlineTools=ImGui::GetContentRegionAvail().x>=tools+180.f;
         ImGui::SetNextItemWidth(inlineTools?ImGui::GetContentRegionAvail().x-tools:-1.f);
@@ -60,7 +61,9 @@ struct View {
         if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ui::Tooltip("手动保存当前预设的编辑。其他自动预设控制的部位不会混入；未穿戴部位的已保存内容保留。");
         ui::NextButton("另存为…");ImGui::BeginDisabled(!ready||!owned);
         if(ImGui::Button("另存为…")){presetName[0]=0;presetError.clear();ImGui::OpenPopup("另存为整套预设");}ImGui::EndDisabled();
-        ui::NextButton("管理…");if(ImGui::Button("管理…"))browser.open=true;
+        ui::NextItem(manageWidth);
+        if(ImGui::Button(browser.open?"收起管理###manager-toggle":"管理…###manager-toggle",ImVec2(manageWidth,0)))browser.open=!browser.open;
+        if(ImGui::IsItemHovered())ui::Tooltip(browser.open?"收起预设管理侧栏；当前编辑和权重保持。":"打开预设管理侧栏。");
         ui::NextItem(ImGui::CalcTextSize("启用捏人").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x);
         ImGui::BeginDisabled(presetWaiting!=0);bool enabled=presets.enabled;
         if(ImGui::Checkbox("启用捏人",&enabled)){
