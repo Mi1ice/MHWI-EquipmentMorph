@@ -43,6 +43,10 @@ extern "C" MhmResult MHM_CALL MhwMorphHostAttach(const MhmHostTarget* input,uint
         return Core().Attach(std::move(a),*handle);
     });
 }
+extern "C" MhmResult MHM_CALL MhwMorphGetAssetIdentity(uint32_t version,uint32_t bytes,uint64_t handle,MhmAssetIdentity* out){
+    if(!out)return MHM_INVALID;if(version!=MHM_IDENTITY_VERSION||bytes!=sizeof(MhmAssetIdentity))return MHM_VERSION;
+    return Safe([&]{return Core().Identity(handle,*out);});
+}
 extern "C" MhmResult MHM_CALL MhwMorphHostDetach(uint64_t handle){return Safe([&]{return Core().Detach(handle);});}
 extern "C" MhmResult MHM_CALL MhwMorphHostTick(uint64_t now){return Safe([&]{return Core().Tick(now);});}
 extern "C" MhmResult MHM_CALL MhwMorphHostCapture(uint64_t* id,uint64_t* rev){return Safe([&]{return id&&rev?Core().Capture(*id,*rev):MHM_INVALID;});}

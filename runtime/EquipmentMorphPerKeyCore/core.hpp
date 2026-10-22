@@ -1,5 +1,6 @@
 #pragma once
 #include "include/mhw_morph_host.h"
+#include "include/mhw_morph_identity.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -19,6 +20,7 @@ struct Key { MhmKeyInfo info{}; std::vector<MhmDelta> deltas,normals; };
 struct Asset {
     uint32_t part=0;
     std::string model;
+    std::string modelSha,packSha;
     std::vector<unsigned char> basis;
     std::vector<Key> keys;
     std::vector<MhmRotation> rotations;
@@ -287,6 +289,14 @@ public:
     MhmResult KeyAt(uint64_t handle,uint32_t index,MhmKeyInfo& out) const {
         std::lock_guard lock(gate);auto it=targets.find(handle);if(it==targets.end())return MHM_STALE;
         if(index>=it->second.asset->keys.size())return MHM_INVALID;out=it->second.asset->keys[index].info;return MHM_OK;
+    }
+    MhmResult Identity(uint64_t handle,MhmAssetIdentity& out) const {
+        std::lock_guard lock(gate);const auto it=targets.find(handle);if(it==targets.end())return MHM_STALE;
+        const auto& a=*it->second.asset;
+        const auto digest=[](const std::string& text){return text.size()==64&&std::all_of(text.begin(),text.end(),[](char c){return (c>='0'&&c<='9')||(c>='a'&&c<='f');});};
+        if(!digest(a.modelSha)||!digest(a.packSha))return MHM_NOT_READY;
+        MhmAssetIdentity value{};value.handle=handle;std::memcpy(value.model_sha256,a.modelSha.c_str(),65);std::memcpy(value.pack_sha256,a.packSha.c_str(),65);
+        out=value;return MHM_OK;
     }
     MhmResult Read(uint64_t handle,std::span<MhmWeightState> out,uint32_t& needed,uint64_t& rev,uint64_t& applied) const {
         std::lock_guard lock(gate);auto it=targets.find(handle);if(it==targets.end())return MHM_STALE;

@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "Local equipment controls only; no filesystem, shell or remote content access.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

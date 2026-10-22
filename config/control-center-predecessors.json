@@ -1,0 +1,8 @@
+{
+  "schema": "mhwi-control-center-predecessors-v1",
+  "description": "Exact existing binaries from the user-tested dev12 deployment; accepted only for backed-up adoption by the desktop candidate installer.",
+  "files": {
+    "nativePC/plugins/MHWEquipmentMorphControlBridge.dll": ["271f591111b8342725b4dfc0f85aa01a8c8f294c4467c446a4137cb653dcfc37"],
+    "MHWI-EquipmentMorph/MHWI-EquipmentMorph-ControlPanel.exe": ["a3e423ee26f237676d54e334487ad9494d22f91130cd2859bb0746bbfdb02abd"]
+  }
+}

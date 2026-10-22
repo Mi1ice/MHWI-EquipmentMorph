@@ -1,5 +1,6 @@
 """Check the public source tree without printing potentially private content."""
 import ast
+import os
 from pathlib import Path
 import re
 
@@ -8,8 +9,11 @@ FORBIDDEN = {'.blend', '.blend1', '.mod3', '.mrl3', '.tex', '.mhmpack', '.mhmpro
 PRIVATE = re.compile(r'(?i)[A-Z]:[\\/]+(?:Users|MHmod|SteamLibrary|Milice)[\\/]|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')
 
 def main():
-    paths = [p for p in ROOT.rglob('*') if p.is_file() and not any(
-        part in ('.git', '.build', '.venv', '__pycache__', 'build', 'bin', 'obj') for part in p.relative_to(ROOT).parts)]
+    paths = []
+    ignored = {'.git', '.build', '.venv', '__pycache__', 'build', 'bin', 'obj', 'node_modules', 'target', 'gen'}
+    for directory, folders, files in os.walk(ROOT, followlinks=False):
+        folders[:] = [name for name in folders if name not in ignored and not (Path(directory) / name).is_symlink()]
+        paths.extend(Path(directory) / name for name in files)
     python = 0
     for path in paths:
         if path.suffix.lower() in FORBIDDEN or path.name.startswith('.env'):

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <map>
 #include <vector>
+#include <span>
 
 namespace mhmcontrol {
 class Session {
@@ -21,6 +22,20 @@ public:
     MhmResult Heartbeat(){
         const auto result=source?api.heartbeat(source):MHM_OK;
         if(result==MHM_STALE){source=0;owned.clear();}return result;
+    }
+    // Reuse checked metadata between full scans; publish only complete reads.
+    MhmResult Weights(Response& output){
+        if(!Valid(output,0,0))return MHM_INVALID;
+        auto next=output;next.revision=0;
+        for(uint32_t i=0;i<next.targetCount;i++){
+            auto& target=next.targets[i];std::array<MhmWeightState,64> states{};
+            uint32_t count=0;uint64_t requested=0;
+            const auto result=api.read_weights(target.info.handle,states.data(),64,&count,&requested,&target.appliedRevision);
+            if(result!=MHM_OK)return result;if(count!=target.count)return MHM_STALE;
+            next.revision=(std::max)(next.revision,requested);
+            for(uint32_t k=0;k<count;k++)next.keys[target.first+k].state=states[k];
+        }
+        output=next;return MHM_OK;
     }
     MhmResult Snapshot(Response& output){
         Response next;next.capabilities=api.capabilities;
@@ -56,6 +71,17 @@ public:
         }
         next.source=source;output=next;return MHM_OK;
     }
+    MhmResult Replace(std::span<const MhmUpdate> updates){
+        if(updates.size()>MaxKeys)return MHM_CAPACITY;
+        std::map<Identity,float> candidate;
+        for(const auto& update:updates)if(!candidate.emplace(Identity{update.target,update.key},update.weight).second)return MHM_INVALID;
+        if(candidate.empty())return Release();
+        bool opened=false;MhmResult result=MHM_OK;
+        if(!source){result=api.open_source("MHWI-EquipmentMorph-ControlPanel",220,2000,&source);if(result!=MHM_OK)return result;opened=true;}
+        result=api.submit(source,updates.data(),static_cast<uint32_t>(updates.size()),&revision);
+        if(result==MHM_OK)owned.swap(candidate);else if(opened)Release();
+        return result;
+    }
     MhmResult Change(const Request& request){
         if(request.action==Action::Release)return Release();
         if(request.action==Action::Poll)return MHM_OK;
@@ -65,14 +91,9 @@ public:
         if(request.action==Action::Set)candidate[id]=request.weight;else candidate.erase(id);
         if(candidate.empty())return Release();
         if(candidate.size()>MaxKeys)return MHM_CAPACITY;
-        bool opened=false;
-        if(!source){result=api.open_source("MHWI-EquipmentMorph-ControlPanel",220,2000,&source);if(result!=MHM_OK)return result;opened=true;}
         std::vector<MhmUpdate> updates;updates.reserve(candidate.size());
         for(const auto& [identity,weight]:candidate)updates.push_back({identity.first,identity.second,weight});
-        result=api.submit(source,updates.data(),static_cast<uint32_t>(updates.size()),&revision);
-        if(result==MHM_OK)owned.swap(candidate);
-        else if(opened)Release();
-        return result;
+        return Replace(updates);
     }
 };
 }

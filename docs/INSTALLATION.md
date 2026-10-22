@@ -1,5 +1,7 @@
 # 下载与安装
 
+当前0.6.0源码与组件包正在准备发行，最近公开附件仍属于 v0.5.0。自行构建与正式附件的区别见[项目状态](PROJECT_STATUS.md)。
+
 从 [GitHub Releases](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases) 下载对应组件：
 
 - `MHWI-EquipmentMorph-Runtime-0.5.0.zip`：游戏运行时、控制窗口、公共 runtime.ini 和新版工具。
@@ -22,6 +24,10 @@
 `runtime.ini`的来源是**运行时压缩包解压后的根目录**，与 `Manage-Installation.ps1`同级；源码对应文件为 `config/runtime.ini`。使用上述安装器会在首次安装时建立配置。手动安装DLL时，也必须把同一个包根目录的 `runtime.ini`放入 `游戏目录/nativePC/plugins/MHWEquipmentMorph/`，不能只复制payload中的DLL。Blender插件包、独立作者工具包及导出的MOD均不提供这份公共配置；已有配置应保留。
 
 发行中的运行时 DLL 与控制窗口沿用已验收 0.5.0 的原字节，更新的是配套工具、授权说明和打包资料。源码重新编译的产物须单独验证，不能自动继承这项二进制验收。
+
+## 0.6.0 组件包（待发布）
+
+0.6.0准备 `MHWI-EquipmentMorph-0.6.0-core.zip` 与 `MHWI-EquipmentMorph-0.6.0-imgui.zip` 两种组件包，分别提供仅核心及核心＋游戏内面板。面板是可选的独立DLL，包含预设后台功能，不依赖旧控制桥接或窗口EXE。安装、升级、卸载、回退及配置归属见[组件安装说明](IMGUI_INSTALLATION.md)。构建方法见[源码构建](BUILD.md)。它们不是上方v0.5.0发行附件；本次升级不承诺兼容开发测试期的旧预设或配置，不提供迁移。安装器保留未管理的数据文件，但不据此保证其格式可读。
 
 ## Blender 作者插件
 

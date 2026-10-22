@@ -1,5 +1,6 @@
 #include "Pipe.hpp"
 #include "Session.hpp"
+#include "DesktopLaunch.hpp"
 #include <cstring>
 
 namespace {
@@ -14,6 +15,8 @@ DWORD WINAPI Worker(void*){
         if(!getter||getter(MHM_API_VERSION,sizeof(api),&api)!=MHM_OK||api.bytes!=sizeof(api)
            ||(api.capabilities&(MHM_CAP_BATCH|MHM_CAP_LAYERS|MHM_CAP_LEASE))!=(MHM_CAP_BATCH|MHM_CAP_LAYERS|MHM_CAP_LEASE))return 2;
         const auto name=mhmcontrol::PipeName(GetCurrentProcessId());
+        // Runs on this worker, after host verification, never inside DllMain.
+        mhmcontrol::StartDesktop();
         for(;;){
             HANDLE pipe=CreateNamedPipeW(name.c_str(),PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED|FILE_FLAG_FIRST_PIPE_INSTANCE,
                 PIPE_TYPE_MESSAGE|PIPE_READMODE_MESSAGE|PIPE_WAIT|PIPE_REJECT_REMOTE_CLIENTS,1,65536,65536,0,nullptr);

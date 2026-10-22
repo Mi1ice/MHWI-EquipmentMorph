@@ -109,6 +109,29 @@ inline unsigned Run(){
         check(maximum<=1e-6,"revision-only target updates preserve the analytic response within snap tolerance");
         check(bounded&&b.front().weight==0,"reversal and release stay bounded and settle exactly to zero");
     }
+    {
+        MhmTargetInfo info{};info.handle=42;info.part=MHM_BODY;info.key_count=1;
+        mhm::GroupSmoothing response,fine;Need(response.Reset({&info,1},0)==MHM_OK&&fine.Reset({&info,1},0)==MHM_OK);
+        MhmUpdate target{42,0,1};Need(response.SetTargets({&target,1},1,0)==MHM_OK&&fine.SetTargets({&target,1},1,0)==MHM_OK);
+        std::vector<MhmUpdate> sampled,reference;std::uint64_t revision=0;
+        Need(response.Sample(0,sampled,revision)==MHM_OK);
+        check(sampled[0].weight==0,"fast response preserves position when a target changes");
+        Need(response.Sample(16,sampled,revision)==MHM_OK);
+        check(sampled[0].weight>0&&sampled[0].weight<.5f,"fast response still interpolates the first mesh sample");
+        Need(response.Sample(64,sampled,revision)==MHM_OK);
+        check(sampled[0].weight>.95f&&sampled[0].weight<1,"step reaches ninety-five percent within sixty-four milliseconds");
+        Need(response.Sample(96,sampled,revision)==MHM_OK);
+        check(sampled[0].weight>.99f&&sampled[0].weight<1,"step reaches ninety-nine percent within ninety-six milliseconds");
+        for(std::uint64_t now=0;now<=96;now++)Need(fine.Sample(now,reference,revision)==MHM_OK);
+        check(std::abs(sampled[0].weight-reference[0].weight)<=1e-6,"fast response remains independent of worker sampling partitions");
+        const auto before=sampled[0].weight;target.weight=0;
+        Need(response.SetTargets({&target,1},2,96)==MHM_OK&&response.Sample(96,sampled,revision)==MHM_OK);
+        check(sampled[0].weight==before,"rapid reversal preserves position at the input timestamp");
+        bool bounded=true;for(std::uint64_t now=112;now<=512;now+=16){
+            Need(response.Sample(now,sampled,revision)==MHM_OK);bounded=bounded&&std::isfinite(sampled[0].weight)&&sampled[0].weight>=0&&sampled[0].weight<=1;
+        }
+        check(bounded&&sampled[0].weight==0,"fast reversal stays bounded and release settles exactly to zero");
+    }
     return count;
 }
 }

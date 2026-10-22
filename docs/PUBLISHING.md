@@ -1,28 +1,36 @@
 # GitHub 发布准备
 
-本目录是独立源码仓库，使用codex/github-ready分支与干净的初始提交。原项目完整历史及私人验收档案保留在本地，不用于公开推送。
+本目录是独立源码仓库，默认分支为main。2026-10-19已将原默认分支codex/github-ready重命名为main，并通过PR #1合入dev12实现。原项目完整历史及私人验收档案保留在本地，不用于公开推送。当前版本关系见[项目状态](PROJECT_STATUS.md)。
 
-## 提交源码
+## 后续源码维护
 
-在GitHub创建一个空的公开仓库，名称可使用MHWI-EquipmentMorph。首次创建时不要由网站额外初始化README或LICENSE，本目录已提供这两个文件。
+公开仓库[Mi1ice/MHWI-EquipmentMorph](https://github.com/Mi1ice/MHWI-EquipmentMorph)已存在。后续改动从main创建工作分支，核对差异并执行对应验证后通过PR审阅。不要重新创建仓库、重复初始化远程或推送原完整开发仓库的历史。
 
-在此源码目录内配置实际仓库地址并推送：
+新建源码检出使用：
 
 ```powershell
-git remote add origin https://github.com/<owner>/MHWI-EquipmentMorph.git
-git push -u origin HEAD
+git clone https://github.com/Mi1ice/MHWI-EquipmentMorph.git
+cd MHWI-EquipmentMorph
 ```
 
-将`<owner>`替换为实际账号或组织。发布前执行`python ./tools/check_repository.py`，核对提交范围；`git status --short`应为空。上述远程操作需要维护者在自己的GitHub账号完成认证。
+提交前执行`python ./tools/check_repository.py`，并按[构建说明](BUILD.md)运行与变更相关的检查；核对`git status --short`与完整差异，提交后工作区应为空。推送与发行需要维护者在自己的GitHub账号完成认证。
 
 ## 发行附件
 
-发行二进制与源代码提交分别管理。现有0.5.0正式包在维护者原项目中，运行文件已通过实机验收。发布它时同时提供GPL许可证、第三方许可证以及该版本对应源码获取入口；这个源码快照保留了生产代码原字节。
+发行二进制与源代码提交分别管理。现有v0.5.0已正式发布，对应源码提交9de8545、运行时0.5.0及作者工具0.4.4，原发行文件与摘要保留。维护发行附件时同时提供GPL许可证、第三方许可证以及该版本对应源码获取入口。正式v0.5.0使用其标签下的源码；当前main已经包含后续开发修改。
 
-源码目录中的`.build/packages/`属于本机新构建，只声明软件检查结果，不自动继承原正式包的二进制验收。不要将其误标为原已验收载荷。
+源码目录中的`.build/packages/`属于本机新构建，当前源码与组件包版本为0.6.0，正在准备正式发行。用户已验收的是此前测试的dev12载荷；任意新构建不自动继承该载荷或原正式包的二进制验收。不要将其误标为原已验收载荷。
 
 所有生成文件、用户工程和MOD素材均已从Git提交范围排除。源码压缩包不包含`.git`、生成目录或原项目历史。
 
 当前完整发行使用运行时0.5.0与作者插件0.4.4。运行时发行载荷保留已验收DLL和控制窗口原字节，配套工具升级为读取公共配置的0.4.4版本；附件同时包含原生检查器、源码及许可证。完整源码由发行标签对应提交提供，附件摘要见SHA256SUMS.txt。先上传草稿并核对附件，再公开发行。
 
 下载和安装说明见[INSTALLATION.md](INSTALLATION.md)。完整MOD压缩包换装工具暂缓，不列入本版功能。
+
+## 0.6.0 本地发行组装
+
+先运行 `tools/check_source.ps1 -ImGui` 完成软件检查及两种组件打包，核对差异并提交，确保工作区干净，再执行 `python tools/prepare_release.py`。输出 `.build/releases/MHWI-EquipmentMorph-0.6.0/`，包含仅核心、核心＋ImGui、Blender 0.4.4、独立作者工具0.4.4与精确绑定提交的源码ZIP，以及发行说明、候选清单和SHA256SUMS.txt。SDK仍为0.4.0，其源码随源码ZIP提供。
+
+该入口会校验组件清单、载荷摘要、公开配置与安装器，并要求核心包和ImGui包使用相同的核心；不创建标签，不推送分支，不发布GitHub Release。输出目录须为.build下的新目录，已有候选不会被覆盖，可用`--output`选择另一新目录。源码ZIP由记录的提交直接归档，不包含.git、.build、私人日志或用户MOD。
+
+正式发行说明见[0.6.0说明](RELEASE_0.6.0.md)。合并前检查origin/main是否变化、完整差异与验证记录；本轮保留暂停的Tauri源码，实际发行载荷不包含旧控制桥接或窗口EXE。合并后若正式标签指向的提交不同，应从该准确提交重新组装最终附件和校验值，不能把候选源码提交与正式标签混用。
