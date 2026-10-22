@@ -37,6 +37,7 @@ struct Input {
     std::atomic_bool renderedLeft=false;std::atomic_uint queuedLeft=0;
     std::atomic_uint nativeMouse=0,physicalMouse=0;std::atomic_bool mouseSyncQueued=false;
     std::atomic_uint64_t mouseRepairs=0,nativeLeftDown=0,nativeLeftUp=0;
+    std::atomic_uint64_t cursorShowCalls=0,cursorHideCalls=0,cursorSuppressions=0;
     std::array<std::atomic_uint32_t,5> mouseRepairTick{};std::atomic_uint64_t staleMouseMessages=0;
     std::atomic_int mouseX=0,mouseY=0;
     HIMC panelIme=nullptr,previousIme=nullptr;
@@ -250,7 +251,9 @@ struct Input {
     static BOOL WINAPI ClipMouse(const RECT* rect){auto& s=*instance;
         if(!internal&&s.Capturing()){std::scoped_lock lock(s.cursorState);if(rect)s.clip=*rect;s.clipNull=rect==nullptr;return TRUE;}
         return s.hooks[Clip].original<decltype(&ClipCursor)>()(rect);}
-    static int WINAPI CursorVisibility(BOOL shown){auto& s=*instance;if(!internal&&s.Capturing())return 0;return s.hooks[CursorCount].original<decltype(&ShowCursor)>()(shown);}
+    static int WINAPI CursorVisibility(BOOL shown){auto& s=*instance;
+        if(!internal){if(shown)s.cursorShowCalls++;else s.cursorHideCalls++;if(s.Capturing()){s.cursorSuppressions++;return SuppressedCursorCount(shown);}}
+        return s.hooks[CursorCount].original<decltype(&ShowCursor)>()(shown);}
     static HCURSOR WINAPI Cursor(HCURSOR cursor){auto& s=*instance;
         if(!internal&&s.Capturing())return s.nativeCursor.load();return s.hooks[CursorShape].original<decltype(&SetCursor)>()(cursor);}
     static BOOL WINAPI TranslateInput(const MSG* message){auto& s=*instance;if(s.Capturing()&&s.textInput.load()){OwnCalls own;return s.hooks[Translate].original<decltype(&TranslateMessage)>()(message);}return s.hooks[Translate].original<decltype(&TranslateMessage)>()(message);}

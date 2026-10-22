@@ -9,6 +9,8 @@
 
 namespace morphgui {
 inline bool ToggleKey(UINT key,bool repeated,bool textInput,unsigned modifiers){return key==VK_DELETE&&!repeated&&!textInput&&modifiers==0;}
+// Keep the panel's real cursor visible, but let host show/hide-until-done loops finish.
+inline int SuppressedCursorCount(BOOL shown){return shown?0:-1;}
 inline bool ImeMessage(UINT message){
     return (message>=WM_IME_STARTCOMPOSITION&&message<=WM_IME_COMPOSITION)||(message>=WM_IME_SETCONTEXT&&message<=WM_IME_KEYUP);
 }

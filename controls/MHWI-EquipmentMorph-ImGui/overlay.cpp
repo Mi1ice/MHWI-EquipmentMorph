@@ -292,6 +292,7 @@ DWORD WINAPI Worker(void* value){
            <<",\"native_left_down\":"<<state->input.nativeLeftDown.load()<<",\"native_left_up\":"<<state->input.nativeLeftUp.load()<<",\"mouse_x\":"<<state->input.mouseX.load()<<",\"mouse_y\":"<<state->input.mouseY.load()<<",\"stale_mouse_messages\":"<<state->input.staleMouseMessages.load()
            <<",\"wndproc_outermost\":"<<(reinterpret_cast<WNDPROC>(GetWindowLongPtrW(state->input.window,GWLP_WNDPROC))==&Input::Procedure?"true":"false")
            <<",\"blocked_polls\":"<<state->input.blockedPolls.load()
+           <<",\"cursor_show_calls\":"<<state->input.cursorShowCalls.load()<<",\"cursor_hide_calls\":"<<state->input.cursorHideCalls.load()<<",\"cursor_suppressions\":"<<state->input.cursorSuppressions.load()
            <<",\"api_connected\":"<<(controls->connected?"true":"false")<<",\"control_ready\":"<<(controls->ready?"true":"false")
            <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan
            <<",\"identity_available\":"<<(controls->presets.available?"true":"false")<<",\"preset_count\":"<<controls->presets.choices->size()

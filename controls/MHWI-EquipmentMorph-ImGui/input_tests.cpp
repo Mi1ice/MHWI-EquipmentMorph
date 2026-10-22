@@ -9,6 +9,15 @@
 int main(){try{
     using namespace morphgui;unsigned checks=0;
     const auto check=[&](bool value,const char* why){if(!value)throw std::runtime_error(why);checks++;};
+    const auto cursorLoop=[](bool shown,const auto& call){unsigned calls=0;while(calls<32){++calls;const int count=call(shown);if(shown?count>=0:count<0)return calls;}return 0u;};
+    check(cursorLoop(false,[](bool){return 0;})==0,"legacy zero return cannot terminate a host hide-until-negative loop");
+    const auto panelCursor=[&](bool shown){return SuppressedCursorCount(shown);};
+    check(cursorLoop(false,panelCursor)==1,"host hide-until-negative loop terminates on its first suppressed call");
+    check(cursorLoop(true,panelCursor)==1,"host show-until-nonnegative loop terminates on its first suppressed call");
+    bool cursorLoopsFinish=true;
+    for(unsigned i=0;i<1000;i++)cursorLoopsFinish=cursorLoopsFinish&&cursorLoop(false,panelCursor)==1&&cursorLoop(true,panelCursor)==1;
+    check(cursorLoopsFinish,"repeated host show and hide loops both continue to terminate");
+    check(SuppressedCursorCount(2)>=0,"any nonzero Windows BOOL requests cursor display");
     check(ToggleKey(VK_DELETE,false,false,0),"plain Del toggles the panel");
     check(!ToggleKey(VK_DELETE,true,false,0),"holding Del cannot repeatedly toggle");
     check(!ToggleKey(VK_DELETE,false,true,0),"Del remains text deletion while editing");
