@@ -4,9 +4,9 @@
 
 ## 当前源码与发行
 
-当前交付源码版本为 **0.6.0**，正在准备正式发行。本轮通过 [PR #2](https://github.com/Mi1ice/MHWI-EquipmentMorph/pull/2)整理游戏内面板、预设、输入修正及组件安装。Blender 作者插件与独立作者工具保持 **0.4.4**，SDK 保持 **0.4.0**。
+当前正式版本为 [v0.6.0](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases/tag/v0.6.0)。本轮通过 [PR #2](https://github.com/Mi1ice/MHWI-EquipmentMorph/pull/2)整理游戏内面板、预设、输入修正及组件安装。Blender 作者插件与独立作者工具保持 **0.4.4**，SDK 保持 **0.4.0**。
 
-最近已公开发行的版本仍是 [v0.5.0](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases/tag/v0.5.0)，对应源码提交 `9de8545`。新源码和本地包不改写该标签或历史附件；正式 0.6.0 的附件必须从最终提交重新组装，见[发行准备](PUBLISHING.md)。
+0.6.0发行附件绑定其标签对应提交，源码ZIP和SHA256SUMS.txt随发行提供。[v0.5.0](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases/tag/v0.5.0)及其`9de8545`源码和历史附件保留。正式发行流程见[发行说明](PUBLISHING.md)。
 
 默认分支为 `main`。此前 [PR #1](https://github.com/Mi1ice/MHWI-EquipmentMorph/pull/1)以 Squash merge 合入重绑与 dev12 性能优化，提交 `effe4561`。本轮在此基线上增加可选 ImGui 插件；核心继续独立提供 API。
 

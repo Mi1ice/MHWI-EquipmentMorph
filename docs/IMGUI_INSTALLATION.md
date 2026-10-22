@@ -1,6 +1,6 @@
 # 核心与游戏内面板的安装
 
-本说明用于0.6.0组件包；两种组件包分别标记 `control_panel: none` 或 `control_panel: imgui`。正式发行仍为 v0.5.0；这些新包未发布为正式版本，构建清单不自动继承其他载荷的实机验收。
+本说明用于0.6.0组件包；两种组件包分别标记 `control_panel: none` 或 `control_panel: imgui`。对应正式发行为 [v0.6.0](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases/tag/v0.6.0)，构建清单不自动扩大用户实机验收范围。
 
 ## 选择组件
 

@@ -2,7 +2,7 @@
 
 Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插件及公开控制接口，提供可选的 Dear ImGui 游戏内面板。
 
-当前源码版本为 **0.6.0**，正在准备正式发行；最近已发布版本仍为 [v0.5.0](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases/tag/v0.5.0)。Blender 作者插件与独立作者工具保持 **0.4.4**，SDK 保持 **0.4.0**。本轮变更见 [PR #2](https://github.com/Mi1ice/MHWI-EquipmentMorph/pull/2)、[版本记录](CHANGELOG.md)和[发行说明](docs/RELEASE_0.6.0.md)。
+当前正式版本为 [v0.6.0](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases/tag/v0.6.0)。Blender 作者插件与独立作者工具保持 **0.4.4**，SDK 保持 **0.4.0**。本轮变更见 [PR #2](https://github.com/Mi1ice/MHWI-EquipmentMorph/pull/2)、[版本记录](CHANGELOG.md)和[发行说明](docs/RELEASE_0.6.0.md)。
 
 ## 游戏内使用
 
