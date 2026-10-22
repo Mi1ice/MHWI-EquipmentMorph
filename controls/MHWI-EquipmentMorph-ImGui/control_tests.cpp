@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "Control.hpp"
+#include "KeyFilter.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/api.cpp"
 #include <cstdio>
 #include <limits>
@@ -111,6 +112,39 @@ int main(){try{
         }
         check(replacement->ready&&healthy&&fresh,"retired handle during fast read triggers discovery without replaying weights");
         polling.Post(Action::Release);polling.Service(268,true);Core().Detach(leg);
+    }
+    {
+        morphgui::KeyFilter filter;filter.Select(body);
+        check(filter.Matches("Example_A",false,0),"default filter includes unowned zero keys");
+        strcpy_s(filter.search,"  EXAMPLE_b \t");
+        check(filter.Matches("Example_B",true,.5f)&&!filter.Matches("Example_A",true,.5f),"search trims whitespace and folds ASCII case");
+        strcpy_s(filter.search,"胸部");check(filter.Matches("测试胸部形态",true,0),"search matches literal UTF-8 names");
+        filter.Clear();filter.mode=1;
+        check(filter.Matches("zero",true,0)&&!filter.Matches("other",false,1),"owned filter includes explicit zero and excludes other sources");
+        filter.mode=2;check(filter.Matches("other",false,1)&&!filter.Matches("own",true,0),"unowned filter is panel-specific");
+        filter.mode=3;const float tiny=std::numeric_limits<float>::denorm_min();
+        check(filter.Matches("tiny",true,tiny)&&filter.Matches("negative",true,-.1f)&&!filter.Matches("zero",true,-0.f),"nonzero filter retains exact float values including tiny and negative contributions");
+        check(!filter.Matches("external",false,1),"nonzero filter does not include an external source");
+        strcpy_s(filter.search,"Example");check(!filter.Matches("different",true,1),"name and ownership filters intersect");
+        check(filter.Visible("different",true,0,true,4,4),"active row remains visible after reaching zero or changing search");
+        check(filter.Visible("different",false,0,false,5,4),"pending release remains visible until worker acknowledgement");
+        check(!filter.Visible("different",false,0,false,5,5),"finished filtered row disappears after acknowledgement");
+        filter.Select(body);check(filter.mode==3&&filter.search[0]!=0,"same target preserves filters across panel hide and reopen");
+        filter.Select(arm);check(filter.mode==0&&!filter.search[0],"target replacement clears search and state filters");
+        mhmcontrol::Session session(api);mhmcontrol::Request set;set.action=Action::Set;set.target=body;set.key=0;set.weight=0;
+        check(session.Change(set)==MHM_OK,"filter fixture owns an explicit zero");set.key=1;set.weight=tiny;
+        check(session.Change(set)==MHM_OK,"filter fixture owns a precise tiny weight");mhmcontrol::Response data;
+        check(session.Snapshot(data)==MHM_OK,"filter fixture reads full ownership");
+        filter.mode=3;std::vector<const mhmcontrol::Key*> visible;
+        for(uint32_t i=0;i<data.keyCount;i++){const auto& k=data.keys[i];if(filter.Matches(k.info.id,k.owned!=0,k.contribution))visible.push_back(&k);}
+        check(visible.size()==1&&visible[0]->target==body&&visible[0]->index==1,"filtered first row preserves original target and key index");
+        set.target=visible[0]->target;set.key=visible[0]->index;set.weight=.37f;check(session.Change(set)==MHM_OK,"filtered key edit submits its original identity");
+        session.Snapshot(data);unsigned owned=0;bool zero=false,edited=false;
+        for(uint32_t i=0;i<data.keyCount;i++){const auto& k=data.keys[i];if(k.owned){owned++;zero=zero||(k.target==body&&k.index==0&&k.contribution==0);edited=edited||(k.target==body&&k.index==1&&k.contribution==.37f);}}
+        check(owned==2&&zero&&edited,"hidden owned zero remains in full snapshot for preset capture and is not changed by visible edit");session.Release();
+        morphgui::FeedbackTime feedback;
+        check(feedback.Show(1,true,10)&&feedback.Show(1,true,12.9)&&!feedback.Show(1,true,13),"success feedback expires after three seconds");
+        check(feedback.Show(2,true,20)&&feedback.Show(2,false,200),"new completion restarts success feedback and errors remain visible");
     }
     std::printf("PASS: %u ImGui control checks; no windows, input automation or game process\n",checks);return 0;
 }catch(const std::exception& e){std::printf("FAIL: %s\n",e.what());return 1;}}

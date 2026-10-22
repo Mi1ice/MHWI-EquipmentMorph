@@ -14,7 +14,7 @@ inline const char* ResultText(MhmResult result){
 struct View {
     uint64_t selected=0;
     std::string selectedPreset,presetError;char presetName[129]{},presetSearch[129]{};uint64_t presetWaiting=0;
-    PresetBrowser browser;
+    PresetBrowser browser;KeyFilter keys;ui::Notice notice;
     bool closeRequested=false,hideReady=false;uint64_t closeTicket=0;
     morphpreset::Action pendingAction=morphpreset::Action::Select;std::string pendingId,pendingName,pendingEditor;
     struct Edit {float value=0;uint64_t ticket=0;bool active=false;};
@@ -31,13 +31,11 @@ struct View {
         const bool ready=snapshot.ready&&presets.available&&presets.enabled&&!presetWaiting;
         bool owned=false;for(uint32_t i=0;i<snapshot.data.keyCount;i++)owned=owned||snapshot.data.keys[i].owned!=0;
         std::optional<morphpreset::Request> intent;bool ask=false;
-        ImGui::BeginDisabled(presetWaiting!=0);bool enabled=presets.enabled;
-        if(ImGui::Checkbox("启用捏人",&enabled)){
-            const bool pending=std::any_of(edits.begin(),edits.end(),[&](const auto& edit){return edit.ticket>snapshot.completed;});
-            if(!enabled&&(presets.dirty||pending)){pendingAction=morphpreset::Action::DisableMorph;pendingId.clear();pendingName.clear();pendingEditor=presets.activeId;ask=true;}
-            else{morphpreset::Request request{enabled?morphpreset::Action::EnableMorph:morphpreset::Action::DisableMorph};request.editor=presets.activeId;request.checkEditor=!enabled;intent=std::move(request);}
-        }ImGui::EndDisabled();
-        ImGui::TextUnformatted("预览预设");ImGui::SameLine();ImGui::SetNextItemWidth(-1);
+        const auto& style=ImGui::GetStyle();
+        const float tools=ui::ButtonWidth("保存当前")+ui::ButtonWidth("另存为…")+ui::ButtonWidth("管理…")+ImGui::CalcTextSize("启用捏人").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x+style.ItemSpacing.x*4;
+        ImGui::AlignTextToFramePadding();ImGui::TextUnformatted("预览预设");ImGui::SameLine();
+        const bool inlineTools=ImGui::GetContentRegionAvail().x>=tools+180.f;
+        ImGui::SetNextItemWidth(inlineTools?ImGui::GetContentRegionAvail().x-tools:-1.f);
         ImGui::BeginDisabled(!ready);
         if(ImGui::BeginCombo("##presets",preview.c_str())){
             if(ImGui::IsWindowAppearing())ImGui::SetKeyboardFocusHere();
@@ -55,12 +53,22 @@ struct View {
             if(!shown)ui::Wrapped(available?"没有符合搜索条件的预设。":"没有匹配部位。可在管理中查看全部预设。",ui::Tone::Muted);
             ImGui::Separator();if(ImGui::Button("管理全部预设")){browser.open=true;ImGui::CloseCurrentPopup();}ImGui::EndCombo();
         }ImGui::EndDisabled();
+        if(inlineTools)ImGui::SameLine();
+        if(presets.dirty)ImGui::PushStyleColor(ImGuiCol_Button,style.Colors[ImGuiCol_ButtonActive]);
         ImGui::BeginDisabled(!ready||!presets.canSave);
-        if(ImGui::Button("保存当前"))intent=morphpreset::Request{morphpreset::Action::Save,presets.activeId};ImGui::EndDisabled();
+        if(ImGui::Button("保存当前"))intent=morphpreset::Request{morphpreset::Action::Save,presets.activeId};ImGui::EndDisabled();if(presets.dirty)ImGui::PopStyleColor();
         if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ui::Tooltip("手动保存当前预设的编辑。其他自动预设控制的部位不会混入；未穿戴部位的已保存内容保留。");
         ui::NextButton("另存为…");ImGui::BeginDisabled(!ready||!owned);
         if(ImGui::Button("另存为…")){presetName[0]=0;presetError.clear();ImGui::OpenPopup("另存为整套预设");}ImGui::EndDisabled();
         ui::NextButton("管理…");if(ImGui::Button("管理…"))browser.open=true;
+        ui::NextItem(ImGui::CalcTextSize("启用捏人").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x);
+        ImGui::BeginDisabled(presetWaiting!=0);bool enabled=presets.enabled;
+        if(ImGui::Checkbox("启用捏人",&enabled)){
+            const bool pending=std::any_of(edits.begin(),edits.end(),[&](const auto& edit){return edit.ticket>snapshot.completed;});
+            if(!enabled&&(presets.dirty||pending)){pendingAction=morphpreset::Action::DisableMorph;pendingId.clear();pendingName.clear();pendingEditor=presets.activeId;ask=true;}
+            else{morphpreset::Request request{enabled?morphpreset::Action::EnableMorph:morphpreset::Action::DisableMorph};request.editor=presets.activeId;request.checkEditor=!enabled;intent=std::move(request);}
+        }ImGui::EndDisabled();
+
         if(chosen&&!chosen->compatible)ui::Line(chosen->status.c_str(),ui::Tone::Warning);
         const auto registered=morphpreset::DefaultParts(*presets.defaults,presets.activeId);
         ImGui::BeginDisabled(presetWaiting||presets.activeId.empty());
@@ -70,9 +78,11 @@ struct View {
         if(ImGui::Button("取消应用"))intent=morphpreset::Request{morphpreset::Action::ClearDefault,presets.activeId};ImGui::EndDisabled();
         if(!presets.autoMessage.empty()&&presets.enabled){ui::NextButton("重试");ImGui::BeginDisabled(presetWaiting!=0);if(ImGui::Button("重试"))intent=morphpreset::Request{morphpreset::Action::Resume};ImGui::EndDisabled();}
         ImGui::SeparatorText("各部位当前配置");bool any=false;
-        for(const auto& line:presets.worn)if(!line.empty()){ui::Line(line.c_str());any=true;}
+        for(const auto& line:presets.worn)if(!line.empty()){ui::Wrapped(line.c_str());any=true;}
         if(!any)ui::Line("无形态键装备",ui::Tone::Muted);
-        ui::Notice(presets,presetWaiting,presetError.empty()?presets.autoMessage:presetError);
+        std::string shownError=presetError.empty()?presets.autoMessage:presetError;
+        if(shownError.empty()&&snapshot.ready&&presets.enabled&&snapshot.operation!=MHM_OK&&(!presets.completed||presets.success))shownError=ResultText(snapshot.operation);
+        if(!ImGui::IsPopupOpen("",ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel)&&(!browser.open||!shownError.empty()))notice.Draw(presets,presetWaiting,shownError);
         if(closeRequested&&!presetWaiting&&!intent&&!ImGui::IsPopupOpen("",ImGuiPopupFlags_AnyPopupId)){
             closeRequested=false;presetError.clear();
             const bool pending=std::any_of(edits.begin(),edits.end(),[&](const auto& edit){return edit.ticket>snapshot.completed;});
@@ -112,36 +122,49 @@ struct View {
         }
         const auto preset=PresetBar(*snapshot);
         browser.Draw(control,*snapshot,presetWaiting);
-        ImGui::SeparatorText("装备与形态键");
+        ImGui::Separator();
         if(!snapshot->connected){ui::Wrapped(ResultText(snapshot->scan),ui::Tone::Warning);FinishPreset(control,preset);return;}
         if(!snapshot->ready){ui::Wrapped(ResultText(snapshot->scan),ui::Tone::Warning);FinishPreset(control,preset);return;}
         const mhmcontrol::Target* target=nullptr;
         for(uint32_t i=0;i<data.targetCount;i++)if(data.targets[i].info.handle==selected)target=&data.targets[i];
         if(!target){selected=data.targetCount?data.targets[0].info.handle:0;edits={};if(data.targetCount)target=&data.targets[0];}
+        keys.Select(selected);
         const auto label=target?Label(*target):std::string("当前没有已绑定的形态键装备");
         ImGui::SetNextItemWidth(-1);
-        ImGui::BeginDisabled(!snapshot->presets.enabled);
         if(ImGui::BeginCombo("##equipment",label.c_str())){
             for(uint32_t i=0;i<data.targetCount;i++){
                 const auto& item=data.targets[i];const bool chosen=item.info.handle==selected;
                 ImGui::PushID(static_cast<int>(i));
-                if(ImGui::Selectable(Label(item).c_str(),chosen)){selected=item.info.handle;edits={};target=&item;}
+                if(ImGui::Selectable(Label(item).c_str(),chosen)){selected=item.info.handle;edits={};keys.Select(selected);target=&item;}
                 if(chosen)ImGui::SetItemDefaultFocus();ImGui::PopID();
             }ImGui::EndCombo();
         }
-        ImGui::EndDisabled();
-        if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)&&target)ui::Tooltip(target->info.model_id);
-        if(snapshot->presets.enabled&&snapshot->operation!=MHM_OK)ui::Wrapped(ResultText(snapshot->operation),ui::Tone::Error);
+        if(ImGui::IsItemHovered()&&target)ui::Tooltip(target->info.model_id);
         if(!target){FinishPreset(control,preset);return;}
+        const float filterWidth=ui::ButtonWidth("非零（本面板）")+ImGui::GetFrameHeight();
+        const float availableWidth=ImGui::GetContentRegionAvail().x,countWidth=ImGui::CalcTextSize("显示 64／64").x;
+        ImGui::SetNextItemWidth((std::max)(120.f,availableWidth-filterWidth-ui::ButtonWidth("清除")-countWidth-ImGui::GetStyle().ItemSpacing.x*3));
+        ImGui::InputTextWithHint("##key-search","搜索形态键",keys.search,sizeof(keys.search));
+        ui::NextItem(filterWidth);ImGui::SetNextItemWidth(filterWidth);
+        ImGui::Combo("##key-filter",&keys.mode,"全部\0已接管\0未接管\0非零（本面板）\0");
+        if(ImGui::IsItemHovered())ui::Tooltip("非零按本面板目标权重筛选；已接管包括零权重，未接管不代表其他插件未控制。");
+        ui::NextButton("清除");if(ImGui::Button("清除"))keys.Clear();
+        std::array<uint32_t,64> visible{};uint32_t count=0;
+        for(uint32_t i=0;i<target->count;i++){
+            const auto& key=data.keys[target->first+i];const auto& edit=edits[i];
+            if(keys.Visible(key.info.id,key.owned!=0,key.contribution,edit.active,edit.ticket,snapshot->completed))visible[count++]=i;
+        }
+        ui::NextItem(countWidth);ImGui::AlignTextToFramePadding();ImGui::TextDisabled("显示 %u／%u",count,target->count);
+        if(!count){ui::Line("没有符合条件的形态键",ui::Tone::Muted);if(ImGui::Button("清除筛选"))keys.Clear();FinishPreset(control,preset);return;}
         ImGui::BeginDisabled(!snapshot->presets.enabled);
         if(ImGui::BeginTable("shape-keys",4,ImGuiTableFlags_BordersInnerV|ImGuiTableFlags_RowBg|ImGuiTableFlags_Resizable|ImGuiTableFlags_ScrollY,ImVec2(0,-1))){
             ImGui::TableSetupColumn("形态键",ImGuiTableColumnFlags_WidthStretch,1.3f);
             ImGui::TableSetupColumn("目标权重",ImGuiTableColumnFlags_WidthStretch,1.8f);
             ImGui::TableSetupColumn("精确输入",ImGuiTableColumnFlags_WidthFixed,120);
-            ImGui::TableSetupColumn("实际权重",ImGuiTableColumnFlags_WidthFixed,90);ImGui::TableHeadersRow();
+            ImGui::TableSetupColumn("实际权重",ImGuiTableColumnFlags_WidthFixed,90);ImGui::TableSetupScrollFreeze(0,1);ImGui::TableHeadersRow();
             ImGui::PushID(reinterpret_cast<void*>(static_cast<uintptr_t>(target->info.handle)));
-            for(uint32_t i=0;i<target->count;i++){
-                const auto& key=data.keys[target->first+i];auto& edit=edits[i];
+            for(uint32_t row=0;row<count;row++){
+                const auto i=visible[row];const auto& key=data.keys[target->first+i];auto& edit=edits[i];
                 if(!edit.active&&snapshot->completed>=edit.ticket)edit.value=key.owned?key.contribution:key.state.requested;
                 ImGui::PushID(static_cast<int>(key.index));ImGui::TableNextRow();ImGui::TableSetColumnIndex(0);
                 bool owned=key.owned!=0;
