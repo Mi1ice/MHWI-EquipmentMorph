@@ -6,6 +6,8 @@ Monster Hunter: World — Iceborne 装备形态键运行时、Blender 作者插�
 
 默认分支 `main` 已合入重绑修复与本轮性能优化；当前源码保留0.5.1-dev12开发基线，包含[无关绘制回调早退](docs/DRAW_FILTER.md)、[输入计时与私有资源诊断](docs/INPUT_DIAGNOSTICS.md)、[相同权重复用](docs/SAME_WEIGHT_REUSE.md)及现有重绑路径。用户确认dev12调节、释放和换装重绑通过，多部位同时非零时帧率略有降低，并结束本轮优化。七段PresentMon对照约为零值205.14 FPS、非零202.24 FPS，未观察到GPUBusy增长，CPU/GPU百分比归因仍未完成；详见[验证结论](docs/DEV12_BASELINE.md)。正式0.5.0标签和Release附件保持原样。当前没有正式0.5.1发行；版本、验收和后续方向统一见[当前项目状态](docs/PROJECT_STATUS.md)。
 
+当前本地开发另提供[仅核心／核心＋ImGui组件包](docs/IMGUI_INSTALLATION.md)，通过 `tools/package_source.py --core-only` 或 `--imgui` 生成；完整无界面验证入口为 `tools/check_source.ps1 -ImGui`。用户已确认光标循环修正消除风扇突增、闪烁及光标消失。正式发行保持不变，本轮不提供旧测试预设与配置迁移，见[未发布记录](CHANGELOG.md)。
+
 ## 功能
 
 2026-10-19 已暂停 [Tauri 控制窗口候选](controls/MHWI-EquipmentMorph-Desktop/README.md)，并清理旧部署。[可选 Dear ImGui 游戏内面板](controls/MHWI-EquipmentMorph-ImGui/README.md)的第二阶段窗口、快捷键与输入已通过用户实机测试。第三阶段已接入装备下拉及“形态键名／权重滑块／权重输入框／当前权重值”四列，22 项无窗口控制回归通过；2026-10-20 用户确认调节、多部位控制、显隐／释放及换装后的列表更新正常，上述功能实机验收通过。第三阶段当时隐藏保留权重、× 释放控制；第九阶段后续修正为 × 结束预览并恢复穿戴默认。dev12 核心、配置及装备数据保留，Tauri 源码与历史候选保留供追溯。
