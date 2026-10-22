@@ -4,6 +4,7 @@
 #include <imm.h>
 #include <safetyhook.hpp>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <backends/imgui_impl_win32.h>
 #include <array>
 #include <algorithm>
@@ -31,6 +32,9 @@ struct Input {
     std::array<safetyhook::InlineHook,13> hooks;
     int cursorAdjustments=0;RECT clip{};bool clipNull=false;POINT anchor{};
     std::mutex cursorState;PlatformMailbox platform;int platformCursor=ImGuiMouseCursor_Arrow;bool dragClipped=false,imeAssociated=false;
+    MouseReleaseHandoff dragHandoff;InputTrace trace;
+    std::atomic_uint64_t mouseLeaves=0,captureChanges=0,dragReleases=0;
+    std::atomic_bool renderedLeft=false;std::atomic_uint queuedLeft=0;
     HIMC panelIme=nullptr,previousIme=nullptr;
     std::atomic<HCURSOR> nativeCursor=nullptr;
     std::atomic_uint imeError=0;std::atomic_uint64_t imeActivations=0,imeCompositions=0,languageChanges=0,dragBounds=0;
@@ -89,6 +93,15 @@ struct Input {
             OffsetRect(&client,corner.x,corner.y);if(hooks[Clip].original<decltype(&ClipCursor)>()(&client)){dragClipped=true;dragBounds++;}
         }else if(dragClipped){hooks[Clip].original<decltype(&ClipCursor)>()(nullptr);dragClipped=false;}
     }
+    // Called under gui after NewFrame; never calls native cursor APIs on render.
+    void FrameInput(){
+        renderedLeft=ImGui::GetIO().MouseDown[0];unsigned waiting=0;
+        if(dragHandoff.Waiting())for(const auto& event:context->InputEventsQueue)
+            if(event.Type==ImGuiInputEventType_MouseButton&&event.MouseButton.Button==0)waiting++;
+        queuedLeft=waiting;
+        if(const auto token=dragHandoff.Ready(renderedLeft.load(),waiting!=0))
+            if(!PostMessageW(window,message,5,static_cast<LPARAM>(*token)))dragHandoff.PostFailed(*token);
+    }
     bool Neutral(bool mouse)const{
         for(int key=1;key<256;key++){
             const bool button=key==VK_LBUTTON||key==VK_RBUTTON||key==VK_MBUTTON||key==VK_XBUTTON1||key==VK_XBUTTON2;
@@ -116,7 +129,7 @@ struct Input {
             WakePlatform();
         }else{
             releaseKeys=true;releaseMouse=true;
-            BoundDrag(false);textInput=false;RestoreIme();
+            dragHandoff.Cancel();BoundDrag(false);textInput=false;RestoreIme();
             if(GetCapture()==window)ReleaseCapture();
             while(cursorAdjustments>0){hooks[CursorCount].original<decltype(&ShowCursor)>()(FALSE);cursorAdjustments--;}
             RECT restore{};bool unrestricted=false;{std::scoped_lock lock(cursorState);restore=clip;unrestricted=clipNull;}
@@ -142,7 +155,13 @@ struct Input {
     void Toggle(){if(visible.load())closeRequested=true;else Visibility(true);}
     static LRESULT CALLBACK Procedure(HWND w,UINT m,WPARAM a,LPARAM b){
         auto& self=*instance;
-        if(m==self.message){if(a==4)self.ApplyPlatform();else if(a==3)self.SynchronizeHotkey();else if(a==2)self.Toggle();else self.Visibility(a!=0);return 0;}
+        InputTrace::Scope trace(self.trace,m);
+        if(m==self.message){
+            trace.Phase(InputPhase::Platform);
+            if(a==5){if(self.dragHandoff.Complete(static_cast<uint64_t>(b),(self.Physical(VK_LBUTTON)&0x8000)!=0)){self.BoundDrag(false);self.dragReleases++;}}
+            else if(a==4)self.ApplyPlatform();else if(a==3)self.SynchronizeHotkey();else if(a==2)self.Toggle();else self.Visibility(a!=0);return 0;
+        }
+        trace.Phase(InputPhase::Hotkey);
         if(m==WM_SETFOCUS||m==WM_ACTIVATE)self.SynchronizeHotkey();
         if(m==WM_HOTKEY&&a==hotkeyId&&self.hotkeyRegistered){
             self.hotkeyMessages++;self.lastHotkeyModifiers=0;if(!self.textInput.load())self.Toggle();return 0;
@@ -151,21 +170,33 @@ struct Input {
             self.hotkeyMessages++;self.lastHotkeyModifiers=0;self.Toggle();return 0;
         }
         if(m==WM_KILLFOCUS||m==WM_CANCELMODE||(m==WM_SIZE&&a==SIZE_MINIMIZED)){
+            trace.Phase(InputPhase::Visibility);
             self.Visibility(false);if(m!=WM_CANCELMODE&&self.hotkeyRegistered.exchange(false))UnregisterHotKey(w,hotkeyId);
         }
+        bool resetMouse=false;
         if(self.Capturing()){
-            if(m==WM_LBUTTONDOWN)self.BoundDrag(true);else if(m==WM_LBUTTONUP||m==WM_CAPTURECHANGED)self.BoundDrag(false);else if(m==WM_SIZE&&self.dragClipped)self.BoundDrag(true);
+            trace.Phase(InputPhase::Drag);
+            if(m==WM_LBUTTONDOWN||m==WM_LBUTTONDBLCLK){self.dragHandoff.Begin();self.BoundDrag(true);}
+            else if(m==WM_LBUTTONUP)self.dragHandoff.End();
+            else if(m==WM_CAPTURECHANGED){
+                self.captureChanges++;
+                if(!self.dragHandoff.Waiting()||b!=0){self.dragHandoff.Cancel();self.BoundDrag(false);resetMouse=true;}
+            }else if(m==WM_SIZE&&self.dragClipped)self.BoundDrag(true);
+            if(m==WM_MOUSELEAVE||m==WM_NCMOUSELEAVE)self.mouseLeaves++;
             if(m==WM_INPUTLANGCHANGEREQUEST){OwnCalls own;return DefWindowProcW(w,m,a,b);}
             if(m==WM_INPUTLANGCHANGE){self.languageChanges++;if(self.textInput.load()){OwnCalls own;if(self.imeAssociated&&ImmIsIME(reinterpret_cast<HKL>(b)))ImmSetOpenStatus(self.panelIme,TRUE);self.WakePlatform();}}
         }
         if(self.imeAssociated&&ImeMessage(m)){if(m==WM_IME_COMPOSITION)self.imeCompositions++;OwnCalls own;return DefWindowProcW(w,m,a,b);}
         if(self.visible.load()){
+            trace.Phase(InputPhase::GuiWait);
             std::scoped_lock lock(self.gui);OwnCalls own;
-            if(self.context){ImGui::SetCurrentContext(self.context);ImGui_ImplWin32_WndProcHandler(w,m,a,b);}
+            trace.Phase(InputPhase::Backend);
+            if(self.context){ImGui::SetCurrentContext(self.context);if(resetMouse)for(int button=0;button<5;button++)ImGui::GetIO().AddMouseButtonEvent(button,false);ImGui_ImplWin32_WndProcHandler(w,m,a,b);}
         }
+        trace.Phase(InputPhase::Route);
         const bool keyboard=m==WM_KEYDOWN||m==WM_KEYUP||m==WM_SYSKEYDOWN||m==WM_SYSKEYUP||m==WM_CHAR||m==WM_SYSCHAR||m==WM_UNICHAR;
         const bool mouse=m>=WM_MOUSEFIRST&&m<=WM_MOUSELAST;
-        if(self.Capturing()&&(keyboard||mouse||m==WM_INPUT||m==WM_SETCURSOR)){
+        if(self.Capturing()&&(keyboard||mouse||m==WM_INPUT||m==WM_SETCURSOR||PanelMouseNotice(m))){
             self.blockedMessages++;
             if(m==WM_INPUT)return DefWindowProcW(w,m,a,b); // Foreground raw input cleanup.
             if(m==WM_SETCURSOR){self.NativeCursor();return TRUE;}
@@ -173,7 +204,8 @@ struct Input {
         }
         if((keyboard&&self.BlockPoll(false))||(mouse&&self.BlockPoll(true)))return 0;
         if(m==WM_INPUTLANGCHANGE&&self.Capturing()){OwnCalls own;return DefWindowProcW(w,m,a,b);}
-        if(m==WM_NCDESTROY){self.Visibility(false);self.RestoreIme();if(self.panelIme){ImmDestroyContext(self.panelIme);self.panelIme=nullptr;}if(self.hotkeyRegistered.exchange(false))UnregisterHotKey(w,hotkeyId);const auto result=CallWindowProcW(self.previous,w,m,a,b);self.window=nullptr;return result;}
+        if(m==WM_NCDESTROY){self.Visibility(false);self.RestoreIme();if(self.panelIme){ImmDestroyContext(self.panelIme);self.panelIme=nullptr;}if(self.hotkeyRegistered.exchange(false))UnregisterHotKey(w,hotkeyId);trace.Phase(InputPhase::Host);const auto result=CallWindowProcW(self.previous,w,m,a,b);self.window=nullptr;return result;}
+        trace.Phase(InputPhase::Host);
         return CallWindowProcW(self.previous,w,m,a,b);
     }
     static SHORT WINAPI AsyncKey(int key){auto& s=*instance;const auto value=s.hooks[Async].original<decltype(&GetAsyncKeyState)>()(key);

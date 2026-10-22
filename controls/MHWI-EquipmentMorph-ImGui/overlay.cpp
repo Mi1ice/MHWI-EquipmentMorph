@@ -88,7 +88,7 @@ struct Renderer {
         if(!count)Initialize(swap,commands,window);
         auto& frame=frames[sequence%count];if(frame.fence&&fence->GetCompletedValue()<frame.fence)return false;
         const auto index=swap->GetCurrentBackBufferIndex();if(index>=count)throw std::runtime_error("Invalid backbuffer index");
-        ImGui::SetCurrentContext(input.context);ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
+        ImGui::SetCurrentContext(input.context);ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();input.FrameInput();
         const auto extent=ImGui::GetMainViewport()->WorkSize;
         const float marginX=extent.x>528?24.f:0.f,marginY=extent.y>468?24.f:0.f;
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetMainViewport()->WorkPos.x+marginX,ImGui::GetMainViewport()->WorkPos.y+marginY),ImGuiCond_FirstUseEver);
@@ -271,7 +271,8 @@ DWORD WINAPI Worker(void* value){
         }
         try{state->control.Service(now,state->input.visible.load());}catch(...){state->Disable("control_failed");}
         if(now>=nextLog){
-        nextLog=now+2000;const auto controls=state->control.Snapshot();
+        nextLog=now+2000;const auto controls=state->control.Snapshot();const auto probe=state->input.trace.active.load();
+        const auto probeAge=probe?static_cast<uint32_t>(GetTickCount64())-static_cast<uint32_t>(probe>>32):0;
         log<<"{\"event\":\"imgui_status\",\"stage\":11,\"tick\":"<<now<<",\"boot\":"<<state->boot.load()
            <<",\"error\":\""<<state->error.load()<<"\",\"window_ready\":"<<(state->input.window?"true":"false")
            <<",\"queue_ready\":"<<(state->queueReady.load()?"true":"false")<<",\"queue_address\":"<<state->queueAddress.load()<<",\"binding_route\":\""<<state->bindingRoute.load()<<"\""
@@ -284,6 +285,9 @@ DWORD WINAPI Worker(void* value){
            <<",\"hotkey_registered\":"<<(state->input.hotkeyRegistered.load()?"true":"false")<<",\"hotkey_error\":"<<state->input.hotkeyError.load()
            <<",\"hotkey_vk\":"<<VK_DELETE<<",\"text_input\":"<<(state->input.textInput.load()?"true":"false")
            <<",\"ime_error\":"<<state->input.imeError.load()<<",\"ime_activations\":"<<state->input.imeActivations.load()<<",\"ime_compositions\":"<<state->input.imeCompositions.load()<<",\"language_changes\":"<<state->input.languageChanges.load()<<",\"drag_bounds\":"<<state->input.dragBounds.load()
+           <<",\"drag_releases\":"<<state->input.dragReleases.load()<<",\"drag_release_pending\":"<<(state->input.dragHandoff.Waiting()?"true":"false")
+           <<",\"mouse_leaves\":"<<state->input.mouseLeaves.load()<<",\"capture_changes\":"<<state->input.captureChanges.load()<<",\"rendered_left\":"<<(state->input.renderedLeft.load()?"true":"false")<<",\"queued_left\":"<<state->input.queuedLeft.load()
+           <<",\"wndproc_message\":"<<(probe&0xffff)<<",\"wndproc_phase\":"<<((probe>>16)&0xffff)<<",\"wndproc_age_ms\":"<<probeAge<<",\"wndproc_max_ms\":"<<state->input.trace.longest.load()
            <<",\"blocked_polls\":"<<state->input.blockedPolls.load()
            <<",\"api_connected\":"<<(controls->connected?"true":"false")<<",\"control_ready\":"<<(controls->ready?"true":"false")
            <<",\"targets\":"<<controls->data.targetCount<<",\"source\":"<<controls->data.source<<",\"control_result\":"<<controls->operation<<",\"snapshot_result\":"<<controls->scan
