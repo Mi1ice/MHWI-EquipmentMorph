@@ -51,7 +51,8 @@ class LaunchAdapter {
     std::optional<InputCycleRejection> inputRejection;
     std::optional<LaunchRejection> launchRejection;
     bool Bad(const char* why){if(failed)return false;failed=true;ready=false;open=false;reason=why;pool.Invalidate();return false;}
-    bool Same(Frame f)const{return f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.workers==fixed.workers&&f.thread==fixed.thread;}
+    bool SameIdentity(Frame f)const{return f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.thread==fixed.thread;}
+    bool Same(Frame f)const{return SameIdentity(f)&&f.workers==fixed.workers;}
     bool Batch(Frame f)const{return Same(f)&&f.mode==batch.mode&&f.before==counter;}
 public:
     explicit LaunchAdapter(std::uint64_t epoch=1):bindingEpoch(epoch){}
@@ -101,13 +102,16 @@ public:
         if(index==0){
             if(open||launches||nextWait)return Bad("launch_before_previous_signal");
             if(!started){fixed=f;lastSignal=f.before;if(!pool.Start(f.before,bindingEpoch)||!pool.Request(latest))return Bad("pool_start_failed");started=true;}
-            if(!Same(f)||f.before!=lastSignal){
+            if(!SameIdentity(f)||f.before!=lastSignal){
                 const unsigned mismatch=(f.engine!=fixed.engine?1u:0u)|(f.renderer!=fixed.renderer?2u:0u)
                     |(f.fence!=fixed.fence?4u:0u)|(f.workers!=fixed.workers?8u:0u)|(f.thread!=fixed.thread?16u:0u)
                     |(f.before!=lastSignal?32u:0u);
                 launchRejection=LaunchRejection{fixed,f,counter,lastSignal,mismatch};
                 return Bad("launch_identity_or_counter");
             }
+            // All workers/waits from the previous cycle ended at Signal.
+            // The native engine can choose a new count for this complete batch.
+            fixed.workers=f.workers;
             if(!pool.Launch(f.before))return Bad("pool_launch_rejected");
             const auto view=pool.Get();
             // Freeze this route until Signal. Requests and upload completions

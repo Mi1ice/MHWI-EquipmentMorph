@@ -35,6 +35,7 @@ struct Fixture : inputfasttest::Fixture {
 inline unsigned Run(){
     unsigned count=0;auto check=[&](bool ok,const char* reason){if(!ok)throw std::runtime_error(reason);count++;};
     for(unsigned field=0;field<6;++field){
+        if(field==3)continue; // Worker count is per completed batch, not an immutable identity.
         Fixture f;f.Launch(0);f.Launch(1);f.Launch(2);f.Finish();
         const auto fixed=f.Adapter().Fixed();
         facecontinuous::Frame observed{Address(f.engine),Address(f.renderer),0x30000,f.counter,f.counter,f.workers,0,GetCurrentThreadId()};

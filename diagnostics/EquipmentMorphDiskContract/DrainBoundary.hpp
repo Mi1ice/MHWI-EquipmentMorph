@@ -12,8 +12,8 @@ class DrainBoundary {
     bool begun=false,failed=false,open=false,joined=false,successor=false,successorJoined=false;
     const char* failure="none";
     bool Bad(const char* why){failed=true;failure=why;return false;}
-    bool Same(Frame f)const{return f.Stable()&&f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.workers==fixed.workers&&f.thread==fixed.thread;}
-    bool Batch(Frame f)const{return Same(f)&&f.before==batch.before&&f.mode==batch.mode;}
+    bool Same(Frame f)const{return f.Stable()&&f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.thread==fixed.thread;}
+    bool Batch(Frame f)const{return Same(f)&&f.workers==batch.workers&&f.before==batch.before&&f.mode==batch.mode;}
 public:
     bool Start(Frame f,std::uint64_t counterFloor,std::uint64_t requiredUpload){
         if(begun||!f.Stable()||counterFloor<f.before||counterFloor>=UINT64_MAX-2||requiredUpload==UINT64_MAX)return false;
@@ -41,13 +41,13 @@ public:
     bool Wait(Frame f,unsigned index,std::uintptr_t event,unsigned result){
         if(!Observing())return false;
         if(!open)return true;
-        if(!Batch(f)||launches!=fixed.workers||index!=waits||index>=fixed.workers||!event||result!=0||(waitEvents[index]&&waitEvents[index]!=event))return Bad("drain_wait_contract");
+        if(!Batch(f)||launches!=batch.workers||index!=waits||index>=batch.workers||!event||result!=0||(waitEvents[index]&&waitEvents[index]!=event))return Bad("drain_wait_contract");
         waitEvents[index]=event;waits++;return true;
     }
     bool Join(Frame f){
         if(!Observing())return false;
         if(!open)return true;
-        if(!Batch(f)||joined||launches!=fixed.workers||waits!=fixed.workers)return Bad("drain_join_contract");
+        if(!Batch(f)||joined||launches!=batch.workers||waits!=batch.workers)return Bad("drain_join_contract");
         joined=true;if(successor)successorJoined=true;return true;
     }
     bool Signal(std::uintptr_t renderer,std::uintptr_t fence,std::uint64_t before,std::uint64_t after,std::uint64_t value,bool success){
