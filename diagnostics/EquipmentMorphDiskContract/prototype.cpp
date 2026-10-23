@@ -257,6 +257,15 @@ bool CanSubmit(const launchpool::View& view){
 std::string Weights(const std::array<float,64>& values,unsigned count){
     std::string result="[";char text[40]{};for(unsigned i=0;i<count;i++){if(i)result+=',';std::snprintf(text,sizeof(text),"%.9g",double(values[i]));result+=text;}return result+"]";
 }
+template<class Log> void WriteLaunchRejection(Log& log,Part& part){
+    const auto rejected=[&]{std::lock_guard lock(gate);return part.adapter->LaunchFailure();}();
+    if(!rejected)return;
+    const auto& r=*rejected;const auto& e=r.expected;const auto& o=r.observed;char line[1600]{};
+    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"launch_identity_rejected\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"observed_tick\":%llu,\"mismatch_mask\":%u,\"expected_engine\":\"0x%llx\",\"observed_engine\":\"0x%llx\",\"expected_renderer\":\"0x%llx\",\"observed_renderer\":\"0x%llx\",\"expected_fence\":\"0x%llx\",\"observed_fence\":\"0x%llx\",\"expected_workers\":%u,\"observed_workers\":%u,\"expected_thread\":%u,\"observed_thread\":%u,\"expected_mode\":%u,\"observed_mode\":%u,\"before\":%llu,\"after\":%llu,\"tracked_counter\":%llu,\"last_signal\":%llu}\n",
+        part.asset->part,part.epoch,part.target,::GetTickCount64(),r.mismatch,e.engine,o.engine,e.renderer,o.renderer,e.fence,o.fence,
+        e.workers,o.workers,e.thread,o.thread,e.mode,o.mode,o.before,o.after,r.counter,r.lastSignal);
+    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Launch rejection log");
+}
 template<class Log> void WriteInputCycleRejection(Log& log,Part& part){
     const auto rejected=[&]{std::lock_guard lock(gate);return part.adapter->InputRejection();}();
     if(!rejected)return;

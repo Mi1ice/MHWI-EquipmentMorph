@@ -30,6 +30,11 @@ struct InputCycleRejection {
     unsigned kind=0,launches=0,waits=0,compute=0,draw=0,dispatches=0;
     std::uint64_t before=0,after=0,counter=0,lastSignal=0;
 };
+struct LaunchRejection {
+    Frame expected{},observed{};
+    std::uint64_t counter=0,lastSignal=0;
+    unsigned mismatch=0;
+};
 class LaunchAdapter {
     std::uint64_t bindingEpoch=1;
     launchpool::Pool pool;
@@ -44,6 +49,7 @@ class LaunchAdapter {
     std::uint64_t counter=0,lastSignal=0,boundaries=0,signals=0,inputs=0,dispatches=0,uploadDone=0,drawDone=0,originalBypasses=0,postSignalDraws=0;
     const char* reason="none";
     std::optional<InputCycleRejection> inputRejection;
+    std::optional<LaunchRejection> launchRejection;
     bool Bad(const char* why){if(failed)return false;failed=true;ready=false;open=false;reason=why;pool.Invalidate();return false;}
     bool Same(Frame f)const{return f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.workers==fixed.workers&&f.thread==fixed.thread;}
     bool Batch(Frame f)const{return Same(f)&&f.mode==batch.mode&&f.before==counter;}
@@ -58,6 +64,7 @@ public:
     bool HasLaunched()const{return started;}
     const char* Reason()const{return reason;}
     std::optional<InputCycleRejection> InputRejection()const{return inputRejection;}
+    std::optional<LaunchRejection> LaunchFailure()const{return launchRejection;}
     Frame Fixed()const{return fixed;}
     unsigned PendingWaits()const{return nextWait;}
     std::uint64_t Boundaries()const{return boundaries;}
@@ -94,7 +101,13 @@ public:
         if(index==0){
             if(open||launches||nextWait)return Bad("launch_before_previous_signal");
             if(!started){fixed=f;lastSignal=f.before;if(!pool.Start(f.before,bindingEpoch)||!pool.Request(latest))return Bad("pool_start_failed");started=true;}
-            if(!Same(f)||f.before!=lastSignal)return Bad("launch_identity_or_counter");
+            if(!Same(f)||f.before!=lastSignal){
+                const unsigned mismatch=(f.engine!=fixed.engine?1u:0u)|(f.renderer!=fixed.renderer?2u:0u)
+                    |(f.fence!=fixed.fence?4u:0u)|(f.workers!=fixed.workers?8u:0u)|(f.thread!=fixed.thread?16u:0u)
+                    |(f.before!=lastSignal?32u:0u);
+                launchRejection=LaunchRejection{fixed,f,counter,lastSignal,mismatch};
+                return Bad("launch_identity_or_counter");
+            }
             if(!pool.Launch(f.before))return Bad("pool_launch_rejected");
             const auto view=pool.Get();
             // Freeze this route until Signal. Requests and upload completions
