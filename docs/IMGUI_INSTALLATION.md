@@ -31,7 +31,7 @@ ImGui 面板按需在 `nativePC/plugins/MHWEquipmentMorph/` 下创建：
 
 - `presets/`：整套预设；`.trash/` 为回收区。
 - `auto-presets.json`：已应用预设与各装备部位的关联。
-- `panel-settings.json`：捏人总开关；不保存窗口布局。
+- `panel-settings.json`：形态键控制总开关；不保存窗口布局。
 - `imports/`、`exports/`：用户放入或导出的预设文件。
 
 本次升级不承诺兼容开发测试期的旧预设或配置，不提供旧格式迁移。当前预设、自动关联和开关文件各自只接受 `schema: 1`；不因取消兼容承诺而人为更换格式版本。当前格式可继续使用，但不保证更早测试文件可读。格式不受支持或损坏时报告错误，不猜测字段、不按装备显示名称强行应用。

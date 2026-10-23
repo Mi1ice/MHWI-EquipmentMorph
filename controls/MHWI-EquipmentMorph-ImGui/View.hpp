@@ -33,7 +33,7 @@ struct View {
         std::optional<morphpreset::Request> intent;bool ask=false;
         const auto& style=ImGui::GetStyle();
         const float manageWidth=ui::ButtonWidth("收起管理");
-        const float tools=ui::ButtonWidth("保存当前")+ui::ButtonWidth("另存为…")+manageWidth+ImGui::CalcTextSize("启用捏人").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x+style.ItemSpacing.x*4;
+        const float tools=ui::ButtonWidth("保存当前")+ui::ButtonWidth("另存为…")+manageWidth+ImGui::CalcTextSize("启用形态键控制").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x+style.ItemSpacing.x*4;
         ImGui::AlignTextToFramePadding();ImGui::TextUnformatted("预览预设");ImGui::SameLine();
         const bool inlineTools=ImGui::GetContentRegionAvail().x>=tools+180.f;
         ImGui::SetNextItemWidth(inlineTools?ImGui::GetContentRegionAvail().x-tools:-1.f);
@@ -64,9 +64,9 @@ struct View {
         ui::NextItem(manageWidth);
         if(ImGui::Button(browser.open?"收起管理###manager-toggle":"管理…###manager-toggle",ImVec2(manageWidth,0)))browser.open=!browser.open;
         if(ImGui::IsItemHovered())ui::Tooltip(browser.open?"收起预设管理侧栏；当前编辑和权重保持。":"打开预设管理侧栏。");
-        ui::NextItem(ImGui::CalcTextSize("启用捏人").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x);
+        ui::NextItem(ImGui::CalcTextSize("启用形态键控制").x+ImGui::GetFrameHeight()+style.ItemInnerSpacing.x);
         ImGui::BeginDisabled(presetWaiting!=0);bool enabled=presets.enabled;
-        if(ImGui::Checkbox("启用捏人",&enabled)){
+        if(ImGui::Checkbox("启用形态键控制",&enabled)){
             const bool pending=std::any_of(edits.begin(),edits.end(),[&](const auto& edit){return edit.ticket>snapshot.completed;});
             if(!enabled&&(presets.dirty||pending)){pendingAction=morphpreset::Action::DisableMorph;pendingId.clear();pendingName.clear();pendingEditor=presets.activeId;ask=true;}
             else{morphpreset::Request request{enabled?morphpreset::Action::EnableMorph:morphpreset::Action::DisableMorph};request.editor=presets.activeId;request.checkEditor=!enabled;intent=std::move(request);}
@@ -95,13 +95,13 @@ struct View {
         if(ask)ImGui::OpenPopup("未保存的修改");
         if(ImGui::BeginPopupModal("未保存的修改",nullptr,ImGuiWindowFlags_AlwaysAutoResize)){
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX()+400);
-            ui::Wrapped(pendingAction==morphpreset::Action::Select?("切换到“"+pendingName+"”前，如何处理未保存修改？").c_str():pendingAction==morphpreset::Action::EndPreview?"关闭预览前，如何处理未保存修改？":"关闭捏人前，如何处理未保存修改？");
+            ui::Wrapped(pendingAction==morphpreset::Action::Select?("切换到“"+pendingName+"”前，如何处理未保存修改？").c_str():pendingAction==morphpreset::Action::EndPreview?"关闭预览前，如何处理未保存修改？":"关闭形态键控制前，如何处理未保存修改？");
             if(pendingEditor.empty())ui::Wrapped("当前配置尚未命名，可取消后另存为。",ui::Tone::Warning);
             ImGui::PopTextWrapPos();ImGui::BeginDisabled(presetWaiting||pendingEditor.empty()||!presets.canSave);
-            if(ImGui::Button(pendingAction==morphpreset::Action::Select?"保存并切换":pendingAction==morphpreset::Action::EndPreview?"保存并关闭":"保存并关闭捏人")){
+            if(ImGui::Button(pendingAction==morphpreset::Action::Select?"保存并切换":pendingAction==morphpreset::Action::EndPreview?"保存并关闭":"保存并关闭形态键控制")){
                 morphpreset::Request request{pendingAction,pendingId};request.saveBefore=true;request.editor=pendingEditor;request.checkEditor=true;intent=std::move(request);ImGui::CloseCurrentPopup();
             }ImGui::EndDisabled();ui::NextButton("放弃修改");ImGui::BeginDisabled(presetWaiting!=0);
-            if(ImGui::Button(pendingAction==morphpreset::Action::Select?"放弃并切换":pendingAction==morphpreset::Action::EndPreview?"放弃并关闭":"放弃并关闭捏人")){
+            if(ImGui::Button(pendingAction==morphpreset::Action::Select?"放弃并切换":pendingAction==morphpreset::Action::EndPreview?"放弃并关闭":"放弃并关闭形态键控制")){
                 morphpreset::Request request{pendingAction,pendingId};request.discard=true;request.editor=pendingEditor;request.checkEditor=true;intent=std::move(request);ImGui::CloseCurrentPopup();
             }ImGui::EndDisabled();ui::NextButton("取消");if(ImGui::Button("取消")){closeRequested=false;ImGui::CloseCurrentPopup();}ImGui::EndPopup();
         }
@@ -117,6 +117,19 @@ struct View {
         if(intent){presetError.clear();presetWaiting=control.PostPreset(*intent);if(intent->action==morphpreset::Action::EndPreview)closeTicket=presetWaiting;if(intent->action==morphpreset::Action::Select)edits={};if(!presetWaiting)presetError="预设请求过多，请稍后重试";}
     }
     void Draw(Control& control){
+        if(ImGui::BeginTabBar("##modules")){
+            // Closing from either page must run the existing preview/unsaved workflow.
+            const auto flags=(closeRequested||closeTicket)?ImGuiTabItemFlags_SetSelected:ImGuiTabItemFlags_None;
+            if(ImGui::BeginTabItem("形态键控制",nullptr,flags)){
+                DrawMorph(control);ImGui::EndTabItem();
+            }
+            if(ImGui::BeginTabItem("自动表情")){
+                ui::Line("开发中",ui::Tone::Muted);ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+    }
+    void DrawMorph(Control& control){
         const auto snapshot=control.Snapshot();const auto& data=snapshot->data;
         if(closeTicket){
             if(snapshot->completed<closeTicket){ui::Wrapped("正在结束预览并恢复穿戴默认…",ui::Tone::Muted);return;}

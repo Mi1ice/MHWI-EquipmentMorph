@@ -152,16 +152,16 @@ class Manager {
     }
     void Manage(const Request& request,mhmcontrol::Session* session,const mhmcontrol::Response& data){
         if(request.action==Action::DisableMorph){
-            if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新关闭捏人");
-            if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再关闭捏人");SaveDocument(EditedDocument(*doc,data));}
+            if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新关闭形态键控制");
+            if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再关闭形态键控制");SaveDocument(EditedDocument(*doc,data));}
             settings->Save(false);state.enabled=false;SourceExpired();
             const auto result=session?session->Release():MHM_OK;
             if(result!=MHM_OK)throw std::runtime_error("关闭状态已保存，但释放控制失败；请等待控制租期结束");
-            state.success=true;state.message="已关闭捏人";return;
+            state.success=true;state.message="已关闭形态键控制";return;
         }
         if(request.action==Action::EnableMorph){
             if(policyLoadFailed){defaults=ResolveDefaults(defaultsStore->Load(),documents);PublishDefaults();policyLoadFailed=false;}
-            settings->Save(true);state.enabled=true;state.paused=false;SourceExpired();force=31;state.autoMessage.clear();state.success=true;state.message="已开启捏人";return;
+            settings->Save(true);state.enabled=true;state.paused=false;SourceExpired();force=31;state.autoMessage.clear();state.success=true;state.message="已开启形态键控制";return;
         }
         if(request.action==Action::EndPreview){
             if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新关闭窗口");
@@ -185,7 +185,7 @@ class Manager {
             if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再暂时还原");SaveDocument(EditedDocument(*doc,data));}
             if(session&&session->Release()!=MHM_OK)throw std::runtime_error("暂时还原失败，请稍后重试");Pause();state.success=true;state.message="已暂时还原并暂停自动使用；恢复自动使用或重启游戏后按已保存预设恢复";return;
         }
-        if(request.action==Action::Resume){if(!state.enabled)throw std::runtime_error("请先开启捏人");if(policyLoadFailed){defaults=ResolveDefaults(defaultsStore->Load(),documents);PublishDefaults();policyLoadFailed=false;}state.paused=false;observed={};force=31;state.autoMessage.clear();state.success=true;state.message="已重试应用";return;}
+        if(request.action==Action::Resume){if(!state.enabled)throw std::runtime_error("请先开启形态键控制");if(policyLoadFailed){defaults=ResolveDefaults(defaultsStore->Load(),documents);PublishDefaults();policyLoadFailed=false;}state.paused=false;observed={};force=31;state.autoMessage.clear();state.success=true;state.message="已重试应用";return;}
         if(request.action==Action::SetDefault||request.action==Action::ClearDefault){
             const auto* doc=Find(request.id);if(!doc)throw std::runtime_error("预设不存在");auto next=defaults;
             std::erase_if(next,[&](const auto& ref){return ref.preset==doc->id;});
@@ -243,7 +243,7 @@ public:
         }
         PublishLibrary();if(invalid){if(!state.message.empty())state.message+="；";state.message+="已跳过 "+std::to_string(invalid)+" 个无效预设文件";}
         policyLoadFailed=false;try{defaults=ResolveDefaults(defaultsStore->Load(),documents);state.autoMessage.clear();}catch(const std::exception& e){policyLoadFailed=true;state.autoMessage=std::string("自动配置读取失败，本次未启用自动使用：")+e.what();}PublishDefaults();
-        settings=std::make_unique<PanelSettings>(directory);try{state.enabled=settings->Load();}catch(const std::exception& e){state.enabled=false;state.autoMessage=std::string("开关配置读取失败，捏人已关闭：")+e.what();}
+        settings=std::make_unique<PanelSettings>(directory);try{state.enabled=settings->Load();}catch(const std::exception& e){state.enabled=false;state.autoMessage=std::string("开关配置读取失败，形态键控制已关闭：")+e.what();}
     }
     void SetQuery(IdentityQuery value){query=value;state.available=query!=nullptr;identityHandles={};lastReady=false;choicesDirty=true;}
     void Update(const mhmcontrol::Response& data,bool ready){
@@ -316,7 +316,7 @@ public:
         try{
             if(!store)throw std::runtime_error("预设目录尚未就绪");
             if(Management(request.action)){Manage(request,session,data);return state.success?MHM_OK:MHM_INVALID;}
-            if(!state.enabled)throw std::runtime_error("请先开启捏人");
+            if(!state.enabled)throw std::runtime_error("请先开启形态键控制");
             if(!session||!query||!ready)throw std::runtime_error("预设尚未就绪，请检查配套核心与装备绑定");
             if(request.action==Action::Select)return Select(request,*session,data);
             const auto* existing=Find(request.id);Document doc;
