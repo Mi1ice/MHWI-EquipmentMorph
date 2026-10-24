@@ -2,7 +2,9 @@
 #include "examples/named_control.hpp"
 #include <cstdio>
 #include <stdexcept>
+#include "capacity_tests.hpp"
 int main(){try{
+    capacitytests::Run();
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};MhmApi api{};MhwMorphGetApi(MHM_API_VERSION,sizeof(api),&api);
     auto attach=[](uint32_t part,const char* model){mhm::Asset a;a.part=part;a.model=model;a.basis.resize(64);for(const char* id:{"Example_B","Example_A"}){mhm::Key k;strcpy_s(k.info.id,id);k.info.maximum=1;k.deltas.push_back({0,1,0,0});a.keys.push_back(k);}uint64_t h=0;if(Core().Attach(std::move(a),h)!=MHM_OK)throw std::runtime_error("attach");return h;};
     const auto body=attach(MHM_BODY,"pl/example/body");auto arms=attach(MHM_ARMS,"pl/example/arms");uint64_t revision=0,other=0;

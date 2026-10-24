@@ -10,7 +10,7 @@ $taskSdkVersion=$taskToolchain.SdkVersion
 $taskSource=Join-Path $taskRoot 'sdk/MHWI-EquipmentMorph-0.4.0';$taskOutput=Join-Path $taskSource 'build'
 if($OutputDirectory){$taskOutput=[IO.Path]::GetFullPath($OutputDirectory)}
 New-Item -ItemType Directory -Path $taskOutput -Force | Out-Null
-$taskIncludes=@((Join-Path $taskCompilerRoot 'include'))
+$taskIncludes=@((Join-Path $taskCompilerRoot 'include'),(Join-Path $taskSource 'include'))
 foreach($taskPart in @('ucrt','shared','um')){$taskIncludes+=Join-Path $taskSdkRoot ('Include/'+$taskSdkVersion+'/'+$taskPart)}
 $taskLibraries=@((Join-Path $taskCompilerRoot 'lib/x64'))
 foreach($taskPart in @('ucrt','um')){$taskLibraries+=Join-Path $taskSdkRoot ('Lib/'+$taskSdkVersion+'/'+$taskPart+'/x64')}
