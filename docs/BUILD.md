@@ -1,5 +1,17 @@
 # 源码构建与验证
 
+## 1024键容量候选
+
+`codex/capacity-paired-export` 的容量候选使用独立入口，不沿用下面历史组件包的验收：
+
+```powershell
+./tools/check_morph_capacity.ps1 -Stage All -Python 'python.exe' -Blender '你的Blender目录/blender.exe'
+```
+
+也可单独执行 `Data`、`Sdk`、`Paired` 或 `Host`。Paired需要上述固定版本的Blender与模型导出插件，独立后台运行；Host只用合成原生资源，不安装钩子。任一阶段失败都会令入口失败。报告写入 `.build/capacity-validation/all-report.json`，包含执行状态、源码与产物摘要；核心候选位于 `.build/cleanup-validation/native/MHWEquipmentMorphConfiguredPrototype.dll`。
+
+候选仅验证核心、当前SDK和作者联合导出组合，未重新适配现有面板／预设／自动表情，也未执行完整 `check_source.ps1 -ImGui`。不能将已有发行安装包当作本候选。容量、兼容边界及后续测量见[容量候选](CAPACITY_CANDIDATE.md)。
+
 ## 环境
 
 - Windows x64，PowerShell 7，Git。
