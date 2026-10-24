@@ -7,6 +7,7 @@
 #include <deque>
 #include <optional>
 #include "PresetManager.hpp"
+#include "ExpressionControl.hpp"
 
 namespace morphgui {
 struct ControlSnapshot {
@@ -15,23 +16,25 @@ struct ControlSnapshot {
     MhmResult operation=MHM_OK,scan=MHM_NOT_READY;
     uint64_t completed=0;
     morphpreset::State presets;
+    morphexpression::Snapshot expression;
 };
 // Only the ordinary plugin worker calls the API. Render/input threads exchange
 // immutable snapshots and coalesced commands; target handles prevent replay.
 class Control {
     std::unique_ptr<mhmcontrol::Session> session;
     morphpreset::Manager presets;
+    morphexpression::Client expression;
     ControlSnapshot current;
     std::atomic<std::shared_ptr<const ControlSnapshot>> published{std::make_shared<ControlSnapshot>()};
     using Identity=std::pair<uint64_t,uint32_t>;
     std::mutex commands;
     std::map<Identity,mhmcontrol::Request> pending;
     bool releasePending=false;
-    struct Work {std::map<Identity,mhmcontrol::Request> batch;bool release=false;uint64_t ticket=0;std::optional<morphpreset::Request> preset;};
+    struct Work {std::map<Identity,mhmcontrol::Request> batch;bool release=false;uint64_t ticket=0;std::optional<morphpreset::Request> preset;std::optional<morphexpression::Request> expression;};
     std::deque<Work> queued;
     std::atomic_uint64_t canceledThrough=0;
     uint64_t sequence=0,nextScan=0,nextWeights=0,nextHeartbeat=0;
-    void Publish(){published.store(std::make_shared<ControlSnapshot>(current));}
+    void Publish(){current.expression=expression.Get();published.store(std::make_shared<ControlSnapshot>(current));}
     void Refresh(){
         if(!session){current.ready=false;current.scan=MHM_NOT_READY;presets.Update(current.data,false);current.presets=presets.Snapshot();return;}
         mhmcontrol::Response next;current.scan=session->Snapshot(next);
@@ -61,7 +64,7 @@ public:
         MhmLimits limits{};const auto result=api.limits(&limits);
         if(result!=MHM_OK)return result;
         if(!limits.targets||limits.targets>mhmcontrol::MaxTargets||!limits.keys_per_target||limits.keys_per_target>64||limits.batch_updates<mhmcontrol::MaxKeys){current.scan=MHM_CAPACITY;Publish();return MHM_CAPACITY;}
-        session=std::make_unique<mhmcontrol::Session>(api);presets.SourceExpired();presets.SetQuery(identity);current={};current.connected=true;Refresh();Publish();return current.scan;
+        session=std::make_unique<mhmcontrol::Session>(api);presets.SourceExpired();presets.SetQuery(identity);expression.SetIdentity(identity);current={};current.connected=true;Refresh();Publish();return current.scan;
     }
     uint64_t Post(mhmcontrol::Action action,uint64_t target=0,uint32_t key=0,float weight=0){
         std::scoped_lock lock(commands);const auto ticket=++sequence;
@@ -77,9 +80,14 @@ public:
         std::scoped_lock lock(commands);if(queued.size()>=16)return 0;
         Work work;work.batch.swap(pending);work.release=std::exchange(releasePending,false);work.ticket=++sequence;work.preset=std::move(request);queued.push_back(std::move(work));return sequence;
     }
+    uint64_t PostExpression(const morphexpression::Request& request){
+        std::scoped_lock lock(commands);if(queued.size()>=16)return 0;
+        Work work;work.batch.swap(pending);work.release=std::exchange(releasePending,false);work.ticket=++sequence;work.expression=request;queued.push_back(std::move(work));return sequence;
+    }
     // Lease renewal continues while the window is hidden. An expired source
     // loses old drafts; registered defaults are matched again from saved files.
     void Service(uint64_t now,bool visible=false){
+        expression.Service(now);
         std::deque<Work> work;
         {std::scoped_lock lock(commands);work.swap(queued);if(releasePending||!pending.empty()){Work tail;tail.batch.swap(pending);tail.release=std::exchange(releasePending,false);tail.ticket=sequence;work.push_back(std::move(tail));}}
         const bool changed=!work.empty();
@@ -105,6 +113,7 @@ public:
                 else{const auto result=presets.Process(*item.preset,item.ticket,session.get(),current.data,current.ready);if(!morphpreset::Management(item.preset->action)||(result==MHM_OK&&(item.preset->action==morphpreset::Action::EnableMorph||item.preset->action==morphpreset::Action::DisableMorph)))current.operation=result;}
                 if(const auto result=presets.ConsumeLeaseFailure();result!=MHM_OK){current.operation=result;expired=true;}
             }
+            if(item.expression){Refresh();expression.Service(now,true);expression.Change(*item.expression,current.data,current.ready);}
             current.completed=item.ticket;
         }
         if(changed||expired||now>=nextScan){Refresh();Automatic();nextScan=now+250;nextWeights=now+16;Publish();}

@@ -2,6 +2,7 @@
 #include "Control.hpp"
 #include "PresetBrowser.hpp"
 #include "Ui.hpp"
+#include "ExpressionView.hpp"
 #include <imgui.h>
 #include <string>
 
@@ -15,6 +16,7 @@ struct View {
     uint64_t selected=0;
     std::string selectedPreset,presetError;char presetName[129]{},presetSearch[129]{};uint64_t presetWaiting=0;
     PresetBrowser browser;KeyFilter keys;ui::Notice notice;
+    ExpressionView expression;
     bool closeRequested=false,hideReady=false;uint64_t closeTicket=0;
     morphpreset::Action pendingAction=morphpreset::Action::Select;std::string pendingId,pendingName,pendingEditor;
     struct Edit {float value=0;uint64_t ticket=0;bool active=false;};
@@ -124,7 +126,7 @@ struct View {
                 DrawMorph(control);ImGui::EndTabItem();
             }
             if(ImGui::BeginTabItem("自动表情")){
-                ui::Line("开发中",ui::Tone::Muted);ImGui::EndTabItem();
+                expression.Draw(control);ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
         }

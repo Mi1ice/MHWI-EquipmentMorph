@@ -18,6 +18,23 @@ MhmResult MHM_CALL CountWeights(uint64_t target,MhmWeightState* values,uint32_t 
     ++weightReads;if(target==failWeightTarget)return MHM_NOT_READY;
     return originalApi.read_weights(target,values,capacity,count,requested,applied);
 }
+struct ExpressionMock {
+    inline static morphexpression::State state;
+    inline static morphexpression::Config posted;
+    inline static MhmResult result=MHM_OK,identityResult=MHM_OK;
+    inline static uint64_t ticket=0;
+    inline static unsigned reads=0,posts=0;
+    static MhmResult MHM_CALL Read(uint32_t version,uint32_t bytes,morphexpression::State* out){
+        ++reads;if(version!=1||bytes!=sizeof(*out))return MHM_VERSION;*out=state;return MHM_OK;
+    }
+    static MhmResult MHM_CALL Post(uint32_t version,uint32_t bytes,const morphexpression::Config* value,uint64_t* out){
+        ++posts;if(version!=1||bytes!=sizeof(*value))return MHM_VERSION;if(result!=MHM_OK)return result;posted=*value;*out=++ticket;return MHM_OK;
+    }
+    static MhmResult MHM_CALL Identity(uint32_t,uint32_t,uint64_t handle,MhmAssetIdentity* out){
+        *out={};out->handle=handle;std::memset(out->model_sha256,'a',64);std::memset(out->pack_sha256,'b',64);return identityResult;
+    }
+    static void Complete(MhmResult value=MHM_OK){state.completed=ticket;state.configurationResult=value;if(value==MHM_OK)state.config=posted;}
+};
 }
 int main(){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
@@ -145,6 +162,35 @@ int main(){try{
         morphgui::FeedbackTime feedback;
         check(feedback.Show(1,true,10)&&feedback.Show(1,true,12.9)&&!feedback.Show(1,true,13),"success feedback expires after three seconds");
         check(feedback.Show(2,true,20)&&feedback.Show(2,false,200),"new completion restarts success feedback and errors remain visible");
+    }
+    {
+        using namespace morphexpression;
+        using ExprAction=morphexpression::Action;
+        Client client;client.SetApi(ExpressionMock::Read,ExpressionMock::Post);client.SetIdentity(ExpressionMock::Identity);
+        ExpressionMock::state={};ExpressionMock::state.ready=1;client.Service(100);
+        check(client.Get().connected&&!client.Get().busy,"optional expression worker discovered independently of morph control");
+        client.Service(150);check(ExpressionMock::reads==1,"expression polling bounded outside render thread");
+        mhmcontrol::Response data;data.targetCount=1;data.keyCount=2;
+        data.targets[0].info.handle=4321;data.targets[0].info.part=MHM_BODY;strcpy_s(data.targets[0].info.model_id,"synthetic/face");data.targets[0].first=0;data.targets[0].count=2;
+        for(uint32_t i=0;i<2;++i){data.keys[i].target=4321;data.keys[i].index=i;strcpy_s(data.keys[i].info.id,i?"eyes.closed":"unrelated");data.keys[i].info.maximum=i?1.f:.5f;}
+        check(client.Change({ExprAction::Map,false,4321,1},data,true)==MHM_OK&&client.Get().busy,"explicit expression mapping queued with acknowledgment");
+        check(!std::strcmp(ExpressionMock::posted.key,"eyes.closed")&&Sha(ExpressionMock::posted.modelSha)&&Sha(ExpressionMock::posted.packSha),"mapping captures key ID and exact asset identity");
+        check(client.Change({ExprAction::Enable,true},data,true)==MHM_CAPACITY,"pending expression settings cannot be overwritten");
+        client.Service(200);check(client.Get().busy&&!client.Get().state.config.mapped,"state remains saved configuration until worker acknowledges");
+        ExpressionMock::Complete();client.Service(300);check(!client.Get().busy&&client.Get().state.config.mapped,"expression mapping published after worker completion");
+        check(client.Change({ExprAction::Map,false,4320,1},data,true)==MHM_STALE,"retired target handle never replays expression mapping");
+        client.Service(400);check(client.Get().result==MHM_STALE,"local expression errors persist until another operation");
+        const auto posts=ExpressionMock::posts;check(client.Change({ExprAction::Map,false,4321,0},data,true)==MHM_INVALID&&ExpressionMock::posts==posts,"incompatible weight range rejected before expression request");
+        ExpressionMock::identityResult=MHM_STALE;check(client.Change({ExprAction::Map,false,4321,1},data,true)==MHM_STALE,"retired asset identity blocks mapping");ExpressionMock::identityResult=MHM_OK;
+        check(client.Change({ExprAction::Enable,true},data,false)==MHM_OK,"independent expression switch works without current equipment");ExpressionMock::Complete();client.Service(500);
+        check(client.Get().state.config.enabled==1,"expression enable acknowledgment retained");
+        check(client.Change({ExprAction::Clear},data,false)==MHM_OK,"mapping can be cleared while equipment absent");ExpressionMock::Complete();client.Service(600);
+        check(!client.Get().state.config.mapped&&client.Get().state.config.enabled,"clearing expression mapping preserves independent enabled switch");
+        check(client.Change({ExprAction::Enable,false},data,false)==MHM_OK,"disable request queued");ExpressionMock::Complete(MHM_NOT_READY);client.Service(700);
+        check(client.Get().result==MHM_NOT_READY&&!client.Get().busy&&client.Get().state.config.enabled,"save failure reports error and retains old expression switch");
+        ExpressionMock::state.config.enabled=2;client.Service(800);check(!client.Get().connected&&client.Get().result==MHM_VERSION,"malformed optional plugin state rejected");
+        ExpressionMock::state.config.enabled=1;ExpressionMock::state.tick=1;client.Service(2000);
+        check(!client.Get().connected&&client.Get().result==MHM_NOT_READY,"stopped expression worker not displayed as live");
     }
     std::printf("PASS: %u ImGui control checks; no windows, input automation or game process\n",checks);return 0;
 }catch(const std::exception& e){std::printf("FAIL: %s\n",e.what());return 1;}}
