@@ -254,8 +254,9 @@ bool CanSubmit(const launchpool::View& view){
     for(const auto& slot:view.slots)if(slot.phase==launchpool::Phase::Preparing||slot.phase==launchpool::Phase::AwaitingStamp||slot.phase==launchpool::Phase::Uploading||slot.phase==launchpool::Phase::Ready)return false;
     return true;
 }
-std::string Weights(const std::array<float,64>& values,unsigned count){
-    std::string result="[";char text[40]{};for(unsigned i=0;i<count;i++){if(i)result+=',';std::snprintf(text,sizeof(text),"%.9g",double(values[i]));result+=text;}return result+"]";
+std::string Weights(std::span<const float> values,unsigned count){
+    if(!count||count>mhm::capacity::keys_per_target||(!values.empty()&&values.size()!=count))throw std::runtime_error("Weight log count");
+    std::string result="[";char text[40]{};for(unsigned i=0;i<count;i++){if(i)result+=',';std::snprintf(text,sizeof(text),"%.9g",double(values.empty()?0.f:values[i]));result+=text;}return result+"]";
 }
 template<class Log> void WriteLaunchRejection(Log& log,Part& part){
     const auto rejected=[&]{std::lock_guard lock(gate);return part.adapter->LaunchFailure();}();
@@ -275,17 +276,19 @@ template<class Log> void WriteInputCycleRejection(Log& log,Part& part){
     if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Input cycle rejection log");
 }
 template<class Log> void WriteState(Log& log,Part& part,const char* event){
-    // Two 64-float arrays plus bounded integer/identity fields fit in 4096 bytes.
+    // Snapshot references are cheap; format actual-count arrays on the worker.
     const auto [v,id,live,ready,started,reason,replacements,originalBypasses,postSignalDraws]=[&]{
         std::lock_guard lock(gate);const auto& a=*part.adapter;
         return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason(),part.replacements,a.OriginalBypasses(),a.PostSignalDraws()};
     }();
     // Remaining part fields belong to this worker. Formatting and disk IO must
     // not hold the gate also used by game callbacks.
-    char line[4096]{};
-    const auto requested=Weights(v.requested.weights,static_cast<unsigned>(part.asset->keys.size())),applied=Weights(v.applied.weights,static_cast<unsigned>(part.asset->keys.size()));
-    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu,\"original_input_bypasses\":%llu,\"post_signal_original_draws\":%llu,\"same_weight_publications\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,replacements,originalBypasses,postSignalDraws,v.sameWeightPublications);
-    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Part state log");
+    const auto requested=Weights(v.requested.Weights(),static_cast<unsigned>(part.asset->keys.size())),applied=Weights(v.applied.Weights(),static_cast<unsigned>(part.asset->keys.size()));
+    const auto capacity=requested.size()+applied.size()+2048;
+    if(capacity>65536)throw std::runtime_error("Part state log bound");
+    std::vector<char> line(capacity);
+    const auto count=std::snprintf(line.data(),line.size(),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu,\"original_input_bypasses\":%llu,\"post_signal_original_draws\":%llu,\"same_weight_publications\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,replacements,originalBypasses,postSignalDraws,v.sameWeightPublications);
+    if(count<0||static_cast<size_t>(count)>=line.size()||!log.Write(line.data()))throw std::runtime_error("Part state log");
 }
 
 #include "PartWorker.inc"

@@ -151,9 +151,12 @@ void InitializePart(privateprobe::Log& log,Part& part,privateprobe::UploadFence&
 }
 void WriteUpload(privateprobe::Log& log,const Part& part,unsigned slot,const launchpool::MorphVersion& version,std::uint64_t stamp,
                  const std::string& sha,const launchpool::Slot& previous){
-    char line[4096]{};const auto weights=Weights(version.weights,static_cast<unsigned>(part.asset->keys.size()));
-    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"part_upload_queued\",\"part\":%u,\"epoch\":%llu,\"slot\":%u,\"core_frame\":%llu,\"revision\":%llu,\"weights\":%s,\"stamp\":%llu,\"payload_sha256\":\"%s\",\"previous_retirement_fence\":%llu,\"previous_coverage_fence\":%llu,\"previous_joined\":%s}\n",part.asset->part,part.epoch,slot,version.frame,version.revision,weights.c_str(),stamp,sha.c_str(),previous.retirementFence,previous.coverageFence,previous.joinedAfterUse?"true":"false");
-    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Part upload log");
+    const auto weights=Weights(version.Weights(),static_cast<unsigned>(part.asset->keys.size()));
+    const auto capacity=weights.size()+1024;
+    if(capacity>65536)throw std::runtime_error("Part upload log bound");
+    std::vector<char> line(capacity);
+    const auto count=std::snprintf(line.data(),line.size(),"{\"event\":\"part_upload_queued\",\"part\":%u,\"epoch\":%llu,\"slot\":%u,\"core_frame\":%llu,\"revision\":%llu,\"weights\":%s,\"stamp\":%llu,\"payload_sha256\":\"%s\",\"previous_retirement_fence\":%llu,\"previous_coverage_fence\":%llu,\"previous_joined\":%s}\n",part.asset->part,part.epoch,slot,version.frame,version.revision,weights.c_str(),stamp,sha.c_str(),previous.retirementFence,previous.coverageFence,previous.joinedAfterUse?"true":"false");
+    if(count<0||static_cast<size_t>(count)>=line.size()||!log.Write(line.data()))throw std::runtime_error("Part upload log");
 }
 bool PartStep(privateprobe::Log& log,Part& part,privateprobe::UploadFence& upload,DrawingFence& drawing,std::uint64_t now){
     launchpool::View view{};bool live=false,started=false;

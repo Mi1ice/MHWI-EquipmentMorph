@@ -22,7 +22,7 @@ struct Fixture {
     std::array<std::array<unsigned char,128>,3> wrappers{};
     std::array<std::array<unsigned char,144>,3> backings{};
     std::uint64_t counter=100;
-    Fixture(){
+    explicit Fixture(unsigned keyCount=1){
         using namespace facecontinuous;parts=decltype(parts){};auto& part=parts[PartIndex];part.index=PartIndex;
         observer::imageBase=Address(image);const auto base=observer::imageBase;
         const auto p=Address(player),b=Address(bridge),m=Address(model),s=Address(source),r=Address(renderer);
@@ -54,7 +54,7 @@ struct Fixture {
             Put(backings[i],0,base+0x3539948);Put(backings[i],0x10,64u);Put(backings[i],0x20,buffer.resource);Put(backings[i],0x78,buffer.initialization);
         }
         mhm::Asset asset;asset.part=PartIndex;asset.model="pl/synthetic/original-input";asset.basis.resize(64);
-        mhm::Key key;strcpy_s(key.info.id,"controlled");key.info.maximum=1;key.deltas.push_back({0,1,0,0});asset.keys.push_back(key);
+        for(unsigned i=0;i<keyCount;++i){mhm::Key key;const auto id=i?"controlled_"+std::to_string(i):"controlled";std::memcpy(key.info.id,id.c_str(),id.size()+1);key.info.maximum=1;key.deltas.push_back({0,1,0,0});asset.keys.push_back(key);}
         part.asset=std::make_shared<const mhm::Asset>(std::move(asset));part.binding=std::make_unique<equipmentmorph::PartBinding>();
         part.binding->Attach(*part.asset);part.target=part.binding->target;armed=true;
         Need(Adapter().Arm()&&Adapter().Capture({p,m,s,p},s)&&Adapter().PublishResources(handles));StartCycle();
@@ -74,7 +74,7 @@ struct Fixture {
         counter++;Put(renderer,0x1E0,counter);Need(Adapter().Signal(Address(renderer),0x30000,counter,counter,counter,true));
     }
     void Cycle(){EndCycle();StartCycle();}
-    void Request(float weight,std::uint64_t frame){launchpool::MorphVersion version{};version.frame=version.revision=frame;version.weights[0]=weight;Need(Adapter().Request(version));}
+    void Request(float weight,std::uint64_t frame){const auto version=launchpool::MorphVersion::FromWeights(std::array{weight},frame,frame);Need(Adapter().Request(version));}
     void Queue(){const auto token=Adapter().Prepare();Need(token&&Adapter().BeginUpload(*token)&&Adapter().QueueUpload(*token,20));}
     safetyhook::Context Context(unsigned kind){
         safetyhook::Context c{};c.rdi=kind==2?Address(draw):Address(player);c.r15=Address(player);

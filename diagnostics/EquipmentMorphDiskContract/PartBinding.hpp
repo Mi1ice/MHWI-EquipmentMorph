@@ -1,5 +1,5 @@
 #pragma once
-#include <array>
+#include <vector>
 #include <set>
 namespace equipmentmorph {
 struct PartBinding {
@@ -9,8 +9,8 @@ struct PartBinding {
         if(MhwMorphGetApi(MHM_API_VERSION,sizeof(api),&api)!=MHM_OK||Core().Attach(asset,target)!=MHM_OK)throw std::runtime_error("Part attach");
     }
     bool Requested(unsigned count,std::vector<float>& values,std::uint64_t& revision){
-        std::array<MhmWeightState,64> state{};std::uint32_t needed=0;std::uint64_t applied=0;
-        if(!count||count>state.size())throw std::runtime_error("Part key count");
+        if(!count||count>mhm::capacity::keys_per_target)throw std::runtime_error("Part key count");
+        std::vector<MhmWeightState> state(count);std::uint32_t needed=0;std::uint64_t applied=0;
         const auto result=api.read_weights(target,state.data(),count,&needed,&revision,&applied);
         if(result==MHM_STALE)return false;if(result!=MHM_OK||needed!=count)throw std::runtime_error("Part read");
         values.resize(count);for(unsigned i=0;i<count;i++)values[i]=state[i].requested;return true;
@@ -18,8 +18,11 @@ struct PartBinding {
     bool Capture(std::span<const float> values,std::uint64_t revision,launchpool::MorphVersion& version){
         std::uint64_t frame=0;const auto result=MhwMorphHostCaptureInterpolated(target,values.data(),static_cast<std::uint32_t>(values.size()),revision,&frame);
         if(result==MHM_STALE||result==MHM_CAPACITY)return false;if(result!=MHM_OK)throw std::runtime_error("Part capture");
-        try{pending.insert(frame);}catch(...){MhwMorphHostReleaseFrame(frame);throw;}
-        version={};std::copy(values.begin(),values.end(),version.weights.begin());version.frame=frame;version.revision=revision;return true;
+        try{
+            auto next=launchpool::MorphVersion::FromWeights(values,frame,revision);
+            pending.insert(frame);version=std::move(next);
+        }catch(...){MhwMorphHostReleaseFrame(frame);throw;}
+        return true;
     }
     void Acknowledge(const launchpool::View& view){
         const auto frame=view.applied.frame;

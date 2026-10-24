@@ -78,6 +78,15 @@ foreach($taskStage in $taskStages) {
                 $taskPassed=$true
                 $taskDetail='synthetic capacity and existing direct export checks completed; numerical threshold not set'
             }
+            'Host' {
+                & $Python (Join-Path $PSScriptRoot 'test_mhwi_equipmentmorph_authoring_clean.py')
+                if($LASTEXITCODE -ne 0){throw 'Host profile fixture generation failed'}
+                & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_current.ps1')
+                $taskHostExe=Join-Path $taskRoot '.build/cleanup-validation/native/EquipmentMorphDiskContractTests.exe'
+                & $taskHostExe (Join-Path $taskRoot '.build/cleanup-validation/synthetic.mhmprofile')
+                $taskPassed=$LASTEXITCODE -eq 0
+                $taskDetail="host=$LASTEXITCODE; synthetic native resources only; no game hooks installed"
+            }
             default { throw "Stage $taskStage is not implemented" }
         }
     } catch { $taskDetail=$_.Exception.Message }
@@ -95,7 +104,15 @@ foreach($taskFile in @('tools/test_capacity_direct_blender.py','tools/test_geome
 foreach($taskFile in @('sdk/MHWI-EquipmentMorph-0.4.0/include/equipment_morph_key_client.hpp','sdk/MHWI-EquipmentMorph-0.4.0/include/equipment_morph_client.hpp','runtime/EquipmentMorphPartClient/Client.hpp','sdk/MHWI-EquipmentMorph-0.4.0/capacity_tests.hpp','sdk/MHWI-EquipmentMorph-0.4.0/tests.cpp','sdk/MHWI-EquipmentMorph-0.4.0/tests/fixtures/v040/equipment_morph_key_client.hpp','tools/build_mhwi_equipmentmorph_sdk_v04.ps1')) {
     $taskHashes[$taskFile]=(Get-FileHash -LiteralPath (Join-Path $taskRoot $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
+foreach($taskFile in @('MorphVersion.hpp','PartBinding.hpp','Pool.hpp','LaunchAdapter.hpp','prototype.cpp','PartWorker.inc','CapacityTests.hpp','tests.cpp','SameWeightTests.hpp','InputFastPathTests.hpp')) {
+    $taskRelative='diagnostics/EquipmentMorphDiskContract/'+$taskFile
+    $taskHashes[$taskRelative]=(Get-FileHash -LiteralPath (Join-Path $taskRoot $taskRelative) -Algorithm SHA256).Hash.ToLowerInvariant()
+}
 Get-ChildItem -LiteralPath $taskOutput -Filter '*.exe' | ForEach-Object { $taskArtifacts[$_.Name]=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+foreach($taskFile in @('MHWEquipmentMorphConfiguredPrototype.dll','EquipmentMorphDiskContractTests.exe')) {
+    $taskPath=Join-Path $taskRoot ('.build/cleanup-validation/native/'+$taskFile)
+    if(Test-Path -LiteralPath $taskPath){$taskArtifacts['Host/'+$taskFile]=(Get-FileHash -LiteralPath $taskPath -Algorithm SHA256).Hash.ToLowerInvariant()}
+}
 $taskReport=@{schema='mhwi-capacity-validation-v1';stage=$Stage;stages=$taskResults;source_sha256=$taskHashes;artifact_sha256=$taskArtifacts;synthetic_only=$true;game_tested=$false;deployable=$false}
 $taskReport | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $taskOutput ($Stage.ToLowerInvariant()+'-report.json')) -Encoding utf8
 $taskResults | ForEach-Object { Write-Host ($_.stage+': '+$_.passed+' '+$_.detail) }

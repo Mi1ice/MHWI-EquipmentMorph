@@ -72,9 +72,9 @@ public:
     }
     std::optional<Token> Prepare() {
         std::lock_guard lock(gate);
-        // A new core frame/revision can carry the exact same 64 weights, e.g.
+        // A new core frame/revision can carry the exact same declared weights, e.g.
         // when another part changes. Its active payload already exists.
-        if(!live||requested.IsZero()||(active>=0&&slots[static_cast<unsigned>(active)].weight.weights==requested.weights))return {};
+        if(!live||requested.IsZero()||(active>=0&&slots[static_cast<unsigned>(active)].weight.SameWeights(requested)))return {};
         Reclaim();
         for(const auto& s:slots)if(s.phase!=Phase::Free&&s.phase!=Phase::Retiring&&s.token.request==request)return {};
         for(unsigned i=0;i<slots.size();i++)if(slots[i].phase==Phase::Free) {
@@ -106,7 +106,7 @@ public:
         if(!live)return false;
         if(frameOpen||counter!=lastSignal||counter>=UINT64_MAX-1){Disable();return false;}
         if(requested.IsZero()){RetireActive();if(original!=requested){original=requested;originalCounter=counter;}}
-        else if(active>=0&&slots[static_cast<unsigned>(active)].weight.weights==requested.weights){
+        else if(active>=0&&slots[static_cast<unsigned>(active)].weight.SameWeights(requested)){
             auto& s=slots[static_cast<unsigned>(active)];
             // Only publish the new metadata at this native boundary. Keep the
             // resource, token, upload stamp and all use/retirement proofs intact.
