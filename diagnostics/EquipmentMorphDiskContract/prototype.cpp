@@ -2,7 +2,6 @@
 #define NOMINMAX
 #define OBSERVER_TEST
 #include "../../runtime/EquipmentMorphPerKeyCore/api.cpp"
-#include "../../runtime/EquipmentMorphPerKeyCore/group_smoothing.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/asset_pack.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/json_log.hpp"
 #include "../../runtime/EquipmentMorphAutoBinding/LocalPlayer.hpp"
@@ -42,9 +41,9 @@ struct Part : BufferPool {
     std::vector<BufferPool> cached;
     std::optional<size_t> active,wanted;
     DrainBoundary drain;bool retiring=false,blocked=false;
-    mhm::GroupSmoothing smoother;facesmooth::SampleGate cadence;
+    facesmooth::SampleGate cadence;
     std::vector<unsigned char> payload;
-    std::vector<float> requested,lastSample;std::uint64_t smoothingRevision=0,lastRevision=0;
+    std::vector<float> requested,lastSample;std::uint64_t lastRevision=0;
 };
 std::array<Part,5> parts;
 std::mutex gate;

@@ -6,8 +6,7 @@ struct Fixture : inputfasttest::Fixture {
     privateprobe::UploadFence upload;
     facecontinuous::DrawingFence drawing;
     Fixture(){
-        MhmTargetInfo info{};info.handle=Part().target;info.part=PartIndex;info.key_count=1;
-        Need(Part().smoother.Reset({&info,1},0)==MHM_OK&&Part().cadence.Reset(0));
+        Need(Part().cadence.Reset(0));
         upload.renderer=inputfasttest::Address(renderer);drawing.pointer=0x30000;
     }
     bool Step(std::uint64_t now){return facecontinuous::PartStep(log,Part(),upload,drawing,now);}
@@ -24,7 +23,7 @@ inline unsigned Run(){
     unsigned count=0;auto check=[&](bool ok,const char* why){if(!ok)throw std::runtime_error(why);count++;};
     {
         Fixture f;f.PublishZero();const auto frame=f.Part().lastRevision;
-        check(!f.Step(32),"settled zero worker reports no outstanding smoothing");
+        check(!f.Step(32),"settled zero worker reports no outstanding work");
         check(!f.Part().cadence.Due(32),"unchanged sample advances the sampling clock");
         check(!f.Part().cadence.Due(47)&&f.Part().cadence.Due(48),"idle samples remain sixteen milliseconds apart");
         const auto requested=f.Adapter().View().requested;

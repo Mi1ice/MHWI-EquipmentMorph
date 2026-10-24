@@ -20,6 +20,7 @@ BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T 
 }
 #define ReadProcessMemory CountInputReads
 #define QueryPerformanceCounter CountTimingQpc
+#include "../../runtime/EquipmentMorphPerKeyCore/group_smoothing.hpp"
 #include "prototype.cpp"
 #undef QueryPerformanceCounter
 #undef ReadProcessMemory
@@ -37,6 +38,7 @@ BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T 
 #include "DiagnosticsTests.hpp"
 #include "DrawFilterTests.hpp"
 #include "CapacityTests.hpp"
+#include "DirectWeightTests.hpp"
 int wmain(int argc,wchar_t** argv){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
     checks+=retirementtest::Run(std::filesystem::absolute(argv[0]).parent_path()/"retirement-regression.ndjson");
@@ -44,6 +46,7 @@ int wmain(int argc,wchar_t** argv){try{
     checks+=workercounttest::Run();
     checks+=launchvalidationtest::Run();
     checks+=idlesamplingtest::Run();
+    checks+=directweighttests::Run();
     checks+=batchedreadtest::Run();
     checks+=runtimeinputtest::Run();
     checks+=inputconcurrencytest::Run();
