@@ -42,6 +42,7 @@ def preflight(asset):
     if not collection or collection.library:raise ValueError('请选择本地 MOD3 集合')
     if asset['shading'] not in ('BASELINE','GEOMETRIC'):raise ValueError('联合导出支持基准法线或逐键几何法线')
     if asset.get('undefined_normal_policy','REJECT') not in ('REJECT','BASELINE'):raise ValueError('无效的无定义几何法线策略')
+    if asset.get('antiparallel_normal_policy','REJECT') not in ('REJECT','BASELINE'):raise ValueError('无效的反向端点法线策略')
     model_resource_id(asset['model_id'])
     package_id(asset['package'])
     load_job_validation={'schema':'mhw-equipment-morph-export-job-v2','parts':[dict(part=asset['part'],keys=asset['keys'])]}
@@ -74,10 +75,11 @@ def preflight(asset):
 def export_model(module,asset,path):
     import bpy
     from .backend.capture_equipment_morph_job import fingerprint,coords
-    from .geometric_normals import transported
+    from .geometric_normals import transported,AntiparallelDirection
     from .normal_authoring import unit
     objects,controlled,_=preflight(asset)
     normal_policy=asset.get('undefined_normal_policy','REJECT')
+    antiparallel_policy=asset.get('antiparallel_normal_policy','REJECT')
     if bpy.context.mode!='OBJECT':raise ValueError('联合导出需要对象模式')
     if bpy.data.collections.get('clonedMod3Meshes'):raise ValueError('导出器临时集合已存在，请先处理该集合')
     source_before={o.name:fingerprint(o) for o in objects}
@@ -175,20 +177,26 @@ def export_model(module,asset,path):
                 offset=row['start']+i*row['stride']+12
                 normal=unit(struct.unpack_from('<3b',basis,offset))
                 base_zero=np.linalg.norm(base)<1e-12;target_zero=np.linalg.norm(target)<1e-12
+                reason=None
                 if base_zero or target_zero:
                     if normal_policy!='BASELINE':raise ValueError('几何法线无定义：'+trace['object'])
                     reason='baseline_and_endpoint_zero' if base_zero and target_zero else ('baseline_zero' if base_zero else 'endpoint_zero')
+                else:
+                    try:direction=transported(normal,base,target)
+                    except AntiparallelDirection:
+                        if antiparallel_policy!='BASELINE':raise
+                        reason='antiparallel_endpoint'
+                if reason:
                     fallbacks.append(dict(object=trace['object'],mesh=row['mesh'],key_id=key,source_vertex=trace['indices'][i],
                                           serialized_vertex=i,corner=trace['normal_corners'][i],normal_offset=offset,reason=reason))
                     continue
-                direction=transported(normal,base,target)
                 if np.linalg.norm(direction-normal)>1e-5:normal_records[key].append((offset,*(direction-normal)))
     if seen!={o.name for o in controlled}:raise ValueError('部分动态网格未由导出器输出')
     normal_data={key:b''.join(struct.pack('<I3f',*record) for record in sorted(records)) for key,records in normal_records.items()}
     return dict(schema='mhwi-direct-export-trace-v1',part=asset['part'],model_id=asset['model_id'],
         model_sha256=digest(model),fully_resolved=True,objects=mapping,exporter='MHW Model Editor 0.12',
         mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix],serialized_objects=serialized,
-        undefined_normal_policy=normal_policy,geometric_normal_fallbacks=fallbacks),normal_data
+        undefined_normal_policy=normal_policy,antiparallel_normal_policy=antiparallel_policy,geometric_normal_fallbacks=fallbacks),normal_data
 
 def export_direct(recipe,output,debug=False,trace_callback=None):
     from .backend.capture_equipment_morph_job import capture

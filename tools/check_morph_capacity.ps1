@@ -88,7 +88,7 @@ foreach($taskFile in @('tools/test_morph_capacity.cpp','tools/test_morph_capacit
     $taskHashes[$taskFile]=(Get-FileHash -LiteralPath (Join-Path $taskRoot $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 $taskArtifacts=@{}
-foreach($taskFile in @('tools/test_capacity_direct_blender.py','tools/test_geometric_normal_fallback_blender.py','tools/capture_morph_position_reference.py','tools/compare_morph_positions.cpp','tools/morph_reference_json.hpp','tools/test_morph_profile_capacity.py','blender_addon_v044/mhwi_equipmentmorph/backend/emit_equipment_morph_profile.py','blender_addon_v044/mhwi_equipmentmorph/key_selection.py','runtime/EquipmentMorphDiskConfiguration/loader.hpp')) {
+foreach($taskFile in @('tools/test_capacity_direct_blender.py','tools/test_geometric_normal_fallback_blender.py','tools/capture_morph_position_reference.py','tools/compare_morph_positions.cpp','tools/morph_reference_json.hpp','tools/test_morph_profile_capacity.py','blender_addon_v044/mhwi_equipmentmorph/geometric_normals.py','blender_addon_v044/mhwi_equipmentmorph/backend/emit_equipment_morph_profile.py','blender_addon_v044/mhwi_equipmentmorph/key_selection.py','runtime/EquipmentMorphDiskConfiguration/loader.hpp')) {
     $taskPath=Join-Path $taskRoot $taskFile
     if(Test-Path -LiteralPath $taskPath){$taskHashes[$taskFile]=(Get-FileHash -LiteralPath $taskPath -Algorithm SHA256).Hash.ToLowerInvariant()}
 }

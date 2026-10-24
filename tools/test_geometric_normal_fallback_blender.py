@@ -69,6 +69,33 @@ for name,height,reason in [('endpoint',0,'endpoint_zero'),('quantized_baseline',
         check(all(np.isfinite(struct.unpack_from('<3f',normals['smile'],i+4)).all() for i in range(0,len(normals['smile']),16)),name+' all emitted direction deltas finite')
 obj.location.z=0;bpy.context.view_layer.update()
 
+flip_mesh=bpy.data.meshes.new('DefinedAntiparallel')
+flip_mesh.from_pydata([(0,0,0),(1,0,0),(0,1,0)],[],[(0,1,2)])
+flip=bpy.data.objects.new('Group_0_Sub_1__Flip',flip_mesh);collection.objects.link(flip)
+flip_mesh.materials.append(bpy.data.materials.new('Flip'))
+flip_uv=flip_mesh.uv_layers.new(name='UVMap')
+for loop in flip_mesh.loops:flip_uv.data[loop.index].uv=flip_mesh.vertices[loop.vertex_index].co.xy
+flip.vertex_groups.new(name='MhBone_000').add([0,1,2],1.,'REPLACE')
+flip.modifiers.new('RestRig','ARMATURE').object=obj.modifiers[0].object
+flip.shape_key_add(name='Basis');flip_key=flip.shape_key_add(name='Flip',from_mix=False)
+flip_key.relative_key=flip_mesh.shape_keys.reference_key;flip_key.value=0
+flip_key.data[1].co.x=-1
+bpy.context.view_layer.update();flip_before=fingerprint(flip)
+flip_asset=dict(asset,keys=[dict(id='flip',source_key='Flip',author_shading=False)])
+rejected(lambda:export_model(namespace['exporter'],dict(flip_asset,undefined_normal_policy='BASELINE'),folder/'flip-strict.mod3'),'zero rule alone does not allow defined antiparallel endpoints','反向')
+rejected(lambda:export_model(namespace['exporter'],dict(flip_asset,antiparallel_normal_policy='TYPO'),folder/'flip-typo.mod3'),'unknown antiparallel policy rejected','策略')
+try:
+    trace,normals=export_model(namespace['exporter'],dict(flip_asset,antiparallel_normal_policy='BASELINE'),folder/'flip-baseline.mod3')
+except ValueError as error:
+    check(False,'independent antiparallel baseline policy exports: '+str(error))
+else:
+    exceptions=trace.get('geometric_normal_fallbacks',[])
+    check(len(exceptions)==3 and {item['source_vertex'] for item in exceptions}=={0,1,2},'exactly three flipped vertices use baseline')
+    check(all(item['reason']=='antiparallel_endpoint' and item['key_id']=='flip' and item['object']==flip.name for item in exceptions),'antiparallel exceptions carry exact reason key and object')
+    check(trace.get('antiparallel_normal_policy')=='BASELINE' and trace.get('undefined_normal_policy')=='REJECT','antiparallel option independent of zero-direction option')
+    check(normals['flip']==b'','antiparallel policy preserves authored normal bytes')
+check(fingerprint(flip)==flip_before,'antiparallel export preserves synthetic source')
+
 rejected(lambda:unit([[float('nan'),0,1]]),'nonfinite normals remain rejected')
 rejected(lambda:transported((0,0,1),(0,0,1),(0,0,-1)),'defined antiparallel normals remain rejected')
 check(before==fingerprint(obj),'source keys geometry and attributes unchanged')
