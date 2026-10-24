@@ -151,10 +151,11 @@ def export_model(module,asset,path):
         if source_before!={o.name:fingerprint(o) for o in objects}:raise ValueError('导出期间源网格数据改变')
     model=path.read_bytes();basis,rows=model_meshes(model)
     if len(rows)!=len(ordered):raise ValueError('序列化网格数量与追溯数量不同')
-    mapping=[];normal_records={k['id']:[] for k in asset['keys']};seen=set()
+    mapping=[];serialized=[];normal_records={k['id']:[] for k in asset['keys']};seen=set()
     for trace,row in zip(ordered,rows):
         count=row['count'];disk=np.ndarray((count,3),dtype='<f4',buffer=basis,offset=row['start'],strides=(row['stride'],4))
         if count!=len(trace['indices']) or not np.array_equal(disk,np.asarray(trace['positions'],dtype='<f4')):raise ValueError('序列化顶点与追溯次序不同')
+        serialized.append(dict(object=trace['object'],mesh=row['mesh'],start=row['start'],stride=row['stride'],disk_to_blender_vertex=trace['indices']))
         if trace['object'] not in {o.name for o in controlled}:continue
         if trace['object'] in seen:raise ValueError('同一源对象被多个LOD重复导出，当前不支持')
         seen.add(trace['object'])
@@ -168,9 +169,9 @@ def export_model(module,asset,path):
     normal_data={key:b''.join(struct.pack('<I3f',*record) for record in sorted(records)) for key,records in normal_records.items()}
     return dict(schema='mhwi-direct-export-trace-v1',part=asset['part'],model_id=asset['model_id'],
         model_sha256=digest(model),fully_resolved=True,objects=mapping,exporter='MHW Model Editor 0.12',
-        mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix]),normal_data
+        mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix],serialized_objects=serialized),normal_data
 
-def export_direct(recipe,output,debug=False):
+def export_direct(recipe,output,debug=False,trace_callback=None):
     from .backend.capture_equipment_morph_job import capture
     output=Path(output).resolve();assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
     for a in assets:a['package']=a['model_id'].rsplit('/',1)[-1]
@@ -193,6 +194,7 @@ def export_direct(recipe,output,debug=False):
             model=stage/'nativePC'/(asset['model_id']+'.mod3');model.parent.mkdir(parents=True,exist_ok=True)
             if model.exists():raise ValueError('两个部位使用同一输出模型路径')
             trace,normals=export_model(module,asset,model);mapping=work/(asset['part']+'.trace.json');write(mapping,trace)
+            if trace_callback is not None:trace_callback(index,asset,trace)
             matrix=work/(asset['part']+'.coordinates.json');write(matrix,{'export_matrix':trace['export_matrix']})
             part=dict(part=asset['part'],model_id=asset['model_id'],model=pin(model),mapping=pin(mapping),keys=asset['keys'],author_rotations=pin(empty))
             job=dict(schema='mhw-equipment-morph-export-job-v2',export_reference=pin(matrix),parts=[part])

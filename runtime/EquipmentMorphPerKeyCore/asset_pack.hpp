@@ -47,6 +47,7 @@ inline Asset Decode(std::span<const unsigned char> data) {
     if(asset.part>MHM_LEGS||!basisBytes||basisBytes>64*1024*1024||!keys||keys>limits.keys_per_target||rotations>1000000)throw std::runtime_error("Pack bounds");
     asset.model=input.Identifier(128);const auto basis=input.Take(basisBytes);asset.basis.assign(basis.begin(),basis.end());
     static_assert(sizeof(MhmDelta)==16&&sizeof(MhmRotation)==20);
+    uint32_t totalNormals=0;
     for(uint32_t i=0;i<keys;i++) {
         // The identifier length precedes the five fixed key fields in the pack.
         const auto idBytes=input.U32();if(!idBytes||idBytes>=64)throw std::runtime_error("Pack key identifier size");
@@ -55,6 +56,8 @@ inline Asset Decode(std::span<const unsigned char> data) {
         key.info.flags=input.U32();key.info.exclusive_group=input.U32();const auto count=input.U32();
         const auto normalCount=advanced?input.U32():0;
         if(count>1000000||normalCount>1000000)throw std::runtime_error("Pack delta bound");
+        if(normalCount>1000000-totalNormals)throw std::runtime_error("Pack total normal bound");
+        totalNormals+=normalCount;
         const auto id=input.Take(idBytes);std::memcpy(key.info.id,id.data(),id.size());
         if(std::memchr(id.data(),0,id.size()))throw std::runtime_error("Pack key identifier");
         const auto deltas=input.Take(static_cast<size_t>(count)*16);key.deltas.resize(count);

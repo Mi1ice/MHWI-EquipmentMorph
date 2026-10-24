@@ -1,7 +1,18 @@
 // Capacity boundaries, wire decoding and whole-source atomic replacement.
 #include "../runtime/EquipmentMorphPerKeyCore/asset_pack.hpp"
+#include "../runtime/EquipmentMorphDiskConfiguration/loader.hpp"
 #include <iostream>
 #include <functional>
+#include <cstdlib>
+#include <new>
+
+namespace allocationtest {thread_local bool enabled=false;thread_local size_t bytes=0;}
+void* operator new(std::size_t size){if(allocationtest::enabled)allocationtest::bytes+=size;if(auto p=std::malloc(size?size:1))return p;throw std::bad_alloc();}
+void* operator new[](std::size_t size){return ::operator new(size);}
+void operator delete(void* p)noexcept{std::free(p);}
+void operator delete[](void* p)noexcept{std::free(p);}
+void operator delete(void* p,std::size_t)noexcept{std::free(p);}
+void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
 
 namespace {
 unsigned checks=0, failures=0;
@@ -47,6 +58,18 @@ void TestPackageCounts(const std::filesystem::path& folder){
     for(uint32_t i=0;i<500001;++i)bad.basis[24+i*8]=127;
     for(auto& key:bad.keys){key.info.flags=MHM_PER_KEY_SHADING;for(uint32_t i=0;i<500001;++i)key.normals.push_back({24+i*8,0,0,0});}
     Check(!mhm::Validate(bad),"normal record bound");
+    std::vector<unsigned char> encoded;
+    auto append=[&](const void* value,size_t size){const auto begin=static_cast<const unsigned char*>(value);encoded.insert(encoded.end(),begin,begin+size);};
+    auto u32=[&](uint32_t value){append(&value,4);};
+    append("MHMPACK2",8);u32(2);u32(1);u32(static_cast<uint32_t>(bad.basis.size()));u32(2);u32(1);u32(static_cast<uint32_t>(bad.model.size()));append(bad.model.data(),bad.model.size());append(bad.basis.data(),bad.basis.size());
+    for(const auto& key:bad.keys){const auto length=std::strlen(key.info.id);u32(static_cast<uint32_t>(length));u32(0);u32(0x3f800000);u32(MHM_PER_KEY_SHADING);u32(0);u32(1);u32(500001);append(key.info.id,length);append(key.deltas.data(),16);append(key.normals.data(),key.normals.size()*16);}
+    allocationtest::bytes=0;allocationtest::enabled=true;bool rejected=false;
+    try{mhm::pack::Decode(encoded);}catch(const std::exception&){rejected=true;}
+    allocationtest::enabled=false;
+    Check(rejected,"aggregate normal guard rejects encoded package");
+    // This fixture needs about 12 MiB for basis and first key; the forbidden second
+    // normal array alone adds 8 MiB. Reject before that allocation or field scanning.
+    Check(allocationtest::bytes<16*1024*1024,"aggregate normal limit checked before allocating second array");
 }
 
 void TestAtomicFullBatch(){
@@ -87,8 +110,17 @@ void TestAtomicFullBatch(){
     }
 }
 
+void TestProfileCounts(const std::filesystem::path& folder){
+    for(const auto& [dynamic,fixed,valid]:{std::tuple{1,0,true},{65,2,true},{489,2,true},{1024,2,true},{1024,256,true},{0,256,true},{0,0,false},{1025,0,false},{1,257,false},{1024,257,false}}){
+        const auto raw=Bytes(folder/("profile-"+std::to_string(dynamic)+"-"+std::to_string(fixed)+".bin"));
+        bool accepted=false;try{const auto p=mhm::configuration::DecodeProfile(raw);accepted=p.objects.size()==1&&p.objects[0].values.size()==static_cast<size_t>(dynamic+fixed);}catch(const std::exception&){}
+        Check(accepted==valid,"profile dynamic/fixed guards "+std::to_string(dynamic)+"+"+std::to_string(fixed));
+        auto bad=raw;bad.pop_back();Reject([&]{mhm::configuration::DecodeProfile(bad);},"truncated profile");
+    }
+}
+
 int main(int argc,char** argv){
     if(argc!=2)return 2;
-    try{TestPackageCounts(std::filesystem::path(argv[1]));TestAtomicFullBatch();}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 2;}
+    try{TestPackageCounts(std::filesystem::path(argv[1]));TestAtomicFullBatch();TestProfileCounts(std::filesystem::path(argv[1]));}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 2;}
     std::cout<<"Native capacity: "<<(checks-failures)<<'/'<<checks<<'\n';return failures?1:0;
 }

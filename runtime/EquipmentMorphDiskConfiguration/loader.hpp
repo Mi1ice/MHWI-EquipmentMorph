@@ -64,11 +64,14 @@ inline Profile DecodeProfile(std::span<const unsigned char> raw){
     for(uint32_t i=0;i<objects;i++){
         SourceObject object;object.name=Utf8(in,1024);object.fingerprint=Sha(in);
         if(!names.insert(object.name).second)throw std::runtime_error("Profile duplicate object");
-        const auto values=in.U32();if(!values||values>256)throw std::runtime_error("Profile baseline keys");std::set<std::string> ids;
+        const auto values=in.U32();if(!values||values>capacity::profile_source_values)throw std::runtime_error("Profile baseline keys");std::set<std::string> ids;
+        uint32_t dynamicValues=0,fixedValues=0;
         for(uint32_t j=0;j<values;j++){
             SourceValue value;value.name=Utf8(in,1024);auto bits=in.U32();std::memcpy(&value.weight,&bits,4);value.flags=in.U32();
             if(!ids.insert(value.name).second||!std::isfinite(value.weight)||std::abs(value.weight)>1000000||value.flags>3)throw std::runtime_error("Profile baseline value");
             if((value.flags&2)&&(value.weight!=0||(value.flags&1)))throw std::runtime_error("Dynamic source key nonzero or muted");
+            if(value.flags&2){if(++dynamicValues>capacity::keys_per_target)throw std::runtime_error("Profile dynamic key bound");}
+            else if(++fixedValues>capacity::fixed_source_values)throw std::runtime_error("Profile fixed value bound");
             object.values.push_back(std::move(value));
         }p.objects.push_back(std::move(object));
     }

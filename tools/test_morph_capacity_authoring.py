@@ -90,6 +90,19 @@ def main():
         asset = dict(part='body', collection=collection, shading='BASELINE',
                      model_id='pl/synthetic/body', package='capacity-fixture', keys=keys)
         check(f'direct count {count}', lambda: direct.preflight(asset), valid)
+        selection = importlib.import_module(NAME + '.key_selection')
+        basis_key = types.SimpleNamespace(name='Basis')
+        source_shape = types.SimpleNamespace(use_relative=True, reference_key=basis_key)
+        blocks = [basis_key] + [types.SimpleNamespace(name=item['source_key'], value=0, mute=False,
+            vertex_group='', relative_key=basis_key, id_data=source_shape) for item in keys]
+        source_shape.key_blocks = blocks
+        source_obj = types.SimpleNamespace(type='MESH', data=types.SimpleNamespace(shape_keys=source_shape))
+        items = [types.SimpleNamespace(source=item['source_key'], public_id=item['id'], selected=True, enabled=False) for item in keys]
+        selected_asset = types.SimpleNamespace(keys=items, collection=types.SimpleNamespace(all_objects=[source_obj]))
+        check(f'confirm count {count}', lambda: selection.confirm(selected_asset, True), valid)
+        for item in items:
+            item.enabled = True
+        check(f'confirmed export count {count}', lambda: selection.confirmed(selected_asset, True), valid)
         if valid:
             check(f'per-key prepare count {count}', lambda: equal(pack.prepare(path)[0], legacy))
             advanced_manifest = dict(manifest, schema='mhwi-equipmentmorph-package-v2',
@@ -109,6 +122,10 @@ def main():
     manifest['keys'] *= 2
     path.write_text(json.dumps(manifest), encoding='utf-8')
     check('duplicate key ID', lambda: catalog.prepare(path), False)
+    from test_morph_profile_capacity import run
+    profile_checks, profile_failures = run(NAME, output)
+    checks += profile_checks
+    failures.extend(profile_failures)
     report = dict(checks=checks, failures=failures, synthetic_only=True)
     (output / 'authoring.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     for failure in failures:

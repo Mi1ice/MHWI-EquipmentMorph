@@ -8,4 +8,6 @@ inline constexpr uint32_t keys_per_target=1024;
 inline constexpr uint32_t sources=32;
 inline constexpr uint32_t batch_updates=targets*keys_per_target;
 inline constexpr uint32_t events=256;
+inline constexpr uint32_t fixed_source_values=256;
+inline constexpr uint32_t profile_source_values=keys_per_target+fixed_source_values;
 }

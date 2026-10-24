@@ -23,7 +23,7 @@ function Build-CapacityNative([string]$Name,[string[]]$Sources) {
     foreach($taskSource in $Sources) {
         $taskObject=Join-Path $taskOutput ($Name+'-'+[IO.Path]::GetFileNameWithoutExtension($taskSource)+'.obj')
         $taskCompileArgs=$taskArgs+@('/c',(Join-Path $taskRoot $taskSource),('/Fo'+$taskObject))
-        & $taskCompiler @taskCompileArgs | Out-Host
+        & $taskCompiler @taskCompileArgs | ForEach-Object { Write-Host $_ }
         if($LASTEXITCODE -ne 0){throw "Compilation failed: $taskSource"}
         $taskObjects+=$taskObject
     }
@@ -33,11 +33,20 @@ function Build-CapacityNative([string]$Name,[string[]]$Sources) {
     $taskLinkArgs+=@('kernel32.lib','bcrypt.lib')
     $taskResponse=Join-Path $taskOutput ($Name+'-link.rsp')
     [IO.File]::WriteAllLines($taskResponse,$taskLinkArgs,[Text.Encoding]::Unicode)
-    & (Join-Path $taskChain.CompilerRoot 'bin/Hostx64/x64/link.exe') ('@'+$taskResponse) | Out-Host
+    & (Join-Path $taskChain.CompilerRoot 'bin/Hostx64/x64/link.exe') ('@'+$taskResponse) | ForEach-Object { Write-Host $_ }
     if($LASTEXITCODE -ne 0){throw "Link failed: $Name"}
     return $taskExe
 }
 $taskStages=if($Stage -eq 'All'){@('Data','Sdk','Paired','Host')}else{@($Stage)}
+function Run-CapacityBlender([string]$Script,[string]$Name) {
+    if(-not $Blender -or -not (Test-Path -LiteralPath $Blender)){throw 'Blender path is required for Paired validation'}
+    $taskStdout=Join-Path $taskOutput ($Name+'.stdout.log')
+    $taskStderr=Join-Path $taskOutput ($Name+'.stderr.log')
+    $taskProcess=Start-Process -FilePath $Blender -ArgumentList @('--background','--factory-startup','--python-exit-code','1','--python',('"'+(Join-Path $taskRoot $Script)+'"')) -WindowStyle Hidden -PassThru -RedirectStandardOutput $taskStdout -RedirectStandardError $taskStderr
+    $taskProcess.WaitForExit()
+    Get-Content -LiteralPath $taskStdout -Tail 10 | ForEach-Object { Write-Host $_ }
+    if($taskProcess.ExitCode -ne 0){Get-Content -LiteralPath $taskStderr -Tail 10 | ForEach-Object { Write-Host $_ };throw "Background Blender failed: $Name exit=$($taskProcess.ExitCode)"}
+}
 $taskResults=@()
 foreach($taskStage in $taskStages) {
     $taskPassed=$false
@@ -60,6 +69,14 @@ foreach($taskStage in $taskStages) {
                 $taskPassed=$LASTEXITCODE -eq 0
                 $taskDetail="sdk=$LASTEXITCODE"
             }
+            'Paired' {
+                $null=Build-CapacityNative 'CompareMorphPositions' @('tools/compare_morph_positions.cpp')
+                Run-CapacityBlender 'tools/test_capacity_direct_blender.py' 'paired-capacity'
+                Run-CapacityBlender 'tools/test_mhwi_equipmentmorph_direct_blender.py' 'paired-existing'
+                Run-CapacityBlender 'tools/test_key_selection_preview.py' 'paired-key-preview'
+                $taskPassed=$true
+                $taskDetail='synthetic capacity and existing direct export checks completed; numerical threshold not set'
+            }
             default { throw "Stage $taskStage is not implemented" }
         }
     } catch { $taskDetail=$_.Exception.Message }
@@ -70,6 +87,10 @@ foreach($taskFile in @('tools/test_morph_capacity.cpp','tools/test_morph_capacit
     $taskHashes[$taskFile]=(Get-FileHash -LiteralPath (Join-Path $taskRoot $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 $taskArtifacts=@{}
+foreach($taskFile in @('tools/test_capacity_direct_blender.py','tools/capture_morph_position_reference.py','tools/compare_morph_positions.cpp','tools/morph_reference_json.hpp','tools/test_morph_profile_capacity.py','blender_addon_v044/mhwi_equipmentmorph/backend/emit_equipment_morph_profile.py','blender_addon_v044/mhwi_equipmentmorph/key_selection.py','runtime/EquipmentMorphDiskConfiguration/loader.hpp')) {
+    $taskPath=Join-Path $taskRoot $taskFile
+    if(Test-Path -LiteralPath $taskPath){$taskHashes[$taskFile]=(Get-FileHash -LiteralPath $taskPath -Algorithm SHA256).Hash.ToLowerInvariant()}
+}
 foreach($taskFile in @('sdk/MHWI-EquipmentMorph-0.4.0/include/equipment_morph_key_client.hpp','sdk/MHWI-EquipmentMorph-0.4.0/include/equipment_morph_client.hpp','runtime/EquipmentMorphPartClient/Client.hpp','sdk/MHWI-EquipmentMorph-0.4.0/capacity_tests.hpp','sdk/MHWI-EquipmentMorph-0.4.0/tests.cpp','sdk/MHWI-EquipmentMorph-0.4.0/tests/fixtures/v040/equipment_morph_key_client.hpp','tools/build_mhwi_equipmentmorph_sdk_v04.ps1')) {
     $taskHashes[$taskFile]=(Get-FileHash -LiteralPath (Join-Path $taskRoot $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
