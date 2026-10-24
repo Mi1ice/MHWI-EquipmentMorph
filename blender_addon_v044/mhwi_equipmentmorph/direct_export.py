@@ -11,6 +11,7 @@ import struct
 import sys
 import tempfile
 import numpy as np
+from .capacity import MAX_DYNAMIC_KEYS
 from .authoring import pin,write
 from .backend.equipment_morph_export_pipeline import digest,load_job
 from .backend.equipment_morph_package_pipeline import export_pipeline,package_id,PARTS
@@ -44,7 +45,7 @@ def preflight(asset):
     package_id(asset['package'])
     load_job_validation={'schema':'mhw-equipment-morph-export-job-v2','parts':[dict(part=asset['part'],keys=asset['keys'])]}
     # Same key/part validator used by the existing package pipeline.
-    if not asset['keys'] or len(asset['keys'])>64:raise ValueError('请选择1至64个动态键')
+    if not asset['keys'] or len(asset['keys'])>MAX_DYNAMIC_KEYS:raise ValueError(f'请选择1至{MAX_DYNAMIC_KEYS}个动态键')
     names=[k['source_key'] for k in asset['keys']]
     if len(set(names))!=len(names):raise ValueError('源形态键重复')
     if any(k.get('author_shading') for k in asset['keys']):raise ValueError('联合导出不使用共享作者旋转数据')

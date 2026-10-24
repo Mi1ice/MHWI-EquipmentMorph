@@ -6,6 +6,7 @@ import struct
 
 import numpy as np
 from .prepare_equipment_morph_catalog import PARTS, unique_object, prepare, encode_catalog
+from ..capacity import MAX_DYNAMIC_KEYS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,7 +37,7 @@ def load_job(path):
     if not 0 < len(parts) <= 5 or len({p['part'] for p in parts}) != len(parts):
         raise ValueError('Configure one model per equipment part')
     for part in parts:
-        if part['part'] not in PARTS or not 0 < len(part['keys']) <= 64:
+        if part['part'] not in PARTS or not 0 < len(part['keys']) <= MAX_DYNAMIC_KEYS:
             raise ValueError('Invalid part or key count')
         if len({k['id'] for k in part['keys']}) != len(part['keys']):
             raise ValueError('Duplicate key identifier')

@@ -4,6 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+if __package__:
+    from ..capacity import MAX_DYNAMIC_KEYS
+else:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from capacity import MAX_DYNAMIC_KEYS
 
 ROOT = Path(__file__).resolve().parents[1]
 PARTS = {'head': 0, 'body': 1, 'arms': 2, 'waist': 3, 'legs': 4}
@@ -63,7 +69,7 @@ def prepare(path,override=None):
     if not basis:
         raise ValueError('Empty basis')
     keys = manifest['keys']
-    if not 0 < len(keys) <= 64 or len({key['id'] for key in keys}) != len(keys):
+    if not 0 < len(keys) <= MAX_DYNAMIC_KEYS or len({key['id'] for key in keys}) != len(keys):
         raise ValueError('Invalid or duplicate keys')
     shading = manifest['shading']
     if shading['mode'] != 'shared-author-intent-max':
