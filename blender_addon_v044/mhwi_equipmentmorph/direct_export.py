@@ -41,6 +41,7 @@ def preflight(asset):
     if asset['part'] not in PARTS:raise ValueError('无效装备部位')
     if not collection or collection.library:raise ValueError('请选择本地 MOD3 集合')
     if asset['shading'] not in ('BASELINE','GEOMETRIC'):raise ValueError('联合导出支持基准法线或逐键几何法线')
+    if asset.get('undefined_normal_policy','REJECT') not in ('REJECT','BASELINE'):raise ValueError('无效的无定义几何法线策略')
     model_resource_id(asset['model_id'])
     package_id(asset['package'])
     load_job_validation={'schema':'mhw-equipment-morph-export-job-v2','parts':[dict(part=asset['part'],keys=asset['keys'])]}
@@ -76,6 +77,7 @@ def export_model(module,asset,path):
     from .geometric_normals import transported
     from .normal_authoring import unit
     objects,controlled,_=preflight(asset)
+    normal_policy=asset.get('undefined_normal_policy','REJECT')
     if bpy.context.mode!='OBJECT':raise ValueError('联合导出需要对象模式')
     if bpy.data.collections.get('clonedMod3Meshes'):raise ValueError('导出器临时集合已存在，请先处理该集合')
     source_before={o.name:fingerprint(o) for o in objects}
@@ -110,8 +112,16 @@ def export_model(module,asset,path):
             first={}
             for loop in copy.loops:first.setdefault(loop.vertex_index,loop.index)
             chosen=[first[i] for i in range(len(indices))]
-            copy.normals_split_custom_set([(0.,0.,0.)]*len(copy.loops));copy.update()
-            base=unit(np.asarray([tuple(n.vector) for n in copy.corner_normals]))[chosen]
+            # Clearing the storage, rather than setting zero custom vectors, avoids
+            # decoding authored normal-space data as endpoint geometric normals.
+            custom=copy.attributes.get('custom_normal')
+            if custom:copy.attributes.remove(custom)
+            copy.update()
+            def geometric():
+                values=np.asarray([tuple(n.vector) for n in copy.corner_normals],dtype=np.float64)
+                if not np.isfinite(values).all():raise ValueError('几何法线包含非有限值：'+obj.name)
+                return unit(values)[chosen] if normal_policy=='REJECT' else values[chosen]
+            base=geometric();trace['normal_corners']=chosen
             positions=np.asarray([tuple(v.co) for v in copy.vertices])
             transform=np.asarray(module.exportMatrix @ obj.matrix_world)[:3,:3]
             for key in asset['keys']:
@@ -119,7 +129,7 @@ def export_model(module,asset,path):
                 if block is None:continue
                 delta=(coords(block)-coords(obj.data.shape_keys.reference_key)).astype(np.float64)@transform.T
                 copy.vertices.foreach_set('co',(positions+delta[indices]).astype(np.float32).ravel());copy.update()
-                endpoint=unit(np.asarray([tuple(n.vector) for n in copy.corner_normals]))[chosen]
+                endpoint=geometric()
                 trace['normals'][key['id']]={'base':base.tolist(),'endpoint':endpoint.tolist()}
         finally:bpy.data.meshes.remove(copy)
     def build(model,*args):
@@ -151,7 +161,7 @@ def export_model(module,asset,path):
         if source_before!={o.name:fingerprint(o) for o in objects}:raise ValueError('导出期间源网格数据改变')
     model=path.read_bytes();basis,rows=model_meshes(model)
     if len(rows)!=len(ordered):raise ValueError('序列化网格数量与追溯数量不同')
-    mapping=[];serialized=[];normal_records={k['id']:[] for k in asset['keys']};seen=set()
+    mapping=[];serialized=[];normal_records={k['id']:[] for k in asset['keys']};seen=set();fallbacks=[]
     for trace,row in zip(ordered,rows):
         count=row['count'];disk=np.ndarray((count,3),dtype='<f4',buffer=basis,offset=row['start'],strides=(row['stride'],4))
         if count!=len(trace['indices']) or not np.array_equal(disk,np.asarray(trace['positions'],dtype='<f4')):raise ValueError('序列化顶点与追溯次序不同')
@@ -163,13 +173,22 @@ def export_model(module,asset,path):
         for key,values in trace['normals'].items():
             for i,(base,target) in enumerate(zip(values['base'],values['endpoint'])):
                 offset=row['start']+i*row['stride']+12
-                normal=unit(struct.unpack_from('<3b',basis,offset));direction=transported(normal,base,target)
+                normal=unit(struct.unpack_from('<3b',basis,offset))
+                base_zero=np.linalg.norm(base)<1e-12;target_zero=np.linalg.norm(target)<1e-12
+                if base_zero or target_zero:
+                    if normal_policy!='BASELINE':raise ValueError('几何法线无定义：'+trace['object'])
+                    reason='baseline_and_endpoint_zero' if base_zero and target_zero else ('baseline_zero' if base_zero else 'endpoint_zero')
+                    fallbacks.append(dict(object=trace['object'],mesh=row['mesh'],key_id=key,source_vertex=trace['indices'][i],
+                                          serialized_vertex=i,corner=trace['normal_corners'][i],normal_offset=offset,reason=reason))
+                    continue
+                direction=transported(normal,base,target)
                 if np.linalg.norm(direction-normal)>1e-5:normal_records[key].append((offset,*(direction-normal)))
     if seen!={o.name for o in controlled}:raise ValueError('部分动态网格未由导出器输出')
     normal_data={key:b''.join(struct.pack('<I3f',*record) for record in sorted(records)) for key,records in normal_records.items()}
     return dict(schema='mhwi-direct-export-trace-v1',part=asset['part'],model_id=asset['model_id'],
         model_sha256=digest(model),fully_resolved=True,objects=mapping,exporter='MHW Model Editor 0.12',
-        mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix],serialized_objects=serialized),normal_data
+        mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix],serialized_objects=serialized,
+        undefined_normal_policy=normal_policy,geometric_normal_fallbacks=fallbacks),normal_data
 
 def export_direct(recipe,output,debug=False,trace_callback=None):
     from .backend.capture_equipment_morph_job import capture
@@ -187,13 +206,14 @@ def export_direct(recipe,output,debug=False,trace_callback=None):
         for asset in assets:
             _,_,validation=preflight(asset)
             check=work/(asset['part']+'.keys.json');write(check,validation);load_job(check)
-        parts=[];normal_data={};models=[]
+        parts=[];normal_data={};models=[];fallbacks=[]
         for index,asset in enumerate(assets):
             work=stage/'authoring'/str(index);work.mkdir()
             empty=work/'baseline_rotations.bin';empty.write_bytes(b'')
             model=stage/'nativePC'/(asset['model_id']+'.mod3');model.parent.mkdir(parents=True,exist_ok=True)
             if model.exists():raise ValueError('两个部位使用同一输出模型路径')
             trace,normals=export_model(module,asset,model);mapping=work/(asset['part']+'.trace.json');write(mapping,trace)
+            fallbacks.extend(dict(item,model_id=asset['model_id']) for item in trace['geometric_normal_fallbacks'])
             if trace_callback is not None:trace_callback(index,asset,trace)
             matrix=work/(asset['part']+'.coordinates.json');write(matrix,{'export_matrix':trace['export_matrix']})
             part=dict(part=asset['part'],model_id=asset['model_id'],model=pin(model),mapping=pin(mapping),keys=asset['keys'],author_rotations=pin(empty))
@@ -211,7 +231,7 @@ def export_direct(recipe,output,debug=False,trace_callback=None):
         shutil.rmtree(stage/'generated/nativePC')
         result.update(success=True,models=models,mapping_method='same-export-source-indices',source_data_unchanged=True,
             # Exporter creates/removes datablocks; Blender may mark the scene dirty.
-            scene_mutated=True,blend_saved=False,formal_acceptance_complete=False)
+            scene_mutated=True,blend_saved=False,formal_acceptance_complete=False,geometric_normal_fallbacks=fallbacks)
         write(stage/'result.json',result)
         # Preserve every hashed receipt byte. Absolute paths record the transient
         # run location; users repeat the paired export from the Blender collection.
