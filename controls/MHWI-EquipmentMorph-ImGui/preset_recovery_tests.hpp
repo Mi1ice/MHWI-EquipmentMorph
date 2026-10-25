@@ -17,7 +17,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
     const auto key=[&](const morphgui::Control& control){const auto snapshot=control.Snapshot();for(uint32_t i=0;i<snapshot->data.keyCount;i++)if(snapshot->data.keys[i].target==handle)return snapshot->data.keys[i];throw std::runtime_error("recovery key missing");};
     {
         const auto presets=directory/L"draft"/L"presets";Store(presets).Save(doc);DefaultsStore(presets).Save({{doc.id,MHM_HEAD}});
-        morphgui::Control control;control.ConfigurePresets(presets);control.Connect(checked,MhwMorphGetAssetIdentity);control.Service(100);
+        morphgui::Control control;control.ConfigurePresets(FixturePaths(presets));control.Connect(checked,MhwMorphGetAssetIdentity);control.Service(100);
         control.Post(mhmcontrol::Action::Set,handle,0,.8f);control.Service(120);
         check(control.Snapshot()->presets.dirty&&key(control).contribution==.8f,"read failure fixture starts with a dirty named draft");
         const auto saved=managementtest::Read(presets/(doc.id+".json"));failRead=true;control.Service(400);
@@ -43,7 +43,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
         failRead=false;control.Service(2000);check(!key(control).owned,"discarded disabled drafts cannot return after read recovery");
     }
     {
-        const auto presets=directory/L"unnamed"/L"presets";morphgui::Control control;control.ConfigurePresets(presets);control.Connect(checked,MhwMorphGetAssetIdentity);control.Service(100);
+        const auto presets=directory/L"unnamed"/L"presets";morphgui::Control control;control.ConfigurePresets(FixturePaths(presets));control.Connect(checked,MhwMorphGetAssetIdentity);control.Service(100);
         control.Post(mhmcontrol::Action::Set,handle,0,.7f);control.Service(120);failRead=true;control.Service(400);
         check(control.Snapshot()->presets.dirty&&control.Snapshot()->presets.activeId.empty(),"unnamed drafts also remain dirty across read failures");
         control.PostPreset({Action::EndPreview});control.Service(420);check(!control.Snapshot()->presets.success,"unnamed draft cannot close without consent during read failure");
@@ -54,7 +54,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
         const auto presets=directory/std::to_string(static_cast<unsigned>(action))/L"presets";Store store(presets);store.Save(doc);DefaultsStore(presets).Save({{doc.id,MHM_HEAD}});
         auto incoming=doc;incoming.id=NewId();incoming.name="Imported recovery preset";
         WritePresetText(presets.parent_path()/L"imports"/L"incoming.json",Encode(incoming));store.Save(incoming,true);
-        morphgui::Control control;control.ConfigurePresets(presets);control.Connect(checked,MhwMorphGetAssetIdentity);control.Service(100);
+        morphgui::Control control;control.ConfigurePresets(FixturePaths(presets));control.Connect(checked,MhwMorphGetAssetIdentity);control.Service(100);
         Request request{action,doc.id};
         if(action==Action::Import){control.PostPreset({Action::ScanImports});control.Service(110);const auto& item=control.Snapshot()->presets.incoming->front();request.imports.push_back({item.token,item.name});}
         control.Post(mhmcontrol::Action::Set,handle,0,.8f);control.Service(115);const auto previous=control.Snapshot()->data.source;
@@ -71,7 +71,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
         const auto presets=directory/L"catalog"/L"presets";Store store(presets);store.Save(doc);DefaultsStore policy(presets);policy.Save({{doc.id,MHM_HEAD}});
         const auto saved=managementtest::Read(presets/(doc.id+".json")),linked=managementtest::Read(presets.parent_path()/L"auto-presets.json");
         {std::ofstream broken(presets/L".trash");broken<<"not a directory";}
-        morphgui::Control control;control.ConfigurePresets(presets);control.Connect(checked,MhwMorphGetAssetIdentity);control.Service(100);
+        morphgui::Control control;control.ConfigurePresets(FixturePaths(presets));control.Connect(checked,MhwMorphGetAssetIdentity);control.Service(100);
         check(control.Snapshot()->presets.library->size()==1&&control.Snapshot()->presets.trash->empty(),"trash directory failure does not hide the healthy normal library");
         check(control.Snapshot()->presets.defaults->size()==1&&key(control).owned&&key(control).contribution==.25f,"trash directory failure does not disable healthy automatic defaults");
         check(control.Snapshot()->presets.message.find("回收区")!=std::string::npos,"trash failure retains a specific visible error");

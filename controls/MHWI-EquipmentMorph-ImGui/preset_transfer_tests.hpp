@@ -6,7 +6,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
     auto a=fixture;a.id=NewId();a.name="Saved A";store.Save(a);auto b=a;b.id=NewId();b.name="Saved B";store.Save(b);
     auto recycled=a;recycled.id=NewId();recycled.name="Recycle only";store.Save(recycled,true);
     auto counted=original;counted.submit=managementtest::Submit;
-    morphgui::Control control;control.ConfigurePresets(presets);control.Connect(counted,MhwMorphGetAssetIdentity);uint64_t now=0;
+    morphgui::Control control;control.ConfigurePresets(FixturePaths(presets));control.Connect(counted,MhwMorphGetAssetIdentity);uint64_t now=0;
     const auto step=[&](){control.Service(now+=20,true);};
     const auto job=[&](Request request){control.PostPreset(std::move(request));step();return control.Snapshot()->presets.success;};
     check(job({Action::Apply,a.id}),"apply a baseline before file transfer checks");
@@ -26,7 +26,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
     auto collision=a;collision.parts[0].keys[0].weight=collision.parts[0].keys[0].weight==.5f?.6f:.5f;write(L"02-collision.json",Encode(collision));
     auto incompatible=a;incompatible.name="Imported unmatched";for(auto& part:incompatible.parts)part.modelSha=std::string(64,'f');write(L"03-incompatible.JSON",std::string("\xef\xbb\xbf")+Encode(incompatible));
     write(L"04-broken.json","{");auto version=Encode(a);version.replace(version.find("\"schema\": 2"),11,"\"schema\": 1");write(L"05-version.json",version);
-    write(L"06-large.json",std::string(256*1024+1,' '));
+    write(L"06-large.json",std::string(1024*1024+1,' '));
     std::filesystem::create_directory(imports/L"nested");{std::ofstream file(imports/L"nested"/L"ignored.json");file<<Encode(a);}
     check(job({Action::ScanImports}),"scan publishes valid and invalid preview rows");
     const auto previews=control.Snapshot()->presets.incoming;
@@ -62,7 +62,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
     check(Utf8(suggested)&&suggested.size()<=128&&suggested.ends_with("（导入）"),"generated collision suffix respects the UTF-8 byte limit without splitting characters");
     auto reordered=a;std::reverse(reordered.parts.begin(),reordered.parts.end());for(auto& part:reordered.parts)std::reverse(part.keys.begin(),part.keys.end());
     check(Contents(reordered)==Contents(a),"duplicate comparison ignores part and key serialization order");
-    morphgui::Control offline;offline.ConfigurePresets(presets);offline.PostPreset({Action::ExportAll});offline.Service(20);
+    morphgui::Control offline;offline.ConfigurePresets(FixturePaths(presets));offline.PostPreset({Action::ExportAll});offline.Service(20);
     check(offline.Snapshot()->presets.success&&!offline.Snapshot()->connected,"export works with no connected morph core");
     offline.PostPreset({Action::ScanImports});offline.Service(40);auto offlineRequest=Request{Action::Import};
     for(const auto& item:*offline.Snapshot()->presets.incoming)if(item.document){offlineRequest.imports.push_back({item.token,"Offline import"});break;}

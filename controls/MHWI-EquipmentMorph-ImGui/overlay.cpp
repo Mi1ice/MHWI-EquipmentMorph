@@ -251,7 +251,7 @@ DWORD WINAPI Worker(void* value){
     if(_wcsicmp(path.filename().c_str(),L"MonsterHunterWorld.exe")&&_wcsicmp(path.filename().c_str(),L"EquipmentMorphImGuiFixture.exe"))return 2;
     state=new State;
     const auto folder=path.parent_path()/L"nativePC"/L"plugins"/L"MHWEquipmentMorph"/L"logs";
-    state->control.ConfigurePresets(folder.parent_path()/L"presets");
+    state->control.ConfigurePresets(morphpreset::MakeStoragePaths(folder.parent_path()));
     std::error_code error;std::filesystem::create_directories(folder,error);
     std::ofstream log(folder/(L"imgui-"+std::to_wstring(GetCurrentProcessId())+L".ndjson"));
     log<<"{\"event\":\"imgui_bootstrap\",\"stage\":11,\"state\":\"starting\"}\n";log.flush();

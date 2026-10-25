@@ -26,7 +26,7 @@ struct PresetImportView {
         ImGui::SetNextWindowSizeConstraints(ImVec2((std::min)(640.f,extent.x),(std::min)(420.f,extent.y)),extent);bool opened=true;
         if(!ImGui::BeginPopupModal("导入预设",&opened)){return;}
         ui::Wrapped("将 JSON 放入 imports 文件夹后刷新。导入使用此次预览内容，不会自动应用。",ui::Tone::Muted);
-        ui::Line("目录：nativePC/plugins/MHWEquipmentMorph/imports/",ui::Tone::Muted);
+        ui::Line("目录：nativePC/plugins/MHWEquipmentMorph/panel-v2/imports/",ui::Tone::Muted);
         ImGui::BeginDisabled(waiting!=0);
         if(ImGui::Button("刷新预览"))Submit(control,{morphpreset::Action::ScanImports},waiting);
         ui::NextButton("全选有效项");if(ImGui::Button("全选有效项"))for(const auto& item:*seen)if(item.document)edits[item.token].include=true;

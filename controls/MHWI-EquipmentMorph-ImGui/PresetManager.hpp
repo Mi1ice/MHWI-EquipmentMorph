@@ -2,6 +2,7 @@
 #include "PresetTransfer.hpp"
 #include "PresetDefaults.hpp"
 #include "PanelSettings.hpp"
+#include "PresetPaths.hpp"
 #include "EquipmentLabels.hpp"
 #include "PanelSession.hpp"
 #include <memory>
@@ -141,7 +142,7 @@ class Manager {
             if(request.action==Action::ExportAll)output=documents;
             else{const auto* doc=Find(request.id);if(!doc)throw std::runtime_error("请选择正常列表中的预设");output.push_back(*doc);}
             const auto result=transfer->Export(output,keepAlive);state.success=result.failed==0;
-            state.message="已导出 "+std::to_string(result.count)+" 份，失败 "+std::to_string(result.failed)+"；位置：nativePC/plugins/MHWEquipmentMorph/"+result.folder;
+            state.message="已导出 "+std::to_string(result.count)+" 份，失败 "+std::to_string(result.failed)+"；位置：nativePC/plugins/MHWEquipmentMorph/panel-v2/"+result.folder;
             if(!result.error.empty())state.message+="；"+result.error;
         }
         state.lastId.clear();if(leaseLost)state.message+="；控制租期已失效，临时编辑已清除";
@@ -232,7 +233,8 @@ class Manager {
 public:
     const State& Snapshot()const{return state;}
     MhmResult ConsumeLeaseFailure(){return std::exchange(leaseFailure,MHM_OK);}
-    void Configure(const std::filesystem::path& directory){
+    void Configure(const StoragePaths& paths){
+        const auto& directory=paths.presets;
         store=std::make_unique<Store>(directory);
         transfer=std::make_unique<Transfer>(directory);incoming.clear();state.incoming=std::make_shared<std::vector<Incoming>>();
         defaultsStore=std::make_unique<DefaultsStore>(directory);defaults.clear();observed={};force=0;
@@ -243,7 +245,7 @@ public:
         }
         PublishLibrary();if(invalid){if(!state.message.empty())state.message+="；";state.message+="已跳过 "+std::to_string(invalid)+" 个无效预设文件";}
         policyLoadFailed=false;try{defaults=ResolveDefaults(defaultsStore->Load(),documents);state.autoMessage.clear();}catch(const std::exception& e){policyLoadFailed=true;state.autoMessage=std::string("自动配置读取失败，本次未启用自动使用：")+e.what();}PublishDefaults();
-        settings=std::make_unique<PanelSettings>(directory);try{state.enabled=settings->Load();}catch(const std::exception& e){state.enabled=false;state.autoMessage=std::string("开关配置读取失败，形态键控制已关闭：")+e.what();}
+        settings=std::make_unique<PanelSettings>(paths.panelSettings);try{state.enabled=settings->Load();}catch(const std::exception& e){state.enabled=false;state.autoMessage=std::string("开关配置读取失败，形态键控制已关闭：")+e.what();}
     }
     void SetQuery(IdentityQuery value){query=value;state.available=query!=nullptr;identityHandles={};lastReady=false;choicesDirty=true;}
     void Update(const morphpanel::Snapshot& data,bool ready){

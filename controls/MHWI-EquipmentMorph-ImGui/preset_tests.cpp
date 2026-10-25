@@ -2,6 +2,7 @@
 #include "Control.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/api.cpp"
 #include <cstdio>
+inline morphpreset::StoragePaths FixturePaths(const std::filesystem::path& presets){const auto root=presets.parent_path();return {root,presets,presets/L".trash",root/L"auto-presets.json",root/L"imports",root/L"exports",root/L"panel-settings.json"};}
 #include "preset_management_tests.hpp"
 #include "preset_transfer_tests.hpp"
 #include "preset_auto_tests.hpp"
@@ -29,7 +30,7 @@ int wmain(int argc,wchar_t** argv){try{
     {mhm::Asset asset;asset.part=MHM_HEAD;asset.model="pl/test/unverified";asset.basis.resize(64);mhm::Key key;strcpy_s(key.info.id,"A");key.info.maximum=1;asset.keys.push_back(key);uint64_t handle=0;Core().Attach(asset,handle);
         check(MhwMorphGetAssetIdentity(1,sizeof(identity),handle,&identity)==MHM_NOT_READY&&identity.handle==savedIdentity.handle,"unverified legacy targets never invent an asset fingerprint");Core().Detach(handle);}
     uint64_t underlying=0,revision=0;api.open_source("underlying",100,60000,&underlying);const MhmUpdate base{body,0,.2f};api.submit(underlying,&base,1,&revision);
-    morphgui::Control control;control.ConfigurePresets(directory);control.Connect(api,MhwMorphGetAssetIdentity);uint64_t now=0;
+    morphgui::Control control;control.ConfigurePresets(FixturePaths(directory));control.Connect(api,MhwMorphGetAssetIdentity);uint64_t now=0;
     auto service=[&](){control.Service(now+=20,true);};
     auto state=[&](uint64_t target,uint32_t key){const auto data=control.Snapshot()->data;for(uint32_t i=0;i<data.keyCount;i++)if(data.keys[i].target==target&&data.keys[i].index==key)return data.keys[i];throw std::runtime_error("missing key");};
     auto request=[&](morphpreset::Action action,std::string id={},std::string name={}){control.PostPreset({action,std::move(id),std::move(name)});service();return control.Snapshot()->presets.success;};
@@ -55,13 +56,13 @@ int wmain(int argc,wchar_t** argv){try{
     check(!request(morphpreset::Action::SaveAs,{},"   "),"blank preset names are rejected");
     check(request(morphpreset::Action::SaveAs,{},"恢复保存"),"saving can recover after a preset validation error");
     auto conflict=first;conflict.id=NewId();conflict.name="冲突测试";conflict.parts[1].keys.push_back({"B",.5f});store.Save(conflict);
-    control.ConfigurePresets(directory);const auto conflictBefore=submissions;
+    control.ConfigurePresets(FixturePaths(directory));const auto conflictBefore=submissions;
     check(!request(morphpreset::Action::Apply,conflict.id)&&submissions==conflictBefore+1&&state(body,0).contribution==.6f&&!state(arm,1).owned,"exclusive-group batch rejection preserves every previous contribution");
     check(request(morphpreset::Action::Apply,firstId),"valid preset applies after a rejected batch");
-    auto changed=first;changed.id=NewId();changed.name="同名模型不同内容";changed.parts[0].modelSha=std::string(64,'f');store.Save(changed);control.ConfigurePresets(directory);
+    auto changed=first;changed.id=NewId();changed.name="同名模型不同内容";changed.parts[0].modelSha=std::string(64,'f');store.Save(changed);control.ConfigurePresets(FixturePaths(directory));
     const auto mismatchBefore=submissions;
     check(!request(morphpreset::Action::Apply,changed.id)&&submissions==mismatchBefore&&state(body,0).contribution==.6f,"same resource path with different MOD3 digest never submits");
-    changed.id=NewId();changed.name="数据包变化";changed.parts[0].modelSha=first.parts[0].modelSha;changed.parts[0].packSha=std::string(64,'f');store.Save(changed);control.ConfigurePresets(directory);
+    changed.id=NewId();changed.name="数据包变化";changed.parts[0].modelSha=first.parts[0].modelSha;changed.parts[0].packSha=std::string(64,'f');store.Save(changed);control.ConfigurePresets(FixturePaths(directory));
     check(!request(morphpreset::Action::Apply,changed.id)&&submissions==mismatchBefore,"changed morph deltas are incompatible even with the same model and key names");
     Core().Detach(arm);service();const auto absentBefore=submissions;
     check(!request(morphpreset::Action::Apply,firstId)&&submissions==absentBefore&&state(body,0).contribution==.6f,"missing part rejects the entire preset without partially changing body");
@@ -84,7 +85,7 @@ int wmain(int argc,wchar_t** argv){try{
     control.Post(Action::Set,body,0,.45f);check(request(morphpreset::Action::SaveAs,{},"独立贡献"),"panel contribution can be saved while another source has priority");
     bool contributionOnly=false;for(const auto& doc:store.Load().documents)if(doc.name=="独立贡献")contributionOnly=doc.parts[0].keys[0].weight==.45f;
     check(contributionOnly&&state(body,0).state.requested==.9f,"preset never captures another plugin's winning weight");api.close_source(higher);
-    morphgui::Control legacy;legacy.ConfigurePresets(directory);legacy.Connect(api);
+    morphgui::Control legacy;legacy.ConfigurePresets(FixturePaths(directory));legacy.Connect(api);
     check(!legacy.Snapshot()->presets.available&&legacy.Snapshot()->ready,"older cores retain ordinary controls while presets are disabled");
     auto reject=[&](const std::string& text,const char* why){bool refused=false;try{Decode(text);}catch(const std::exception&){refused=true;}check(refused,why);};
     reject(encoded.substr(0,encoded.size()-3),"truncated JSON rejected");

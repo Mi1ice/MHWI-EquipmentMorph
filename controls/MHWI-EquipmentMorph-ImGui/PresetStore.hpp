@@ -48,7 +48,7 @@ public:
             if(++entries>4096)throw std::runtime_error("预设目录文件过多");if(entry.path().extension()!=L".json")continue;
             if(catalog.documents.size()>=(deleted?1024u:256u))throw std::runtime_error("预设目录超过容量限制");
             try{
-                NoLink(entry.path());const auto size=entry.file_size();if(!size||size>256*1024)throw std::runtime_error("预设文件大小无效");
+                NoLink(entry.path());const auto size=entry.file_size();if(!size||size>MaxFileBytes)throw std::runtime_error("预设文件大小无效");
                 std::ifstream file(entry.path(),std::ios::binary);std::string text(static_cast<size_t>(size),'\0');
                 if(!file.read(text.data(),static_cast<std::streamsize>(size)))throw std::runtime_error("无法读取预设");
                 auto doc=Decode(text);if(entry.path().stem().string()!=doc.id)throw std::runtime_error("预设编号与文件名不同");
@@ -58,7 +58,7 @@ public:
         std::sort(catalog.documents.begin(),catalog.documents.end(),[](const auto& a,const auto& b){return a.name==b.name?a.id<b.id:a.name<b.name;});return catalog;
     }
     void Save(const Document& doc,bool deleted=false,bool replace=true)const{
-        const auto text=Encode(doc);const auto directory=Directory(deleted);std::filesystem::create_directories(directory);NoLink(directory);
+        const auto text=Encode(doc);(void)Decode(text);const auto directory=Directory(deleted);std::filesystem::create_directories(directory);NoLink(directory);
         WritePresetText(directory/(doc.id+".json"),text,replace);
     }
     void Trash(const std::string& id)const{Move(id,false);}

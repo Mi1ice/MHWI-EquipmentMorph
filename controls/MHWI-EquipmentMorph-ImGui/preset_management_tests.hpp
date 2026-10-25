@@ -11,7 +11,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& api,con
     auto a=fixture;a.id=NewId();a.name="Alpha##中文";store.Save(a);
     auto b=a;b.id=NewId();b.name="Beta";b.parts[0].modelSha=std::string(64,'f');store.Save(b);
     auto c=a;c.id=NewId();c.name="Gamma";for(auto& part:c.parts)part.modelSha=std::string(64,'f');store.Save(c);
-    morphgui::Control control;control.ConfigurePresets(directory);control.Connect(counted,Identity);uint64_t now=0;
+    morphgui::Control control;control.ConfigurePresets(FixturePaths(directory));control.Connect(counted,Identity);uint64_t now=0;
     const auto step=[&](){control.Service(now+=20,true);};
     const auto job=[&](Action action,const std::string& id,const std::string& name=std::string{},bool deleted=false){control.PostPreset({action,id,name,deleted});step();return control.Snapshot()->presets.success;};
     const auto choice=[&](const std::string& id){for(const auto& item:*control.Snapshot()->presets.choices)if(item.id==id)return item;throw std::runtime_error("management choice");};
@@ -41,11 +41,11 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& api,con
     check(deleted->presets.activeId.empty()&&deleted->presets.dirty&&deleted->data.source==source&&deleted->data.keys[0].contribution==weight&&submits==beforeSubmits,"deleting active preset leaves pose owned and marks configuration unsaved");
     check(deleted->presets.choices->size()==2&&deleted->presets.removed->size()==1,"deleted preset leaves main catalog and enters recycle catalog");
     check(!job(Action::Trash,a.id)&&submits==beforeSubmits,"duplicate deletion fails without changing live controls");
-    morphgui::Control offline;offline.ConfigurePresets(directory);uint64_t offlineNow=0;
+    morphgui::Control offline;offline.ConfigurePresets(FixturePaths(directory));uint64_t offlineNow=0;
     const auto offlineJob=[&](Action action,const std::string& id,const std::string& name=std::string{},bool removed=false){offline.PostPreset({action,id,name,removed});offline.Service(offlineNow+=20);return offline.Snapshot()->presets.success;};
     check(offline.Snapshot()->presets.removed->size()==1&&!offline.Snapshot()->connected,"recycle entries survive reload without a connected core");
     check(offlineJob(Action::Rename,a.id,"Restore name",true),"recycle presets can be renamed without worn equipment or a core session");
-    auto collision=a;collision.id=NewId();collision.name="Restore name";store.Save(collision);offline.ConfigurePresets(directory);
+    auto collision=a;collision.id=NewId();collision.name="Restore name";store.Save(collision);offline.ConfigurePresets(FixturePaths(directory));
     check(!offlineJob(Action::Restore,a.id)&&std::filesystem::exists(directory/L".trash"/(a.id+".json")),"restore name collision retains the recycled preset");
     check(offlineJob(Action::Rename,a.id,"Recovered",true)&&offlineJob(Action::Restore,a.id),"rename in recycle resolves restore conflict without overwriting");
     check(offline.Snapshot()->presets.removed->empty()&&offline.Snapshot()->presets.choices->size()==4&&!offline.Snapshot()->presets.selectLast,"restore updates catalogs but does not auto-select or apply");
@@ -66,14 +66,14 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& api,con
     const auto permanent=directory/L"permanent";Store permanentStore(permanent);
     auto p=a;p.id=NewId();p.name="Permanent one";permanentStore.Save(p);permanentStore.Save(p,true);
     auto q=p;q.id=NewId();q.name="Hidden by search";permanentStore.Save(q,true);
-    morphgui::Control manager;manager.ConfigurePresets(permanent);uint64_t managerNow=0;
+    morphgui::Control manager;manager.ConfigurePresets(FixturePaths(permanent));uint64_t managerNow=0;
     const auto manage=[&](Action action,const std::string& id=std::string{}){manager.PostPreset({action,id,{},true});manager.Service(managerNow+=20);return manager.Snapshot()->presets.success;};
     const auto preserved=Read(permanent/(p.id+".json"));
     check(manage(Action::Purge,p.id),"permanent deletion works without a core session");
     check(!std::filesystem::exists(permanent/L".trash"/(p.id+".json"))&&Read(permanent/(p.id+".json"))==preserved,"permanent deletion only touches the recycle copy of an identifier");
     check(manager.Snapshot()->presets.removed->size()==1&&manager.Snapshot()->presets.library->size()==1&&!manager.Snapshot()->presets.selectLast,"permanent deletion updates recycle catalog without changing active library or selection");
     check(!manage(Action::Purge,p.id)&&std::filesystem::exists(permanent/(p.id+".json")),"repeated permanent delete cannot fall back to the active directory");
-    permanentStore.Save(p,true);manager.ConfigurePresets(permanent);
+    permanentStore.Save(p,true);manager.ConfigurePresets(FixturePaths(permanent));
     const auto readonly=permanent/L".trash"/(q.id+".json");SetFileAttributesW(readonly.c_str(),FILE_ATTRIBUTE_READONLY);
     check(!manage(Action::Purge,q.id)&&manager.Snapshot()->presets.removed->size()==2,"failed permanent delete retains its recycle entry");
     const auto damaged=permanent/L".trash"/(NewId()+".json");std::ofstream(damaged)<<"invalid preset";
@@ -86,7 +86,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& api,con
     SetFileAttributesW(readonly.c_str(),FILE_ATTRIBUTE_NORMAL);
     check(manage(Action::PurgeAll)&&manager.Snapshot()->presets.removed->empty(),"bulk delete can retry remaining failed entries");
     check(manage(Action::PurgeAll),"empty recycle deletion is a harmless no-op");
-    manager.ConfigurePresets(permanent);check(manager.Snapshot()->presets.removed->empty(),"permanent deletion remains effective after catalog reload");
+    manager.ConfigurePresets(FixturePaths(permanent));check(manager.Snapshot()->presets.removed->empty(),"permanent deletion remains effective after catalog reload");
     permanentStore.Save(p,true);unsigned keepAliveCalls=0;
     const auto purged=permanentStore.PurgeAll([&](){keepAliveCalls++;});
     check(purged.ids.size()==1&&keepAliveCalls>=2,"bulk deletion offers lease renewal during enumeration and deletion");

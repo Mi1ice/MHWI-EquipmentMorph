@@ -39,7 +39,7 @@ public:
         for(const auto& path:files){
             if(keepAlive)keepAlive();Incoming item;item.token=NewId();item.file=Utf8Path(path.filename());
             try{
-                NoLink(path);const auto size=std::filesystem::file_size(path);if(!size||size>256*1024)throw std::runtime_error("文件大小无效（最多 256 KiB）");
+                NoLink(path);const auto size=std::filesystem::file_size(path);if(!size||size>MaxFileBytes)throw std::runtime_error("文件大小无效（最多 1 MiB）");
                 std::ifstream file(path,std::ios::binary);std::string text(static_cast<size_t>(size),'\0');if(!file.read(text.data(),static_cast<std::streamsize>(size)))throw std::runtime_error("无法读取文件");
                 std::string_view json=text;if(json.starts_with("\xef\xbb\xbf"))json.remove_prefix(3);
                 auto doc=Decode(json);item.name=doc.name;item.document=std::make_shared<const Document>(std::move(doc));

@@ -16,7 +16,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
     Document b{NewId(),"Auto B",{part(MHM_HEAD,.75f)}};store.Save(b);
     check(policy.Load().empty()&&!std::filesystem::exists(policyPath),"first run does not create or enable an automatic policy");
     std::unique_ptr<morphgui::Control> control;uint64_t now=0;
-    const auto connect=[&](){control=std::make_unique<morphgui::Control>();control->ConfigurePresets(presets);control->Connect(counted,MhwMorphGetAssetIdentity);control->Service(now+=300,false);};
+    const auto connect=[&](){control=std::make_unique<morphgui::Control>();control->ConfigurePresets(FixturePaths(presets));control->Connect(counted,MhwMorphGetAssetIdentity);control->Service(now+=300,false);};
     const auto step=[&](uint64_t elapsed=20){control->Service(now+=elapsed,false);};
     const auto job=[&](Request request){control->PostPreset(std::move(request));step();return control->Snapshot()->presets.success;};
     const auto key=[&](uint64_t target,uint32_t index=0){const auto snapshot=control->Snapshot();for(uint32_t i=0;i<snapshot->data.keyCount;i++)if(snapshot->data.keys[i].target==target&&snapshot->data.keys[i].index==index)return snapshot->data.keys[i];throw std::runtime_error("automatic fixture key missing");};
@@ -79,7 +79,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
     check(job({Action::Save,a.id})&&FindPart(saved(a.id),MHM_WAIST)->keys[0].weight==.33f&&FindPart(saved(a.id),MHM_HEAD)->keys[0].weight==.45f,"saving A preserves A's off-editor head value rather than copying automatic B");
     const auto lost=control->Snapshot()->data.source;api.close_source(lost);step(1000);
     check(key(head).contribution==.7f&&key(waist).contribution==.33f,"unexpected source expiration restores saved defaults without replaying drafts");
-    auto conflict=b;conflict.id=NewId();conflict.name="Bad default";conflict.parts[0].keys[1].weight=.2f;store.Save(conflict);control->ConfigurePresets(presets);
+    auto conflict=b;conflict.id=NewId();conflict.name="Bad default";conflict.parts[0].keys[1].weight=.2f;store.Save(conflict);control->ConfigurePresets(FixturePaths(presets));
     check(job({Action::SetDefault,conflict.id}),"an incompatible key combination can be diagnosed during automatic submission");
     const auto oldHead=key(head).contribution;check(job({Action::Resume})&&!control->Snapshot()->presets.autoMessage.empty()&&key(head).contribution==oldHead,"rejected automatic batch preserves all current weights and reports its error");
     const auto rejected=submissions;step(300);step(300);check(submissions==rejected,"a rejected batch is not retried every equipment scan");
@@ -145,7 +145,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
     check(job({Action::EndPreview}),"a clean preview can close after acknowledging a rejected edit");
     Core().Detach(head);head=Attach(MHM_HEAD,'f','b');step(300);edit(head,.3f);
     check(job(closeDiscard)&&!key(head).owned&&key(waist).contribution==.66f,"closing releases a mismatched temporary part and restores compatible defaults independently");
-    PanelSettings settings(presets);const auto settingsPath=directory/L"panel-settings.json";
+    PanelSettings settings(directory/L"panel-settings.json");const auto settingsPath=directory/L"panel-settings.json";
     check(settings.Load()&&!std::filesystem::exists(settingsPath),"missing switch settings default to enabled without creating a file");
     check(morphequipment::Label("pl/f_equip/pl105_0000/wst/mod/f_wst105_0000")=="冰狼（pl105_0000）","equipment labels include the catalogue name and complete resource suffix");
     check(morphequipment::Label("pl/m_equip/pl105_0000/body/mod/m_body105_0000")=="冰狼（pl105_0000）","male and female paths resolve their exact equipment names");

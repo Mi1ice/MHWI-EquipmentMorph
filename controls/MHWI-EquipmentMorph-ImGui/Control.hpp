@@ -56,7 +56,7 @@ class Control {
 public:
     std::shared_ptr<const ControlSnapshot> Snapshot()const{return published.load();}
     bool Connected()const{return current.connected;} // Worker only.
-    void ConfigurePresets(const std::filesystem::path& directory){presets.Configure(directory);presets.Update(current.data,current.ready);current.presets=presets.Snapshot();Publish();}
+    void ConfigurePresets(const morphpreset::StoragePaths& paths){presets.Configure(paths);presets.Update(current.data,current.ready);current.presets=presets.Snapshot();Publish();}
     MhmResult Connect(const MhmApi& api,morphpreset::IdentityQuery identity=nullptr){
         auto next=std::make_unique<morphpanel::Session>();const auto result=next->Connect(api);
         if(result!=MHM_OK){current.scan=result;Publish();return result;}
