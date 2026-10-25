@@ -9,7 +9,8 @@ if($Stage -ne 'All'){@{schema='mhwi-panel-capacity-v1';stage='All';software_chec
 . (Join-Path $PSScriptRoot 'windows-toolchain.ps1')
 $taskTools=Get-EquipmentMorphToolchain
 $taskCompiler=Join-Path $taskTools.CompilerRoot 'bin/Hostx64/x64/cl.exe'
-$taskIncludes=@((Join-Path $taskTools.CompilerRoot 'include'))
+$taskLabels=& (Join-Path $PSScriptRoot 'build_imgui_equipment_labels.ps1') -Output (Join-Path $taskOutput 'EquipmentLabels.generated.hpp')
+$taskIncludes=@($taskOutput,(Join-Path $taskTools.CompilerRoot 'include'))
 foreach($taskPart in @('ucrt','shared','um')){$taskIncludes+=Join-Path $taskTools.SdkRoot ('Include/'+$taskTools.SdkVersion+'/'+$taskPart)}
 $taskLibraries=@((Join-Path $taskTools.CompilerRoot 'lib/x64'))
 foreach($taskPart in @('ucrt','um')){$taskLibraries+=Join-Path $taskTools.SdkRoot ('Lib/'+$taskTools.SdkVersion+'/'+$taskPart+'/x64')}
@@ -34,6 +35,14 @@ if($Stage -in @('Session','All')){
     $taskLegacy=Build-PanelTest 'runtime/EquipmentMorphControlBridge/tests.cpp' 'LegacySessionTests'
     & $taskLegacy
     if($LASTEXITCODE -ne 0){throw 'Legacy session checks failed'}
+}
+if($Stage -in @('Control','All')){
+    $taskControl=Build-PanelTest 'controls/MHWI-EquipmentMorph-ImGui/control_tests.cpp' 'ImGuiControlTests'
+    & $taskControl
+    if($LASTEXITCODE -ne 0){throw 'Existing control checks failed'}
+    $taskPreset=Build-PanelTest 'controls/MHWI-EquipmentMorph-ImGui/preset_tests.cpp' 'ImGuiPresetTests'
+    & $taskPreset
+    if($LASTEXITCODE -ne 0){throw 'Existing preset checks failed'}
 }
 $taskHashes=[ordered]@{}
 Get-ChildItem (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui') -File | Where-Object {$_.Extension -in @('.hpp','.cpp')} | Sort-Object FullName | ForEach-Object {$taskHashes[[IO.Path]::GetRelativePath($taskRoot,$_.FullName).Replace('\','/')]=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}

@@ -113,7 +113,7 @@ int main(){try{
         check(polling.Snapshot()->data.targetCount==2,"weight read reuses metadata between discovery scans");
         polling.Service(251,true);
         check(polling.Snapshot()->data.targetCount==3,"visible weight reads do not postpone equipment discovery");
-        mhmcontrol::Session session(counted);mhmcontrol::Response readback;
+        morphpanel::Session session;session.Connect(counted);morphpanel::Snapshot readback;
         check(session.Snapshot(readback)==MHM_OK,"read failure fixture discovers complete state");
         readback.keys[0].state.applied=.123f;const auto saved=readback;failWeightTarget=arm;
         check(session.Weights(readback)==MHM_NOT_READY&&readback.revision==saved.revision&&readback.keys[0].state.applied==saved.keys[0].state.applied,
@@ -148,14 +148,14 @@ int main(){try{
         check(!filter.Visible("different",false,0,false,5,5),"finished filtered row disappears after acknowledgement");
         filter.Select(body);check(filter.mode==3&&filter.search[0]!=0,"same target preserves filters across panel hide and reopen");
         filter.Select(arm);check(filter.mode==0&&!filter.search[0],"target replacement clears search and state filters");
-        mhmcontrol::Session session(api);mhmcontrol::Request set;set.action=Action::Set;set.target=body;set.key=0;set.weight=0;
-        check(session.Change(set)==MHM_OK,"filter fixture owns an explicit zero");set.key=1;set.weight=tiny;
-        check(session.Change(set)==MHM_OK,"filter fixture owns a precise tiny weight");mhmcontrol::Response data;
+        morphpanel::Session session;session.Connect(api);mhmcontrol::Request set;set.action=Action::Set;set.target=body;set.key=0;set.weight=0;
+        check(session.ChangeMany({&set,1})==MHM_OK,"filter fixture owns an explicit zero");set.key=1;set.weight=tiny;
+        check(session.ChangeMany({&set,1})==MHM_OK,"filter fixture owns a precise tiny weight");morphpanel::Snapshot data;
         check(session.Snapshot(data)==MHM_OK,"filter fixture reads full ownership");
         filter.mode=3;std::vector<const mhmcontrol::Key*> visible;
         for(uint32_t i=0;i<data.keyCount;i++){const auto& k=data.keys[i];if(filter.Matches(k.info.id,k.owned!=0,k.contribution))visible.push_back(&k);}
         check(visible.size()==1&&visible[0]->target==body&&visible[0]->index==1,"filtered first row preserves original target and key index");
-        set.target=visible[0]->target;set.key=visible[0]->index;set.weight=.37f;check(session.Change(set)==MHM_OK,"filtered key edit submits its original identity");
+        set.target=visible[0]->target;set.key=visible[0]->index;set.weight=.37f;check(session.ChangeMany({&set,1})==MHM_OK,"filtered key edit submits its original identity");
         session.Snapshot(data);unsigned owned=0;bool zero=false,edited=false;
         for(uint32_t i=0;i<data.keyCount;i++){const auto& k=data.keys[i];if(k.owned){owned++;zero=zero||(k.target==body&&k.index==0&&k.contribution==0);edited=edited||(k.target==body&&k.index==1&&k.contribution==.37f);}}
         check(owned==2&&zero&&edited,"hidden owned zero remains in full snapshot for preset capture and is not changed by visible edit");session.Release();
@@ -170,7 +170,7 @@ int main(){try{
         ExpressionMock::state={};ExpressionMock::state.ready=1;client.Service(100);
         check(client.Get().connected&&!client.Get().busy,"optional expression worker discovered independently of morph control");
         client.Service(150);check(ExpressionMock::reads==1,"expression polling bounded outside render thread");
-        mhmcontrol::Response data;data.targetCount=1;data.keyCount=2;
+        morphpanel::Snapshot data;data.targetCount=1;data.keyCount=2;data.targets.resize(1);data.keys.resize(2);
         data.targets[0].info.handle=4321;data.targets[0].info.part=MHM_BODY;strcpy_s(data.targets[0].info.model_id,"synthetic/face");data.targets[0].first=0;data.targets[0].count=2;
         for(uint32_t i=0;i<2;++i){data.keys[i].target=4321;data.keys[i].index=i;strcpy_s(data.keys[i].info.id,i?"eyes.closed":"unrelated");data.keys[i].info.maximum=i?1.f:.5f;}
         check(client.Change({ExprAction::Map,false,4321,1},data,true)==MHM_OK&&client.Get().busy,"explicit expression mapping queued with acknowledgment");

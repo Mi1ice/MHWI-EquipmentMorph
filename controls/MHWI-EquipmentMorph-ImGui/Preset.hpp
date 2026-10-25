@@ -1,5 +1,5 @@
 #pragma once
-#include "../../runtime/EquipmentMorphControlBridge/Protocol.hpp"
+#include "PanelData.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/include/mhw_morph_identity.h"
 #include <Windows.h>
 #include <algorithm>
@@ -108,7 +108,7 @@ using Identities=std::array<MhmAssetIdentity,5>;
 inline bool ValidIdentity(const MhmAssetIdentity& identity,uint64_t handle){return identity.handle==handle&&identity.model_sha256[64]==0&&identity.pack_sha256[64]==0&&Hex(std::string_view(identity.model_sha256,64),64)&&Hex(std::string_view(identity.pack_sha256,64),64);}
 struct PartMatch {uint32_t part=0;std::string reason;};
 struct Match {bool compatible=false;std::string message;std::vector<MhmUpdate> updates;unsigned matched=0,total=0;std::vector<PartMatch> parts;};
-inline Match Check(const Document& doc,const mhmcontrol::Response& data,const Identities& identities){
+inline Match Check(const Document& doc,const morphpanel::Snapshot& data,const Identities& identities){
     Match result;unsigned matched=0;std::string reason;
     for(const auto& part:doc.parts){
         const mhmcontrol::Target* target=nullptr;for(uint32_t i=0;i<data.targetCount;i++)if(data.targets[i].info.part==part.part)target=&data.targets[i];
@@ -129,7 +129,7 @@ inline Match Check(const Document& doc,const mhmcontrol::Response& data,const Id
     result.compatible=matched==doc.parts.size();result.message=result.compatible?"全部匹配（"+std::to_string(matched)+" 个部位）":"匹配 "+std::to_string(matched)+"／"+std::to_string(doc.parts.size())+" · "+reason;
     if(!result.compatible)result.updates.clear();return result;
 }
-inline Document Capture(const mhmcontrol::Response& data,const Identities& identities,std::string id,std::string name){
+inline Document Capture(const morphpanel::Snapshot& data,const Identities& identities,std::string id,std::string name){
     Document doc;doc.id=std::move(id);doc.name=std::move(name);
     for(uint32_t i=0;i<data.targetCount;i++){
         const auto& target=data.targets[i];Part part;part.part=target.info.part;part.model=target.info.model_id;
@@ -140,7 +140,7 @@ inline Document Capture(const mhmcontrol::Response& data,const Identities& ident
     }
     if(doc.parts.empty())throw std::runtime_error("请先接管至少一个形态键；已接管的零权重也可保存");Validate(doc);return doc;
 }
-inline bool SameContributions(const Document& doc,const mhmcontrol::Response& data,const Identities& identities){
+inline bool SameContributions(const Document& doc,const morphpanel::Snapshot& data,const Identities& identities){
     const auto match=Check(doc,data,identities);if(!match.compatible)return false;size_t owned=0;
     for(uint32_t i=0;i<data.keyCount;i++)if(data.keys[i].owned){owned++;const auto& key=data.keys[i];const auto found=std::find_if(match.updates.begin(),match.updates.end(),[&](const auto& v){return v.target==key.target&&v.key==key.index&&v.weight==key.contribution;});if(found==match.updates.end())return false;}
     return owned==match.updates.size();

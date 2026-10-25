@@ -41,7 +41,7 @@ public:
         current.busy=waiting!=0;
         if(state.tick&&now>state.tick&&now-state.tick>1500){current.connected=false;current.result=MHM_NOT_READY;}
     }
-    MhmResult Change(const Request& request,const mhmcontrol::Response& data,bool ready){
+    MhmResult Change(const Request& request,const morphpanel::Snapshot& data,bool ready){
         hasOperation=true;
         if(!current.connected||!current.state.ready)return current.result=MHM_NOT_READY;
         if(waiting)return current.result=MHM_CAPACITY;

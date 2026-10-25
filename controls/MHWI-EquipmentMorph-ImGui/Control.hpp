@@ -1,5 +1,5 @@
 #pragma once
-#include "../../runtime/EquipmentMorphControlBridge/Session.hpp"
+#include "PanelSession.hpp"
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -11,7 +11,7 @@
 
 namespace morphgui {
 struct ControlSnapshot {
-    mhmcontrol::Response data;
+    morphpanel::Snapshot data;
     bool connected=false,ready=false;
     MhmResult operation=MHM_OK,scan=MHM_NOT_READY;
     uint64_t completed=0;
@@ -21,7 +21,7 @@ struct ControlSnapshot {
 // Only the ordinary plugin worker calls the API. Render/input threads exchange
 // immutable snapshots and coalesced commands; target handles prevent replay.
 class Control {
-    std::unique_ptr<mhmcontrol::Session> session;
+    std::unique_ptr<morphpanel::Session> session;
     morphpreset::Manager presets;
     morphexpression::Client expression;
     ControlSnapshot current;
@@ -37,8 +37,8 @@ class Control {
     void Publish(){current.expression=expression.Get();published.store(std::make_shared<ControlSnapshot>(current));}
     void Refresh(){
         if(!session){current.ready=false;current.scan=MHM_NOT_READY;presets.Update(current.data,false);current.presets=presets.Snapshot();return;}
-        mhmcontrol::Response next;current.scan=session->Snapshot(next);
-        current.ready=current.scan==MHM_OK&&mhmcontrol::Valid(next,0,0);
+        morphpanel::Snapshot next;current.scan=session->Snapshot(next);
+        current.ready=current.scan==MHM_OK&&morphpanel::Valid(next,session->Limits());
         if(current.ready)current.data=next;
         else if(current.scan==MHM_OK)current.scan=MHM_INVALID;
         presets.Update(current.data,current.ready);current.presets=presets.Snapshot();
@@ -46,7 +46,7 @@ class Control {
     void RefreshWeights(){
         if(!current.ready){Refresh();return;}
         auto next=current.data;current.scan=session->Weights(next);
-        if(current.scan==MHM_OK&&mhmcontrol::Valid(next,0,0)){current.data=next;current.ready=true;}
+        if(current.scan==MHM_OK&&morphpanel::Valid(next,session->Limits())){current.data=next;current.ready=true;}
         else Refresh(); // Retired handles require fresh discovery, never replay.
     }
     void Automatic(){
@@ -58,20 +58,16 @@ public:
     bool Connected()const{return current.connected;} // Worker only.
     void ConfigurePresets(const std::filesystem::path& directory){presets.Configure(directory);presets.Update(current.data,current.ready);current.presets=presets.Snapshot();Publish();}
     MhmResult Connect(const MhmApi& api,morphpreset::IdentityQuery identity=nullptr){
-        constexpr auto required=MHM_CAP_BATCH|MHM_CAP_LAYERS|MHM_CAP_LEASE|MHM_CAP_PART_LIFECYCLE;
-        if(api.version!=MHM_API_VERSION||api.bytes!=sizeof(api)||(api.capabilities&required)!=required
-           ||!api.limits||!api.target_at||!api.key_at||!api.open_source||!api.close_source||!api.heartbeat||!api.submit||!api.read_weights){current.scan=MHM_VERSION;Publish();return MHM_VERSION;}
-        MhmLimits limits{};const auto result=api.limits(&limits);
-        if(result!=MHM_OK)return result;
-        if(!limits.targets||limits.targets>mhmcontrol::MaxTargets||!limits.keys_per_target||limits.keys_per_target>64||limits.batch_updates<mhmcontrol::MaxKeys){current.scan=MHM_CAPACITY;Publish();return MHM_CAPACITY;}
-        session=std::make_unique<mhmcontrol::Session>(api);presets.SourceExpired();presets.SetQuery(identity);expression.SetIdentity(identity);current={};current.connected=true;Refresh();Publish();return current.scan;
+        auto next=std::make_unique<morphpanel::Session>();const auto result=next->Connect(api);
+        if(result!=MHM_OK){current.scan=result;Publish();return result;}
+        session=std::move(next);presets.SourceExpired();presets.SetQuery(identity);expression.SetIdentity(identity);current={};current.connected=true;Refresh();Publish();return current.scan;
     }
     uint64_t Post(mhmcontrol::Action action,uint64_t target=0,uint32_t key=0,float weight=0){
-        std::scoped_lock lock(commands);const auto ticket=++sequence;
+        std::scoped_lock lock(commands);if(action!=mhmcontrol::Action::Release&&pending.size()>=morphpanel::MaxKeys&&!pending.contains({target,key}))return 0;const auto ticket=++sequence;
         if(action==mhmcontrol::Action::Release){pending.clear();queued.clear();canceledThrough=ticket;releasePending=true;}
         else{
             const Identity id{target,key};
-            if(pending.size()<mhmcontrol::MaxKeys||pending.contains(id)){
+            if(pending.size()<morphpanel::MaxKeys||pending.contains(id)){
                 mhmcontrol::Request request;request.action=action;request.target=target;request.key=key;request.weight=weight;pending[id]=request;
             }
         }return ticket;
@@ -99,13 +95,16 @@ public:
             if(item.release){current.operation=session?session->Release():MHM_NOT_READY;presets.Pause();}
             bool accepted=session&&!expired;
             if(!session&&!item.batch.empty())current.operation=MHM_NOT_READY;
-            if(session&&!expired)for(const auto& [id,request]:item.batch){
-                (void)id;Refresh();
-                if(!current.presets.enabled){current.operation=MHM_NOT_READY;accepted=false;continue;}
-                if(!current.ready){current.operation=current.scan;accepted=false;continue;}
-                const auto end=current.data.keys.begin()+current.data.keyCount;
-                const auto found=std::find_if(current.data.keys.begin(),end,[&](const auto& k){return k.target==request.target&&k.index==request.key;});
-                current.operation=found==end?MHM_STALE:session->Change(request);if(current.operation!=MHM_OK)accepted=false;else presets.Edited(request.target,current.data);
+            if(session&&!expired&&!item.batch.empty()){
+                Refresh();
+                if(!current.presets.enabled){current.operation=MHM_NOT_READY;accepted=false;}
+                else if(!current.ready){current.operation=current.scan;accepted=false;}
+                else{
+                    std::vector<mhmcontrol::Request> batch;batch.reserve(item.batch.size());
+                    for(const auto& [id,request]:item.batch){(void)id;batch.push_back(request);}
+                    current.operation=session->ChangeMany(batch);accepted=current.operation==MHM_OK;
+                    if(accepted)for(const auto& request:batch)presets.Edited(request.target,current.data);
+                }
             }
             if(item.preset){
                 Refresh();

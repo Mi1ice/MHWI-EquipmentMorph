@@ -3,7 +3,7 @@
 #include "PresetDefaults.hpp"
 #include "PanelSettings.hpp"
 #include "EquipmentLabels.hpp"
-#include "../../runtime/EquipmentMorphControlBridge/Session.hpp"
+#include "PanelSession.hpp"
 #include <memory>
 #include <utility>
 
@@ -52,10 +52,10 @@ class Manager {
     }
     void PublishDefaults(){state.defaults=std::make_shared<std::vector<DefaultRef>>(defaults);choicesDirty=true;}
     void StoreDefaults(std::vector<DefaultRef> next){next=ResolveDefaults(next,documents);defaultsStore->Save(next);defaults=std::move(next);policyLoadFailed=false;PublishDefaults();}
-    static uint32_t PartOf(const mhmcontrol::Response& data,uint64_t handle){for(uint32_t i=0;i<data.targetCount;i++)if(data.targets[i].info.handle==handle)return data.targets[i].info.part;return 5;}
-    static std::vector<MhmUpdate> Owned(const mhmcontrol::Response& data){std::vector<MhmUpdate> result;for(uint32_t i=0;i<data.keyCount;i++){const auto& key=data.keys[i];if(key.owned)result.push_back({key.target,key.index,key.contribution});}return result;}
-    Match PartCheck(const Document& doc,const Part& part,const mhmcontrol::Response& data)const{return Check({doc.id,doc.name,{part}},data,identities);}
-    Document EditedDocument(const Document& existing,const mhmcontrol::Response& data)const{
+    static uint32_t PartOf(const morphpanel::Snapshot& data,uint64_t handle){for(uint32_t i=0;i<data.targetCount;i++)if(data.targets[i].info.handle==handle)return data.targets[i].info.part;return 5;}
+    static std::vector<MhmUpdate> Owned(const morphpanel::Snapshot& data){std::vector<MhmUpdate> result;for(uint32_t i=0;i<data.keyCount;i++){const auto& key=data.keys[i];if(key.owned)result.push_back({key.target,key.index,key.contribution});}return result;}
+    Match PartCheck(const Document& doc,const Part& part,const morphpanel::Snapshot& data)const{return Check({doc.id,doc.name,{part}},data,identities);}
+    Document EditedDocument(const Document& existing,const morphpanel::Snapshot& data)const{
         auto doc=existing;
         for(uint32_t i=0;i<data.targetCount;i++){
             const auto& target=data.targets[i];const auto partId=target.info.part;
@@ -74,12 +74,12 @@ class Manager {
         try{store->Save(doc);}catch(...){if(changed){try{defaultsStore->Save(defaults);}catch(...){state.autoMessage="自动关联回滚失败，请重新设置穿戴默认";defaults=nextDefaults;PublishDefaults();}}throw;}
         documents=std::move(nextDocuments);if(changed){defaults=nextDefaults;PublishDefaults();}PublishLibrary();
     }
-    void AssociateOwned(const std::string& id,const mhmcontrol::Response& data,bool replaceAll){
+    void AssociateOwned(const std::string& id,const morphpanel::Snapshot& data,bool replaceAll){
         if(replaceAll)origins={};
         for(uint32_t i=0;i<data.keyCount;i++)if(data.keys[i].owned){const auto part=PartOf(data,data.keys[i].target);if(part<5)origins[part]={id,data.keys[i].target,false};}
         for(uint32_t i=0;i<data.targetCount;i++)observed[data.targets[i].info.part]=data.targets[i].info.handle;
     }
-    MhmResult Select(const Request& request,mhmcontrol::Session& session,const mhmcontrol::Response& data){
+    MhmResult Select(const Request& request,morphpanel::Session& session,const morphpanel::Snapshot& data){
         if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已因装备变化而改变，请重新选择");
         const auto* selected=Find(request.id);if(!selected)throw std::runtime_error("预设不存在");Document doc=*selected;
         const auto* previous=Find(state.activeId);
@@ -102,7 +102,7 @@ class Manager {
         state.activeId=doc.id;state.activeName=doc.name;state.lastId=doc.id;state.success=true;state.selectLast=true;state.preview=true;
         state.message.clear();return MHM_OK;
     }
-    void Preview(const mhmcontrol::Response& data,bool ready){
+    void Preview(const morphpanel::Snapshot& data,bool ready){
         auto result=std::make_shared<std::vector<Incoming>>(incoming);std::vector<std::string> names,signatures;
         for(const auto& doc:documents){names.push_back(doc.name);if(!incoming.empty())signatures.push_back(Contents(doc,false));}
         for(auto& item:*result)if(item.document){
@@ -116,7 +116,7 @@ class Manager {
             item.status=query&&ready?match.message:"当前无法评估装备匹配；仍可导入";
         }state.incoming=std::move(result);
     }
-    void Exchange(const Request& request,mhmcontrol::Session* session){
+    void Exchange(const Request& request,morphpanel::Session* session){
         uint64_t renewAt=0;bool leaseLost=false;
         const auto keepAlive=[&](){const auto now=GetTickCount64();if(session&&now>=renewAt){if(const auto result=session->Heartbeat();result!=MHM_OK){leaseLost=true;leaseFailure=result;SourceExpired();}renewAt=now+500;}};
         if(request.action==Action::ScanImports){auto scanned=transfer->Scan(keepAlive);incoming=std::move(scanned);choicesDirty=true;state.success=true;state.message="已刷新导入预览；修改源文件后请再次刷新";}
@@ -150,7 +150,7 @@ class Manager {
         std::string candidate;bool mixed=false;for(const auto& origin:origins)if(!origin.preset.empty()){if(candidate.empty())candidate=origin.preset;else if(candidate!=origin.preset)mixed=true;}
         if(!mixed)if(const auto* doc=Find(candidate)){state.activeId=doc->id;state.activeName=doc->name;}
     }
-    void Manage(const Request& request,mhmcontrol::Session* session,const mhmcontrol::Response& data){
+    void Manage(const Request& request,morphpanel::Session* session,const morphpanel::Snapshot& data){
         if(request.action==Action::DisableMorph){
             if(request.checkEditor&&request.editor!=state.activeId)throw std::runtime_error("编辑对象已改变，请重新关闭形态键控制");
             if(state.dirty&&!request.discard){const auto* doc=Find(state.activeId);if(!request.saveBefore||!doc||!state.canSave)throw std::runtime_error("请先保存或明确放弃未保存修改，再关闭形态键控制");SaveDocument(EditedDocument(*doc,data));}
@@ -246,7 +246,7 @@ public:
         settings=std::make_unique<PanelSettings>(directory);try{state.enabled=settings->Load();}catch(const std::exception& e){state.enabled=false;state.autoMessage=std::string("开关配置读取失败，形态键控制已关闭：")+e.what();}
     }
     void SetQuery(IdentityQuery value){query=value;state.available=query!=nullptr;identityHandles={};lastReady=false;choicesDirty=true;}
-    void Update(const mhmcontrol::Response& data,bool ready){
+    void Update(const morphpanel::Snapshot& data,bool ready){
         std::array<uint64_t,5> handles{};if(ready)for(uint32_t i=0;i<data.targetCount;i++)handles[data.targets[i].info.part]=data.targets[i].info.handle;
         if(handles!=identityHandles||ready!=lastReady){
             identities={};identityHandles=handles;lastReady=ready;choicesDirty=true;
@@ -285,8 +285,8 @@ public:
     }
     void Pause(){state.paused=true;origins={};state.canSave=false;state.preview=false;state.dirty=false;}
     void SourceExpired(){origins={};observed={};state.activeId.clear();state.activeName.clear();state.preview=false;state.dirty=false;state.canSave=false;}
-    void Edited(uint64_t target,const mhmcontrol::Response& data){const auto part=PartOf(data,target);if(part<5){observed[part]=target;origins[part]={state.activeId,target,false};state.preview=true;}}
-    bool Automatic(mhmcontrol::Session* session,const mhmcontrol::Response& data,bool ready){
+    void Edited(uint64_t target,const morphpanel::Snapshot& data){const auto part=PartOf(data,target);if(part<5){observed[part]=target;origins[part]={state.activeId,target,false};state.preview=true;}}
+    bool Automatic(morphpanel::Session* session,const morphpanel::Snapshot& data,bool ready){
         if(!session||!query||!ready||state.paused||!state.enabled)return false;
         std::array<uint64_t,5> handles{};for(uint32_t i=0;i<data.targetCount;i++)handles[data.targets[i].info.part]=data.targets[i].info.handle;
         auto updates=Owned(data);auto next=origins;bool changed=false;
@@ -311,7 +311,7 @@ public:
         }return true;
     }
     void Fail(uint64_t ticket,const std::string& message){state.completed=ticket;state.success=false;state.selectLast=false;state.message=message;}
-    MhmResult Process(const Request& request,uint64_t ticket,mhmcontrol::Session* session,const mhmcontrol::Response& data,bool ready){
+    MhmResult Process(const Request& request,uint64_t ticket,morphpanel::Session* session,const morphpanel::Snapshot& data,bool ready){
         state.completed=ticket;state.success=false;state.selectLast=false;
         try{
             if(!store)throw std::runtime_error("预设目录尚未就绪");
