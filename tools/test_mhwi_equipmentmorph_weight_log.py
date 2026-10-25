@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import struct
 ROOT = Path(__file__).resolve().parents[1]
+# Matches the manyKeys fixture in diagnostics/EquipmentMorphDiskContract/tests.cpp.
+LOGGED_KEYS = 1024
 
 
 def main():
@@ -13,7 +15,7 @@ def main():
                                   (1, ('requested', 'applied'), struct.pack('<I', 1)),
                                   (2, ('weights',), struct.pack('<I', 1)), (4, ('weights',), struct.pack('<f', 0))]:
         for key in keys:
-            if len(records[index][key]) != 64 or any(struct.pack('<f', v) != expected for v in records[index][key]):
+            if len(records[index][key]) != LOGGED_KEYS or any(struct.pack('<f', v) != expected for v in records[index][key]):
                 raise ValueError('Incomplete or changed native weights: ' + key)
     if len(records[3]['requested']) != 1 or len(records[3]['applied']) != 1 or len(records[5]['weights']) != 1:raise ValueError('Single-key record differs')
     if records[0]['replacements'] != 18446744073709551614 or records[2]['payload_sha256'] != 'f' * 64:raise ValueError('Tail fields differ')

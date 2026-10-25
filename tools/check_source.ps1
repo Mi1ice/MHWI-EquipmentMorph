@@ -10,6 +10,7 @@ function Run([string]$Program, [string[]]$Arguments) {
 Push-Location $taskRoot
 try {
     Run $Python @('tools/check_repository.py')
+    Run $Python @('tools/test_check_repository.py')
     Run $Python @('tools/test_equipment_catalog.py')
     Run $Python @('tools/test_equipment_morph_process_guard.py')
     & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_current.ps1')
@@ -18,6 +19,7 @@ try {
     & (Join-Path $PSScriptRoot 'build_equipment_morph_package_validator.ps1')
     Run $Python @('tools/test_mhwi_equipmentmorph_authoring_clean.py', 'blender_addon_v044/mhwi_equipmentmorph')
     Run (Join-Path $taskRoot '.build/cleanup-validation/native/EquipmentMorphDiskContractTests.exe') @('.build/cleanup-validation/synthetic.mhmprofile')
+    Run $Python @('tools/test_weight_log_check.py')
     Run $Python @('tools/test_mhwi_equipmentmorph_weight_log.py')
     if($ImGui){
         & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_imgui.ps1') -CoreCandidate (Join-Path $taskRoot '.build/cleanup-validation/native/MHWEquipmentMorphConfiguredPrototype.dll')
