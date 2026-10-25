@@ -56,6 +56,9 @@ def verify(build):
     require(manifest.get('gui_tested') is False and manifest.get('game_tested') is False and manifest.get('morph_api_connected') is False,'Build must not claim live connection')
     entries=manifest.get('files',[]);require(len(entries)==len(BUILD_FILES) and {e['path'] for e in entries}==BUILD_FILES,'Unexpected build payload')
     for path in folder.iterdir():
+        # The no-window preset suite creates isolated synthetic cases here.
+        # It is never a candidate payload and is deliberately not traversed.
+        if path.name=='preset-fixtures' and path.is_dir() and not path.is_symlink():continue
         require(path.is_file() and (path.name in BUILD_FILES|{'manifest.json','EquipmentLabels.generated.hpp'} or path.suffix in {'.obj','.lib','.exp','.rsp'}),'Unexpected core or user data in panel build')
     for entry in entries:require(sha((folder/entry['path']).read_bytes())==entry['sha256'],'Build payload digest mismatch')
     artifact=report.get('dll',{});require(artifact.get('file')=='imgui/'+DLL,'Unexpected DLL path');binary=(folder/DLL).read_bytes()

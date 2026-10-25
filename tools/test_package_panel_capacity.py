@@ -25,6 +25,7 @@ class PackageTests(unittest.TestCase):
         self.commit=git('rev-parse','HEAD');self.build=self.folder/'build';self.imgui=self.build/'imgui';self.imgui.mkdir(parents=True);self.output=self.folder/'candidate'
         raw=bytearray(1024);raw[:2]=b'MZ';struct.pack_into('<I',raw,0x3c,0x80);raw[0x80:0x84]=b'PE\0\0';struct.pack_into('<H',raw,0x84,0x8664);struct.pack_into('<H',raw,0x96,0x2000);struct.pack_into('<H',raw,0x98,0x20b)
         self.dll=self.imgui/'MHWEquipmentMorphImGui.dll';self.dll.write_bytes(raw)
+        generated=self.imgui/'preset-fixtures';generated.mkdir();(generated/'synthetic.json').write_text('{}')
         names=('MHWEquipmentMorphImGui.dll','EquipmentMorphImGuiFixture.exe','ImGuiInputTests.exe','ImGuiControlTests.exe','ImGuiPresetTests.exe','README.md','LICENSE.ImGui.txt','LICENSE.SafetyHook','LICENSE.Zydis')
         for name in names[1:]:(self.imgui/name).write_bytes(b'synthetic')
         self.manifest={'schema':'mhwi-equipmentmorph-imgui-candidate-v1','panel_revision':'dynamic-panel-v2','snapshot':'process-local-dynamic','preset_schema':2,'preset_root':'MHWEquipmentMorph/panel-v2','gui_tested':False,'game_tested':False,'morph_api_connected':False,'files':[{'path':n,'sha256':self.sha((self.imgui/n).read_bytes())} for n in names]}
@@ -46,6 +47,7 @@ class PackageTests(unittest.TestCase):
         result=self.package();self.assertEqual([p.name for p in self.output.rglob('*.dll')],['MHWEquipmentMorphImGui.dll']);self.assertFalse(list(self.output.rglob('*.exe')))
         for name,info in result['files'].items():self.assertEqual(self.sha((self.output/name).read_bytes()),info['sha256'])
         self.assertFalse(result['deployed']);self.assertEqual(result['preset_schema'],2)
+        self.assertFalse((self.output/'preset-fixtures').exists())
         self.assertEqual((self.output/'README.md').read_text(encoding='utf-8'),'[presets](PRESETS.md) and header\n')
     def test_missing_dll(self):self.dll.unlink();self.rejected()
     def test_changed_dll(self):self.dll.write_bytes(b'changed');self.rejected()
