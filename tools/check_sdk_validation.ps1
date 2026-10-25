@@ -26,4 +26,9 @@ if($Stage -in @('Cases','All')){
     & $Python (Join-Path $PSScriptRoot 'test_prepare_sdk_validation_catalog.py')
     if($LASTEXITCODE -ne 0){throw 'Catalog preparation checks failed'}
 }
-if($Stage -ne 'Cases'){throw ('Stage not implemented: '+$Stage)}
+if($Stage -in @('Sdk','All')){
+    Invoke-ValidationTest 'sdk_session_tests'
+    & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_sdk_v04.ps1') -OutputDirectory (Join-Path $taskOutput 'sdk-regression')
+    if($LASTEXITCODE -ne 0){throw 'Existing SDK regression failed'}
+}
+if($Stage -notin @('Cases','Sdk')){throw ('Stage not implemented: '+$Stage)}
