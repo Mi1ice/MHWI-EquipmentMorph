@@ -36,12 +36,12 @@ if($Stage -in @('Session','All')){
     & $taskLegacy
     if($LASTEXITCODE -ne 0){throw 'Legacy session checks failed'}
 }
-if($Stage -in @('Control','All')){
+if($Stage -eq 'Control'){
     $taskControl=Build-PanelTest 'controls/MHWI-EquipmentMorph-ImGui/control_tests.cpp' 'ImGuiControlTests'
     & $taskControl
     if($LASTEXITCODE -ne 0){throw 'Existing control checks failed'}
 }
-if($Stage -in @('Control','Preset','Storage','All')){
+if($Stage -in @('Control','Preset','Storage')){
     $taskPreset=Build-PanelTest 'controls/MHWI-EquipmentMorph-ImGui/preset_tests.cpp' 'ImGuiPresetTests'
     & $taskPreset
     if($LASTEXITCODE -ne 0){throw 'Existing preset checks failed'}

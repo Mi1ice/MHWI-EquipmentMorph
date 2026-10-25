@@ -1,5 +1,15 @@
 # 核心与游戏内面板的安装
 
+## 当前动态容量候选（尚未部署）
+
+本地候选只含新面板DLL、许可证、说明和软件报告，没有安装脚本、核心、模型／包或独立眨眼替换载荷。复用已经交付并核对摘要的核心与资源；部署须另行安排，本文不代表已经安装或实机通过。
+
+新预设为schema 2，位于 `nativePC/plugins/MHWEquipmentMorph/panel-v2/presets/`，回收区为其 `.trash/`；新默认关联为 `panel-v2/auto-presets.json`，导入／导出为 `panel-v2/imports/`、`panel-v2/exports/`。旧测试目录不扫描、不迁移、不提示且不删除，无需执行迁移操作。原根目录 `panel-settings.json` 和独立自动表情配置保留。关闭窗口恢复匹配穿戴默认，无默认时释放临时控制；关闭总开关仍持久化并释放本面板来源。
+
+1024键／部位、五部位5120项及1MiB预设是本候选试验保护边界，GUI、游戏、完整生命周期和性能仍待回归。二进制回退不删除新旧库；旧GUI不会读取新schema 2库。
+
+## 历史0.6.0组件包安装说明（不用于本候选）
+
 本说明用于0.6.0组件包；两种组件包分别标记 `control_panel: none` 或 `control_panel: imgui`。对应正式发行为 [v0.6.0](https://github.com/Mi1ice/MHWI-EquipmentMorph/releases/tag/v0.6.0)，构建清单不自动扩大用户实机验收范围。
 
 ## 选择组件
