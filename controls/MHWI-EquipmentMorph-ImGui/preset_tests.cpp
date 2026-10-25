@@ -90,9 +90,9 @@ int wmain(int argc,wchar_t** argv){try{
     reject(encoded.substr(0,encoded.size()-3),"truncated JSON rejected");
     reject(encoded+"x","trailing data rejected");
     reject("{\"schema\":1,\"schema\":1}","duplicate JSON properties rejected");
-    reject(std::string(256*1024+1,' '),"oversized JSON rejected");
+    reject(std::string(1024*1024+1,' '),"oversized JSON rejected");
     reject("[[[[[[[[[[0]]]]]]]]]]","deeply nested JSON rejected");
-    auto bad=encoded;bad.replace(bad.find("\"schema\": 1"),11,"\"schema\": 2");reject(bad,"unknown schema version rejected");
+    auto bad=encoded;bad.replace(bad.find("\"schema\": 2"),11,"\"schema\": 1");reject(bad,"unknown schema version rejected");
     bad=encoded;const auto weightAt=bad.find("\"weight\": ")+10;bad.replace(weightAt,bad.find('}',weightAt)-weightAt,"1e999");reject(bad,"non-finite weights rejected");
     bad=encoded;bad.replace(bad.find("\"name\": ")+8,1,"0,");reject(bad,"wrong JSON type rejected");
     auto invalid=first;invalid.parts.push_back(first.parts.front());bool refused=false;try{Encode(invalid);}catch(const std::exception&){refused=true;}check(refused,"duplicate part rejected");

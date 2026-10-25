@@ -25,7 +25,7 @@ inline unsigned Run(const std::filesystem::path& directory,const MhmApi& origina
     write(L"01-duplicate.json",Encode(a));
     auto collision=a;collision.parts[0].keys[0].weight=collision.parts[0].keys[0].weight==.5f?.6f:.5f;write(L"02-collision.json",Encode(collision));
     auto incompatible=a;incompatible.name="Imported unmatched";for(auto& part:incompatible.parts)part.modelSha=std::string(64,'f');write(L"03-incompatible.JSON",std::string("\xef\xbb\xbf")+Encode(incompatible));
-    write(L"04-broken.json","{");auto version=Encode(a);version.replace(version.find("\"schema\": 1"),11,"\"schema\": 2");write(L"05-version.json",version);
+    write(L"04-broken.json","{");auto version=Encode(a);version.replace(version.find("\"schema\": 2"),11,"\"schema\": 1");write(L"05-version.json",version);
     write(L"06-large.json",std::string(256*1024+1,' '));
     std::filesystem::create_directory(imports/L"nested");{std::ofstream file(imports/L"nested"/L"ignored.json");file<<Encode(a);}
     check(job({Action::ScanImports}),"scan publishes valid and invalid preview rows");

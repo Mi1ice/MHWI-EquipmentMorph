@@ -40,6 +40,8 @@ if($Stage -in @('Control','All')){
     $taskControl=Build-PanelTest 'controls/MHWI-EquipmentMorph-ImGui/control_tests.cpp' 'ImGuiControlTests'
     & $taskControl
     if($LASTEXITCODE -ne 0){throw 'Existing control checks failed'}
+}
+if($Stage -in @('Control','Preset','Storage','All')){
     $taskPreset=Build-PanelTest 'controls/MHWI-EquipmentMorph-ImGui/preset_tests.cpp' 'ImGuiPresetTests'
     & $taskPreset
     if($LASTEXITCODE -ne 0){throw 'Existing preset checks failed'}
