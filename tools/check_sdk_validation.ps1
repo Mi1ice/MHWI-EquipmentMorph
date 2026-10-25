@@ -31,4 +31,5 @@ if($Stage -in @('Sdk','All')){
     & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_sdk_v04.ps1') -OutputDirectory (Join-Path $taskOutput 'sdk-regression')
     if($LASTEXITCODE -ne 0){throw 'Existing SDK regression failed'}
 }
-if($Stage -notin @('Cases','Sdk')){throw ('Stage not implemented: '+$Stage)}
+if($Stage -in @('Controller','All')){Invoke-ValidationTest 'controller_tests'}
+if($Stage -notin @('Cases','Sdk','Controller')){throw ('Stage not implemented: '+$Stage)}
