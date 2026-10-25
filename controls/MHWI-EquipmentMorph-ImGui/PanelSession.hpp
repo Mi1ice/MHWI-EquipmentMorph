@@ -10,12 +10,15 @@ class Session {
     struct Metadata {MhmTargetInfo target{};std::vector<MhmKeyInfo> keys;};
     std::map<uint64_t,Metadata> cache;
     MhmResult Read(Snapshot& next){
-        next.revision=0;
+        next.revision=0;bool first=true;
         for(auto& t:next.targets){
             std::vector<MhmWeightState> states(t.count);uint32_t count=0;uint64_t requested=0;
             const auto result=api.read_weights(t.info.handle,states.data(),t.count,&count,&requested,&t.appliedRevision);
             if(result!=MHM_OK)return result;if(count!=t.count)return MHM_STALE;
-            next.revision=(std::max)(next.revision,requested);
+            // A global request revision guards consistency, not GPU application.
+            // Applied revisions remain independent for each target.
+            if(!first&&next.revision!=requested)return MHM_NOT_READY;
+            next.revision=requested;first=false;
             for(uint32_t k=0;k<count;++k)next.keys[t.first+k].state=states[k];
         }return Valid(next,limits)?MHM_OK:MHM_INVALID;
     }

@@ -53,5 +53,20 @@ inline void TestBoundaryAndLayers(){
     uint64_t lower=0,revision=0;api.open_source("lower",100,60000,&lower);const MhmUpdate under{h,2,.8f};api.submit(lower,&under,1,&revision);const MhmUpdate zero{h,2,0};session.Replace({&zero,1});session.Snapshot(s);
     Check(s.keys.back().owned&&s.keys.back().state.requested==0,"owned zero masks lower layer");session.Release();session.Snapshot(s);Check(!s.keys.back().owned&&s.keys.back().state.requested==.8f,"release reveals lower layer");api.close_source(lower);Core().Detach(h);
 }
-inline void SessionTests(){TestActualCounts();TestAtomicChangeMany();TestSnapshotAtomicRead();TestBoundaryAndLayers();Check(sizeof(mhmcontrol::Request)==40&&sizeof(mhmcontrol::Response)==39256,"legacy wire layout unchanged");}
+inline uint64_t changeOnTarget=0,changingSource=0;inline std::vector<MhmUpdate> changedValues;
+inline MhmResult MHM_CALL ChangingRead(uint64_t h,MhmWeightState* values,uint32_t capacity,uint32_t* count,uint64_t* revision,uint64_t* applied){
+    if(h==changeOnTarget){changeOnTarget=0;uint64_t receipt=0;raceApi.submit(changingSource,changedValues.data(),static_cast<uint32_t>(changedValues.size()),&receipt);}
+    return raceApi.read_weights(h,values,capacity,count,revision,applied);
+}
+inline void TestReadRevisionConsistency(){
+    const auto body=Attach(MHM_BODY,3),arm=Attach(MHM_ARMS,3);raceApi=Api();auto api=raceApi;api.read_weights=ChangingRead;morphpanel::Session session;session.Connect(api);
+    api.open_source("changing",100,60000,&changingSource);changedValues={{body,0,.3f},{arm,0,.4f}};uint64_t receipt=0;api.submit(changingSource,changedValues.data(),2,&receipt);
+    morphpanel::Snapshot s;session.Snapshot(s);const auto before=s.revision;changedValues={{body,0,.8f},{arm,0,.9f}};changeOnTarget=arm;
+    Check(session.Snapshot(s)==MHM_NOT_READY&&s.revision==before&&s.keys[0].state.requested==.3f,"mixed requested revisions never publish a partial snapshot");
+    Check(session.Snapshot(s)==MHM_OK&&s.keys[0].state.requested==.8f&&s.keys[3].state.requested==.9f,"next stable scan reads complete changed batch");
+    uint64_t frame=0;const float weights[]{.8f,0,0};Check(Core().CaptureInterpolated(body,weights,s.revision,frame)==MHM_OK&&Core().Acknowledge(frame)==MHM_OK,"publish only one synthetic target");Core().ReleaseFrame(frame);
+    Check(session.Snapshot(s)==MHM_OK&&s.targets[0].appliedRevision!=s.targets[1].appliedRevision,"independent applied revisions remain valid");
+    api.close_source(changingSource);Core().Detach(body);Core().Detach(arm);
+}
+inline void SessionTests(){TestActualCounts();TestAtomicChangeMany();TestSnapshotAtomicRead();TestBoundaryAndLayers();TestReadRevisionConsistency();Check(sizeof(mhmcontrol::Request)==40&&sizeof(mhmcontrol::Response)==39256,"legacy wire layout unchanged");}
 }
