@@ -25,7 +25,7 @@ $taskExe=Build-PanelTest 'controls/MHWI-EquipmentMorph-ImGui/panel_capacity_test
 $taskResults=[ordered]@{}
 $taskStages=if($Stage -eq 'All'){@('Session','Control','Preset','Storage','Regression')}else{@($Stage)}
 foreach($taskStage in $taskStages){
-    $taskLines=@(& $taskExe $taskStage);$taskExit=$LASTEXITCODE;$taskLines | Write-Output
+    $taskLines=@(& $taskExe $taskStage);$taskExit=$LASTEXITCODE;$taskLines | Out-Host
     if($taskExit -ne 0){throw ('Checks failed: '+$taskStage)}
     $taskMatch=[regex]::Match(($taskLines -join "`n"),'PASS: (\d+) panel capacity checks')
     if(!$taskMatch.Success){throw 'Missing assertion count'}
@@ -46,7 +46,33 @@ if($Stage -in @('Control','Preset','Storage','All')){
     & $taskPreset
     if($LASTEXITCODE -ne 0){throw 'Existing preset checks failed'}
 }
+if($Stage -in @('Regression','All')){
+    if(!$CoreCandidate -or !(Test-Path -LiteralPath $CoreCandidate -PathType Leaf)){throw 'Regression requires the verified existing core candidate'}
+    & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_imgui.ps1') -OutputDirectory (Join-Path $taskOutput 'imgui') -CoreCandidate $CoreCandidate | Out-Host
+    if($LASTEXITCODE -ne 0){throw 'ImGui integration build failed'}
+    $taskBuild=Get-Content -LiteralPath (Join-Path $taskOutput 'imgui/manifest.json') -Raw | ConvertFrom-Json
+    $taskResults['integration']=@{passed=$true;input_checks=$taskBuild.input_checks;control_checks=$taskBuild.control_checks;preset_checks=$taskBuild.preset_checks;fixture_built=$true;fixture_run=$false}
+    $taskSdkPath=Join-Path $taskOutput 'sdk-validation-regression/all-report.json'
+    $taskReuse=Test-Path -LiteralPath $taskSdkPath
+    if($taskReuse){
+        $taskSdk=Get-Content -LiteralPath $taskSdkPath -Raw | ConvertFrom-Json
+        $taskReuse=$taskSdk.software_checks_passed -eq $true
+        foreach($taskProperty in $taskSdk.source_sha256.PSObject.Properties){
+            $taskSource=Join-Path $taskRoot $taskProperty.Name
+            if(!(Test-Path -LiteralPath $taskSource -PathType Leaf) -or (Get-FileHash -LiteralPath $taskSource -Algorithm SHA256).Hash.ToLowerInvariant() -ne $taskProperty.Value){$taskReuse=$false;break}
+        }
+    }
+    if(!$taskReuse){
+        & (Join-Path $PSScriptRoot 'check_sdk_validation.ps1') -Stage All -Python $Python -OutputDirectory (Join-Path $taskOutput 'sdk-validation-regression') | Out-Host
+        if($LASTEXITCODE -ne 0){throw 'SDK validation regression failed'}
+        $taskSdk=Get-Content -LiteralPath $taskSdkPath -Raw | ConvertFrom-Json
+    }
+    $taskResults['sdk_regression']=@{passed=$true;reused_unchanged_sources=$taskReuse;source_commit=$taskSdk.source_commit;checks=$taskSdk.checks;report_sha256=(Get-FileHash -LiteralPath $taskSdkPath -Algorithm SHA256).Hash.ToLowerInvariant()}
+    $taskCoreHash=(Get-FileHash -LiteralPath $CoreCandidate -Algorithm SHA256).Hash.ToLowerInvariant()
+}
 $taskHashes=[ordered]@{}
-Get-ChildItem (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui') -File | Where-Object {$_.Extension -in @('.hpp','.cpp')} | Sort-Object FullName | ForEach-Object {$taskHashes[[IO.Path]::GetRelativePath($taskRoot,$_.FullName).Replace('\','/')]=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
-$taskHashes['tools/check_panel_capacity.ps1']=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
-@{schema='mhwi-panel-capacity-v1';stage=$Stage;software_checks_passed=$true;source_commit=(& git -C $taskRoot rev-parse HEAD).Trim();source_sha256=$taskHashes;checks=$taskResults;gui_tested=$false;game_tested=$false;formal_acceptance_complete=$false} | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $taskReportPath -Encoding UTF8
+$taskSources=@(& git -C $taskRoot -c core.quotepath=false ls-files)+@(Get-ChildItem (Join-Path $taskRoot 'controls/MHWI-EquipmentMorph-ImGui') -File | ForEach-Object {[IO.Path]::GetRelativePath($taskRoot,$_.FullName).Replace('\','/')})
+foreach($taskSource in ($taskSources | Sort-Object -Unique)){if(Test-Path -LiteralPath (Join-Path $taskRoot $taskSource) -PathType Leaf){$taskHashes[$taskSource]=(Get-FileHash -LiteralPath (Join-Path $taskRoot $taskSource) -Algorithm SHA256).Hash.ToLowerInvariant()}}
+$taskReport=[ordered]@{schema='mhwi-panel-capacity-v1';stage=$Stage;software_checks_passed=$true;completed_utc=[DateTime]::UtcNow.ToString('o');source_commit=(& git -C $taskRoot rev-parse HEAD).Trim();source_sha256=$taskHashes;checks=$taskResults;gui_tested=$false;game_tested=$false;formal_acceptance_complete=$false}
+if($Stage -in @('Regression','All')){$taskReport['core_sha256']=$taskCoreHash;$taskReport['dll']=@{file='imgui/MHWEquipmentMorphImGui.dll';bytes=(Get-Item -LiteralPath (Join-Path $taskOutput 'imgui/MHWEquipmentMorphImGui.dll')).Length;sha256=(Get-FileHash -LiteralPath (Join-Path $taskOutput 'imgui/MHWEquipmentMorphImGui.dll') -Algorithm SHA256).Hash.ToLowerInvariant()};$taskReport['imgui_manifest_sha256']=(Get-FileHash -LiteralPath (Join-Path $taskOutput 'imgui/manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()}
+$taskReport | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $taskReportPath -Encoding UTF8

@@ -21,6 +21,6 @@ inline void TestQueuedBatchIsAtomic(){
     control.Post(mhmcontrol::Action::Drop,h,0);control.Post(mhmcontrol::Action::Set,h,488,.8f);control.Service(2);
     Check(control.Snapshot()->operation==MHM_OK&&!control.Snapshot()->data.keys.front().owned&&control.Snapshot()->data.keys.back().contribution==.8f,"drop and set validated as one replacement");Core().Detach(h);
 }
-inline void TestQueueFullRejects(){morphgui::Control control;for(uint32_t i=0;i<5120;++i)Check(control.Post(mhmcontrol::Action::Set,1,i,.1f)!=0,"queue accepts boundary");Check(control.Post(mhmcontrol::Action::Set,1,5120,.1f)==0,"queue overflow returns refusal");}
+inline void TestQueueFullRejects(){morphgui::Control control;bool accepted=true;for(uint32_t i=0;i<5120;++i)accepted=accepted&&control.Post(mhmcontrol::Action::Set,1,i,.1f)!=0;Check(accepted,"queue accepts all 5120 entries");Check(control.Post(mhmcontrol::Action::Set,1,5120,.1f)==0,"queue overflow returns refusal");}
 inline void ControlTests(){TestLastKeyAndFiltering();TestQueuedBatchIsAtomic();TestQueueFullRejects();}
 }

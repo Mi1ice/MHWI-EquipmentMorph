@@ -45,5 +45,13 @@ inline void TestSnapshotAtomicRead(){
     Check(session.Snapshot(s)!=MHM_OK&&s.targetCount==2&&s.source==oldSource&&s.keys[0].owned,"partial read does not publish or prune");
     Check(session.Snapshot(s)==MHM_OK&&s.targetCount==1&&s.keys[0].owned,"healthy ownership after retirement");Core().Detach(body);
 }
-inline void SessionTests(){TestActualCounts();TestAtomicChangeMany();TestSnapshotAtomicRead();Check(sizeof(mhmcontrol::Request)==40&&sizeof(mhmcontrol::Response)==39256,"legacy wire layout unchanged");}
+inline uint32_t advertisedKeys=0;
+inline MhmResult MHM_CALL OversizedTarget(uint32_t i,MhmTargetInfo* info){const auto result=raceApi.target_at(i,info);if(result==MHM_OK&&advertisedKeys)info->key_count=advertisedKeys;return result;}
+inline void TestBoundaryAndLayers(){
+    const auto h=Attach(MHM_BODY,3);raceApi=Api();auto api=raceApi;api.target_at=OversizedTarget;morphpanel::Session session;session.Connect(api);morphpanel::Snapshot s;session.Snapshot(s);advertisedKeys=1025;
+    Check(session.Snapshot(s)==MHM_CAPACITY&&s.keyCount==3,"actual 1025 rejected without publishing");advertisedKeys=0;
+    uint64_t lower=0,revision=0;api.open_source("lower",100,60000,&lower);const MhmUpdate under{h,2,.8f};api.submit(lower,&under,1,&revision);const MhmUpdate zero{h,2,0};session.Replace({&zero,1});session.Snapshot(s);
+    Check(s.keys.back().owned&&s.keys.back().state.requested==0,"owned zero masks lower layer");session.Release();session.Snapshot(s);Check(!s.keys.back().owned&&s.keys.back().state.requested==.8f,"release reveals lower layer");api.close_source(lower);Core().Detach(h);
+}
+inline void SessionTests(){TestActualCounts();TestAtomicChangeMany();TestSnapshotAtomicRead();TestBoundaryAndLayers();Check(sizeof(mhmcontrol::Request)==40&&sizeof(mhmcontrol::Response)==39256,"legacy wire layout unchanged");}
 }
