@@ -77,6 +77,8 @@ def export_model(module,asset,path):
     from .backend.capture_equipment_morph_job import fingerprint,coords
     from .geometric_normals import transported,AntiparallelDirection
     from .normal_authoring import unit
+    from . import authored_shading
+    authored_shading.native()
     objects,controlled,_=preflight(asset)
     normal_policy=asset.get('undefined_normal_policy','REJECT')
     antiparallel_policy=asset.get('antiparallel_normal_policy','REJECT')
@@ -86,34 +88,54 @@ def export_model(module,asset,path):
     selection=list(bpy.context.selected_objects);active=bpy.context.view_layer.objects.active
     last=bpy.context.scene.mhw_mod3_toolpanel.lastExportCollection
     existing={kind:set(getattr(bpy.data,kind)) for kind in ('meshes','armatures')}
-    clones=[];traces={};current=[];ordered=[]
-    originals={n:getattr(module,n) for n in ('createCloneMesh','parseVertexDict','buildMod3File')}
+    clones=[];traces={};current=[];ordered=[];shading_states={}
+    originals={n:getattr(module,n) for n in ('createCloneMesh','parseVertexDict','buildMod3File','splitSharpEdges')}
     def clone(obj,*args):
         result=originals['createCloneMesh'](obj,*args);clones.append(result);current[:]=[obj,result]
         data=result.data
         if len(data.vertices)!=len(obj.data.vertices) or [tuple(p.vertices) for p in data.polygons]!=[tuple(p.vertices) for p in obj.data.polygons]:raise ValueError('求值拓扑或顶点次序改变：'+obj.name)
         if data.attributes.get(TAG):raise ValueError('源网格包含保留的追溯属性：'+obj.name)
         attr=data.attributes.new(TAG,'INT','POINT');attr.data.foreach_set('value',np.arange(len(data.vertices),dtype=np.int32))
+        state=authored_shading.capture(data);state['source_object']=obj;shading_states[result.as_pointer()]=state
         return result
+    def sharp(clone_obj,*args):
+        state=shading_states[clone_obj.as_pointer()]
+        try:
+            originals['splitSharpEdges'](clone_obj,*args)
+            if any(len(face.vertices)!=3 for face in clone_obj.data.polygons):module.triangulateMesh(clone_obj)
+            authored_shading.prepare(clone_obj,state,module.exportMatrix @ state['source_object'].matrix_world,TAG)
+        except Exception as error:
+            # The pinned editor catches sharp-edge errors. Retain the failure
+            # so parse cannot continue with an incomplete shading preparation.
+            state['error']=error
+            raise
+
     def parse(vertex_dict,info,*args):
         obj,clone_obj=current;data=clone_obj.data;attr=data.attributes.get(TAG)
         if not attr or attr.domain!='POINT' or attr.data_type!='INT':raise ValueError('拆点丢失来源属性')
         indices=np.empty(len(data.vertices),np.int32);attr.data.foreach_get('value',indices)
         if np.any(indices<0) or np.any(indices>=len(obj.data.vertices)):raise ValueError('拆点来源越界')
-        original_result=originals['parseVertexDict'](vertex_dict,info,*args)
+        state=shading_states[clone_obj.as_pointer()]
+        if 'error' in state:raise ValueError('作者角点准备失败：'+str(state['error'])) from state['error']
+        if 'desired' not in state or len(args)!=7:raise ValueError('作者角点未准备或序列化接口不匹配')
+        authored,tangent,geometry_corners=authored_shading.serialize(data,state)
+        adjusted=list(args);adjusted[2]=authored;adjusted[3]=tangent
+        original_result=originals['parseVertexDict'](vertex_dict,info,*adjusted)
         if len(vertex_dict['Position'])!=len(indices):raise ValueError('导出顶点次序不完整')
-        trace=dict(object=obj.name,indices=indices.tolist(),positions=np.asarray(vertex_dict['Position']).tolist(),normals={})
+        trace=dict(object=obj.name,indices=indices.tolist(),positions=np.asarray(vertex_dict['Position']).tolist(),normals={},
+                   source_corners=state['source_corner_indices'][geometry_corners].tolist(),authored_shading=state['report'])
         if asset['shading']=='GEOMETRIC' and obj in controlled:
-            trace['normal_mesh']=data.copy()
+            trace['normal_mesh']=state['geometry_mesh'].copy()
+            trace['normal_mesh'].transform(module.exportMatrix @ obj.matrix_world)
+            trace['geometry_source_indices']=state['geometry_source_indices']
+            trace['geometry_corners']=geometry_corners
             trace['source_object']=obj
         traces[id(info)]=trace
         return original_result
     def capture_normals(trace):
-        obj=trace.pop('source_object');copy=trace.pop('normal_mesh');indices=np.asarray(trace['indices'])
+        obj=trace.pop('source_object');copy=trace.pop('normal_mesh');indices=trace.pop('geometry_source_indices')
+        chosen=trace.pop('geometry_corners').tolist()
         try:
-            first={}
-            for loop in copy.loops:first.setdefault(loop.vertex_index,loop.index)
-            chosen=[first[i] for i in range(len(indices))]
             # Clearing the storage, rather than setting zero custom vectors, avoids
             # decoding authored normal-space data as endpoint geometric normals.
             custom=copy.attributes.get('custom_normal')
@@ -140,7 +162,7 @@ def export_model(module,asset,path):
             for mesh in meshes:ordered.append(traces[id(mesh.meshInfo)])
         return result
     try:
-        module.createCloneMesh=clone;module.parseVertexDict=parse;module.buildMod3File=build
+        module.createCloneMesh=clone;module.parseVertexDict=parse;module.buildMod3File=build;module.splitSharpEdges=sharp
         options=dict(targetCollection=asset['collection'],selectedOnly=False,visibleOnly=False,exportAllLODs=False,
             useBlenderMaterialName=asset.get('use_blender_material_name',False),exportBoundingBoxes=False,
             autoSolveRepeatedUVs=True,preserveSharpEdges=True,invisibleMantlesModFix=True)
@@ -167,7 +189,7 @@ def export_model(module,asset,path):
     for trace,row in zip(ordered,rows):
         count=row['count'];disk=np.ndarray((count,3),dtype='<f4',buffer=basis,offset=row['start'],strides=(row['stride'],4))
         if count!=len(trace['indices']) or not np.array_equal(disk,np.asarray(trace['positions'],dtype='<f4')):raise ValueError('序列化顶点与追溯次序不同')
-        serialized.append(dict(object=trace['object'],mesh=row['mesh'],start=row['start'],stride=row['stride'],disk_to_blender_vertex=trace['indices']))
+        serialized.append(dict(object=trace['object'],mesh=row['mesh'],start=row['start'],stride=row['stride'],disk_to_blender_vertex=trace['indices'],disk_to_source_corner=trace['source_corners'],authored_shading=trace['authored_shading']))
         if trace['object'] not in {o.name for o in controlled}:continue
         if trace['object'] in seen:raise ValueError('同一源对象被多个LOD重复导出，当前不支持')
         seen.add(trace['object'])
@@ -195,7 +217,7 @@ def export_model(module,asset,path):
     normal_data={key:b''.join(struct.pack('<I3f',*record) for record in sorted(records)) for key,records in normal_records.items()}
     return dict(schema='mhwi-direct-export-trace-v1',part=asset['part'],model_id=asset['model_id'],
         model_sha256=digest(model),fully_resolved=True,objects=mapping,exporter='MHW Model Editor 0.12',
-        mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix],serialized_objects=serialized,
+        mapping_method='clone-point-index-through-serializer',authored_shading_method='source-corner-normals-final-UV-MikkTSpace',geometric_corner_domain='before-shading-seam-split',export_matrix=[list(r) for r in module.exportMatrix],serialized_objects=serialized,
         undefined_normal_policy=normal_policy,antiparallel_normal_policy=antiparallel_policy,geometric_normal_fallbacks=fallbacks),normal_data
 
 def export_direct(recipe,output,debug=False,trace_callback=None):

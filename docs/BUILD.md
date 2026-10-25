@@ -1,5 +1,7 @@
 # 源码构建与验证
 
+作者角点法线保真修复加入独立计算组件。从源码运行联合导出前执行 `./tools/build_authored_shading.ps1`；容量Paired／All和完整源码入口会自动执行。组件仅供Windows x64作者插件使用，不进入游戏核心。完整作者ZIP带有当前组件与许可证，见[作者法线与切线](AUTHORED_SHADING.md)。
+
 ## 1024键容量候选
 
 `codex/capacity-paired-export` 的容量候选使用独立入口，不沿用下面历史组件包的验收：

@@ -13,6 +13,8 @@ try {
     Run $Python @('tools/test_equipment_catalog.py')
     Run $Python @('tools/test_equipment_morph_process_guard.py')
     & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_current.ps1')
+    & (Join-Path $PSScriptRoot 'build_authored_shading.ps1')
+    Run $Python @('tools/test_authored_shading_package.py')
     & (Join-Path $PSScriptRoot 'build_equipment_morph_package_validator.ps1')
     Run $Python @('tools/test_mhwi_equipmentmorph_authoring_clean.py', 'blender_addon_v044/mhwi_equipmentmorph')
     Run (Join-Path $taskRoot '.build/cleanup-validation/native/EquipmentMorphDiskContractTests.exe') @('.build/cleanup-validation/synthetic.mhmprofile')
@@ -22,6 +24,7 @@ try {
     }else{& (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_control_panel.ps1') -OutputDirectory (Join-Path $taskRoot '.build/current-validation/control-panel')}
     & (Join-Path $PSScriptRoot 'build_mhwi_equipmentmorph_sdk_v04.ps1') -OutputDirectory (Join-Path $taskRoot '.build/current-validation/sdk')
     if ($Blender) {
+        Run $Blender @('--background', '--factory-startup', '--python-exit-code', '1', '--python', 'tools/test_authored_shading_blender.py')
         Run $Blender @('--background', '--factory-startup', '--python-exit-code', '1', '--python', 'tools/test_mhwi_equipmentmorph_direct_blender.py')
         Run $Blender @('--background', '--factory-startup', '--python-exit-code', '1', '--python', 'tools/test_key_selection_preview.py')
     }

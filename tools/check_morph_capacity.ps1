@@ -70,6 +70,10 @@ foreach($taskStage in $taskStages) {
                 $taskDetail="sdk=$LASTEXITCODE"
             }
             'Paired' {
+                & (Join-Path $PSScriptRoot 'build_authored_shading.ps1')
+                & $Python (Join-Path $PSScriptRoot 'test_authored_shading_package.py')
+                if($LASTEXITCODE -ne 0){throw 'Author component packaging validation failed'}
+                Run-CapacityBlender 'tools/test_authored_shading_blender.py' 'paired-authored-shading'
                 $null=Build-CapacityNative 'CompareMorphPositions' @('tools/compare_morph_positions.cpp')
                 Run-CapacityBlender 'tools/test_capacity_direct_blender.py' 'paired-capacity'
                 Run-CapacityBlender 'tools/test_mhwi_equipmentmorph_direct_blender.py' 'paired-existing'
@@ -107,6 +111,16 @@ foreach($taskFile in @('sdk/MHWI-EquipmentMorph-0.4.0/include/equipment_morph_ke
 foreach($taskFile in @('MorphVersion.hpp','PartBinding.hpp','Pool.hpp','LaunchAdapter.hpp','prototype.cpp','PartWorker.inc','CapacityTests.hpp','tests.cpp','SameWeightTests.hpp','InputFastPathTests.hpp','DirectWeightTests.hpp','IdleSamplingTests.hpp')) {
     $taskRelative='diagnostics/EquipmentMorphDiskContract/'+$taskFile
     $taskHashes[$taskRelative]=(Get-FileHash -LiteralPath (Join-Path $taskRoot $taskRelative) -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+foreach($taskFile in @('tools/test_authored_shading_blender.py','tools/test_authored_shading_package.py','tools/build_authored_shading.ps1','tools/package_source.py','tools/check_source.ps1','native/author_shading.cpp','blender_addon_v044/mhwi_equipmentmorph/authored_shading.py','research/blender-mikktspace-5.1.2/UPSTREAM.json','research/blender-mikktspace-5.1.2/NOTICE.txt','research/blender-mikktspace-5.1.2/LICENSE.Apache-2.0.txt')) {
+    $taskHashes[$taskFile]=(Get-FileHash -LiteralPath (Join-Path $taskRoot $taskFile) -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+Get-ChildItem -LiteralPath (Join-Path $taskRoot 'research/blender-mikktspace-5.1.2') -Filter '*.hh' | ForEach-Object {$taskHashes['research/blender-mikktspace-5.1.2/'+$_.Name]=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+$taskAuthorManifest=Join-Path $taskRoot 'blender_addon_v044/mhwi_equipmentmorph/_native/build/build.json'
+if(Test-Path -LiteralPath $taskAuthorManifest){
+    $taskAuthor=Get-Content -LiteralPath $taskAuthorManifest -Raw | ConvertFrom-Json
+    $taskArtifacts['Author/'+$taskAuthor.file]=(Get-FileHash -LiteralPath (Join-Path (Split-Path $taskAuthorManifest) $taskAuthor.file) -Algorithm SHA256).Hash.ToLowerInvariant()
+    $taskArtifacts['Author/build.json']=(Get-FileHash -LiteralPath $taskAuthorManifest -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 Get-ChildItem -LiteralPath $taskOutput -Filter '*.exe' | ForEach-Object { $taskArtifacts[$_.Name]=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 foreach($taskFile in @('MHWEquipmentMorphConfiguredPrototype.dll','EquipmentMorphDiskContractTests.exe')) {

@@ -23,6 +23,23 @@ def record(path):
     return {'path': path.relative_to(PACKAGE).as_posix(), 'bytes': len(data),
             'sha256': hashlib.sha256(data).hexdigest()}
 
+def addon_files(addon):
+    """Select exactly the current generated author component, never stale DLLs."""
+    native=addon/'_native/build'
+    try:
+        manifest=json.loads((native/'build.json').read_bytes());digest=manifest['sha256'];name=manifest['file']
+        if manifest['schema']!='mhwi-author-shading-native-v1' or manifest['abi']!=1 or manifest['platform']!='windows-x64' or manifest['blender']!='5.1.2':raise ValueError('Unexpected author component metadata')
+        if len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest) or name!='mhm_author_shading-'+digest+'.dll':raise ValueError('Unexpected author component filename')
+        if hashlib.sha256((native/name).read_bytes()).hexdigest()!=digest:raise ValueError('Author component digest mismatch')
+        for license in ('NOTICE.txt','LICENSE.Apache-2.0.txt'):
+            raw=(native/license).read_bytes()
+            if not raw or hashlib.sha256(raw).hexdigest()!=manifest['license_sha256'][license]:raise ValueError('Author component license mismatch')
+    except (OSError,KeyError,TypeError,ValueError) as error:
+        raise ValueError('Build the author shading component before packaging; missing, mismatched or incomplete component') from error
+    generated={native/entry for entry in (name,'build.json','NOTICE.txt','LICENSE.Apache-2.0.txt')}
+    return [path for path in sorted(addon.rglob('*')) if path.is_file() and '__pycache__' not in path.parts and path.suffix!='.pyc'
+            and path.name not in ('LICENSE','LICENSING.md') and (native not in path.parents or path in generated)]
+
 def main():
     global PACKAGE
     parser = argparse.ArgumentParser()
@@ -35,6 +52,8 @@ def main():
         PACKAGE = ROOT / '.build/packages/MHWI-EquipmentMorph-0.5.1-dev12-controlcenter-dev1'
     elif args.core_only or args.imgui:
         PACKAGE = PACKAGE.with_name(PACKAGE.name + ('-imgui' if args.imgui else '-core'))
+    addon = ROOT / CONFIG['addon_directory'] / 'mhwi_equipmentmorph'
+    author_files=addon_files(addon)
     # All outputs are under the ignored .build folder and must be rebuilt locally.
     if not PACKAGE.resolve().is_relative_to((ROOT / '.build').resolve()):
         raise ValueError('Package destination must stay inside .build')
@@ -87,7 +106,6 @@ def main():
     copy(ROOT / '.build/current-validation/package-validator/EquipmentMorphPackageValidator.exe', 'Tools/EquipmentMorphPackageValidator.exe')
     for name in ('Check-EquipmentMorph.ps1', 'prepare_mhwi_equipmentmorph_resource_path.py', 'manage_equipment_morph_mod.py'):
         copy(ROOT / 'tools' / name, 'Tools/' + name)
-    addon = ROOT / CONFIG['addon_directory'] / 'mhwi_equipmentmorph'
     for name, source in [('output_files.py', addon / 'output_files.py'),
                          ('emit_equipment_morph_profile.py', addon / 'backend/emit_equipment_morph_profile.py'),
                          ('mesh_contract.py', addon / 'backend/mesh_contract.py')]:
@@ -112,9 +130,8 @@ def main():
             if path.is_file(): archive.write(path, PACKAGE.name + '/' + path.relative_to(PACKAGE).as_posix())
     output = ROOT / ('.build/packages/MHWI-EquipmentMorph-Blender-' + CONFIG['addon_version'] + '.zip')
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(addon.rglob('*')):
-            if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc' and path.name not in ('LICENSE', 'LICENSING.md'):
-                archive.write(path, 'mhwi_equipmentmorph/' + path.relative_to(addon).as_posix())
+        for path in author_files:
+            archive.write(path, 'mhwi_equipmentmorph/' + path.relative_to(addon).as_posix())
         for name in ('LICENSE', 'LICENSING.md'):
             archive.write(ROOT / name, 'mhwi_equipmentmorph/' + name)
     print('PASS: packaged local runtime and Blender addon under .build/packages; no installation')

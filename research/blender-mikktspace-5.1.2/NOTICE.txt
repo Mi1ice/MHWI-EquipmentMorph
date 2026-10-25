@@ -1,0 +1,7 @@
+Blender MikkTSpace, fixed Blender 5.1.2 intern/mikktspace sources.
+Copyright 2011 Morten S. Mikkelsen.
+Copyright 2020-2023 Blender Authors.
+Copyright 2012-2021 Meta Platforms, Inc. and affiliates (atomic hash set).
+Licensed under Apache License 2.0; see LICENSE.Apache-2.0.txt.
+Original SPDX notices are retained in every unmodified header.
+The local wrapper accepts author corner normals directly and builds serially.
