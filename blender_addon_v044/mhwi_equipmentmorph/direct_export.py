@@ -73,6 +73,8 @@ def preflight(asset):
     missing=set(names)-found
     if missing:raise ValueError('已选动态键在集合中缺失：'+', '.join(sorted(missing)))
     if not controlled:raise ValueError('集合中没有选定的动态键')
+    from . import export_attributes
+    export_attributes.preflight(collection,objects)
     return objects,controlled,load_job_validation
 
 def export_model(module,asset,path):
@@ -192,6 +194,8 @@ def export_model(module,asset,path):
     for trace,row in zip(ordered,rows):
         count=row['count'];disk=np.ndarray((count,3),dtype='<f4',buffer=basis,offset=row['start'],strides=(row['stride'],4))
         if count!=len(trace['indices']) or not np.array_equal(disk,np.asarray(trace['positions'],dtype='<f4')):raise ValueError('序列化顶点与追溯次序不同')
+        from . import export_attributes
+        export_attributes.verify_uv_color(next(o for o in objects if o.name==trace['object']),basis,row,trace['source_corners'])
         serialized.append(dict(object=trace['object'],mesh=row['mesh'],start=row['start'],stride=row['stride'],disk_to_blender_vertex=trace['indices'],disk_to_source_corner=trace['source_corners'],authored_shading=trace['authored_shading']))
         if trace['object'] not in {o.name for o in controlled}:continue
         if trace['object'] in seen:raise ValueError('同一源对象被多个LOD重复导出，当前不支持')

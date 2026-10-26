@@ -111,10 +111,16 @@ def prepare(obj,state,transform,vertex_tag):
     local=np.asarray([tuple(v.co) for v in mesh.vertices],np.float32)
     groups=[tuple(sorted((g.group,g.weight) for g in v.groups)) for v in mesh.vertices]
     colors={a.name:(a.domain,a.data_type,np.asarray([tuple(v.color) for v in a.data],np.float32)) for a in mesh.color_attributes}
+    all_uv=[np.asarray([tuple(v.uv) for v in layer.data],np.float32) for layer in mesh.uv_layers]
+    # The editor only splits UV1 seams. Preserve all serialized corner attributes
+    # in the same clone-only split, without changing the direction calculation.
+    attributes=[a.view(np.uint8).reshape(count,-1) for a in all_uv]
+    attributes += [values[loops if domain=='POINT' else np.arange(count)].copy().view(np.uint8).reshape(count,-1) for domain,_,values in colors.values()]
+    split_codes=np.column_stack([codes]+attributes)
     mesh.attributes.new(FINAL,'INT','CORNER').data.foreach_set('value',np.arange(count,dtype=np.int32))
     mesh.attributes.new(VERTEX,'INT','POINT').data.foreach_set('value',np.arange(len(mesh.vertices),dtype=np.int32))
     geometry=mesh.copy();old_count=len(mesh.vertices)
-    needs_split=bool(np.any(codes!=codes[first[loops]]))
+    needs_split=bool(np.any(split_codes!=split_codes[first[loops]]))
     if needs_split:
         bm=bmesh.new()
         try:
@@ -122,8 +128,8 @@ def prepare(obj,state,transform,vertex_tag):
             point_layer=bm.verts.layers.int[VERTEX];corner_layer=bm.loops.layers.int[FINAL];representatives={};weld={}
             for vertex in bm.verts:
                 linked=[int(loop[corner_layer]) for loop in vertex.link_loops]
-                if not linked or any(not np.array_equal(codes[linked[0]],codes[i]) for i in linked):raise ValueError('法线切线接缝无法分离')
-                identity=(int(vertex[point_layer]),codes[linked[0]].tobytes())
+                if not linked or any(not np.array_equal(split_codes[linked[0]],split_codes[i]) for i in linked):raise ValueError('角点属性接缝无法分离')
+                identity=(int(vertex[point_layer]),split_codes[linked[0]].tobytes())
                 if identity in representatives:weld[vertex]=representatives[identity]
                 else:representatives[identity]=vertex
             if weld:bmesh.ops.weld_verts(bm,targetmap=weld)
@@ -135,6 +141,9 @@ def prepare(obj,state,transform,vertex_tag):
     if np.any(old_vertices<0) or np.any(old_vertices>=old_count):raise ValueError('接缝拆点源顶点越界')
     if not np.array_equal(np.asarray([tuple(v.co) for v in mesh.vertices],np.float32),local[old_vertices]):raise ValueError('接缝拆点改变坐标')
     if not np.array_equal(np.asarray([tuple(v.uv) for v in mesh.uv_layers[0].data],np.float32),uv[ids]):raise ValueError('接缝拆点改变UV')
+    if len(mesh.uv_layers)!=len(all_uv):raise ValueError('接缝拆点改变UV集合')
+    for layer,values in zip(mesh.uv_layers,all_uv):
+        if not np.array_equal(np.asarray([tuple(v.uv) for v in layer.data],np.float32),values[ids]):raise ValueError('接缝拆点改变UV通道：'+layer.name)
     if [tuple(sorted((g.group,g.weight) for g in v.groups)) for v in mesh.vertices]!=[groups[i] for i in old_vertices]:raise ValueError('接缝拆点改变绑定')
     if set(colors)!={a.name for a in mesh.color_attributes}:raise ValueError('接缝拆点改变顶点色集合')
     for attribute in mesh.color_attributes:

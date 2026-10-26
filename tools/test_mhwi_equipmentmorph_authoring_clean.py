@@ -57,8 +57,9 @@ def main():
     for at, value, fmt in [(4, 237, '<H'), (8, 3, '<H'), (24, 112, '<I'),
                            (72, 128, '<Q'), (80, 368, '<Q')]:
         struct.pack_into(fmt, model, at, value)
+    historical={0xf637401c:(4,32),0x3c730760:(6,36),0x366995a7:(10,44)}
     start = 0
-    for i, (disk, (_, stride)) in enumerate(mesh.FORMATS.items()):
+    for i, (disk, (_, stride)) in enumerate(historical.items()):
         row = 128 + i * 80
         struct.pack_into('<H', model, row + 2, 1)
         model[row + 14] = stride
@@ -75,7 +76,7 @@ def main():
     for changed, label in [('format', 'unknown disk format'), ('stride', 'incorrect stride')]:
         bad = bytearray(model)
         if changed == 'format':
-            struct.pack_into('<I', bad, 152, 0xa756f2f9)
+            struct.pack_into('<I', bad, 152, 0xdeadbeef)
         else:
             bad[142] += 1
         try:
@@ -86,7 +87,7 @@ def main():
             raise AssertionError(label + ' accepted')
     disk = bytes(model[128:368])
     runtime = bytearray(disk)
-    for i, (_, (native, _)) in enumerate(mesh.FORMATS.items()):
+    for i, (_, (native, _)) in enumerate(historical.items()):
         struct.pack_into('<I', runtime, i * 80 + 24, native)
         runtime[i * 80 + 42] = i + 1
         struct.pack_into('<Q', runtime, i * 80 + 72, 0x12340000 + i * 4096)
@@ -102,7 +103,7 @@ def main():
         check(changed != normalized, 'unmasked field retained ' + str(at))
     proof = json.loads((ROOT / 'config/format_provenance.json').read_bytes())
     observed = {int(e['disk_format'], 16): (e['native_format'], e['stride']) for e in proof['format_pairs']}
-    check(observed == mesh.FORMATS, 'implementation still agrees with retained measured format evidence')
+    check(observed == historical and all(mesh.FORMATS[code]['stride']==stride for code,(_,stride) in observed.items()), 'generated layouts retain original three measured strides and evidence')
     description = {**result, 'adapter': mesh.ADAPTER, 'model_sha256': hashlib.sha256(model).hexdigest(),
                    'baseline_semantics': 'zero_contribution_restores_exported_mod3',
                    'asset_sha256': hashlib.sha256(b'fixture').hexdigest(), 'part': 1, 'mesh_count': 3,

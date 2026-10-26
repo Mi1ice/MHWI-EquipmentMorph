@@ -7,6 +7,7 @@ import struct
 import numpy as np
 from .prepare_equipment_morph_catalog import PARTS, unique_object, prepare, encode_catalog
 from ..capacity import MAX_DYNAMIC_KEYS
+from .vertex_formats import FORMATS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -146,12 +147,7 @@ def build_part(part, capture, export):
         if matname != mapped['material']:
             raise ValueError('Mapping material changed')
         stride = row[14]
-        # Supported observed MOD3 layouts all place xyz/normal/tangent/first UV at 0/12/16/20.
-        layouts = {0xa756f2f9:24, 0xa5104ca0:28, 0xc3ac03a1:36, 0xc9690ab8:40,
-                   0x818904dc:28, 0x0f06033f:32, 0xf637401c:32, 0xf471fe45:36,
-                   0x3c730760:36, 0xb2fc0083:40, 0x81f58067:40, 0x83b33e3e:44,
-                   0x366995a7:44, 0xb8e69244:48}
-        if layouts.get(struct.unpack_from('<I', row, 24)[0]) != stride:
+        if FORMATS.get(struct.unpack_from('<I', row, 24)[0], {}).get('stride') != stride:
             raise ValueError('Unsupported vertex layout')
         start = struct.unpack_from('<I', row, 20)[0] + stride*sum(struct.unpack_from('<I', row, o)[0] for o in (16, 36))
         indices = np.asarray(mapped['disk_to_blender_vertex'])
