@@ -85,7 +85,11 @@ inline bool SlotMatchesChecked(unsigned index,Identity id,bool wholeMesh){
     bindingGuard.success=matches;return matches;
 }
 inline bool SlotMatches(unsigned index,Identity id,bool wholeMesh)noexcept{
-    try{return SlotMatchesChecked(index,id,wholeMesh);}
+    try{
+        const bool matches=SlotMatchesChecked(index,id,wholeMesh);
+        if(!matches&&index<declarationBindings.size())declarationBindings[index]={};
+        return matches;
+    }
     catch(...){if(index<declarationBindings.size())declarationBindings[index]={};return false;}
 }
 }

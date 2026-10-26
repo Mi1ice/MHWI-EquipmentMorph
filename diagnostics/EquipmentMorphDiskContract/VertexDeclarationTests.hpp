@@ -11,6 +11,9 @@ inline unsigned Run(){
     Put(f.image,observed::declarationRootRva,Address(m.root));const auto id=f.Adapter().Target();
     check(facecontinuous::SlotMatches(MHM_BODY,id,true),"production slot accepts captured declaration semantics and disk digest");
     check(facecontinuous::SlotMatches(MHM_BODY,id,false),"production slot rechecks copied declarations before use");
+    Put(f.bridge,0x60,uintptr_t{0});
+    check(!facecontinuous::SlotMatches(MHM_BODY,id,false)&&!facecontinuous::declarationBindings[MHM_BODY].snapshot.slot,"early player identity failure clears declaration cache");
+    Put(f.bridge,0x60,id.player);check(facecontinuous::SlotMatches(MHM_BODY,id,true),"restored player must receive a fresh full declaration proof");
     Put(m.native[4],76,0xf471fe45u);
     check(!facecontinuous::SlotMatches(MHM_BODY,id,false)&&!facecontinuous::declarationBindings[MHM_BODY].snapshot.slot,"in-place declaration mutation clears binding and refuses publication");
     Put(m.native[4],76,0xf637401cu);check(facecontinuous::SlotMatches(MHM_BODY,id,true),"fresh generation can bind after complete revalidation");
