@@ -11,6 +11,8 @@ from unittest.mock import patch
 from authoring_test_support import *
 from mhwi_equipmentmorph import direct_export as direct
 from prepare_mhwi_equipmentmorph_resource_path import verify,prepare
+from mhwi_equipmentmorph.backend.map_equipment_morph_job import model_meshes
+from mathutils import Vector
 
 fixture,exporter=load_fixture();collection,obj=fixture()
 addon.register();state=addon.settings(bpy.context)
@@ -37,11 +39,15 @@ for shading in ('BASELINE','GEOMETRIC'):
             check(state.result_path=='','normal has no current report '+shading)
         native=verify(ARGS.validator,destination,ROOT/'config')
         check(native['native_loader_valid'],'native paired validation '+shading+str(debug))
+        basis,rows=model_meshes((destination/'nativePC'/(model_id+'.mod3')).read_bytes())
+        expected=exporter.exportMatrix @ obj.matrix_world @ Vector((1,0,.04))
+        positions=[Vector(struct.unpack_from('<3f',basis,row['start']+i*row['stride'])) for row in rows for i in range(row['count'])]
+        check(min((position-expected).length for position in positions)<1e-5,'fixed neck=.4 baked into disk baseline '+shading+str(debug))
         description=json.loads((destination/'nativePC'/(model_id+'.morph/profile.json')).read_bytes())
         check(scene()==baseline,'source scene restored '+shading+str(debug))
         # Both a moved key and an all-zero-offset key survive the final package.
         raw=(destination/'nativePC'/(model_id+'.morph/asset.mhmpack')).read_bytes()
-        check(b'Smile' in raw and b'Unused_1' in raw,'selected key and zero displacement key retained '+shading+str(debug))
+        check(struct.unpack_from('<I',raw,20)[0]==2 and b'Smile' in raw and b'Unused_1' in raw,'only selected key and zero displacement key retained '+shading+str(debug))
         runs[(shading,debug)]=destination
     normal=runs[(shading,False)];debugged=runs[(shading,True)]
     a=(normal/'nativePC'/(model_id+'.mod3')).read_bytes();b=(debugged/'nativePC'/(model_id+'.mod3')).read_bytes()
