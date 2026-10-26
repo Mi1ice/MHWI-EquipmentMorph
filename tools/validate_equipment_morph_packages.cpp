@@ -11,6 +11,12 @@ int wmain(int argc,wchar_t** argv){try{
     for(const auto& group:loaded.parts)for(const auto& item:group){
         if(!first)text+=',';first=false;const auto& asset=item->asset;
         std::vector<unsigned char> output;
+        std::vector<bool> editable(asset.basis.size());
+        for(const auto& key:asset.keys){
+            for(const auto& delta:key.deltas)for(size_t i=0;i<12;i++)editable[delta.offset+i]=true;
+            for(const auto& normal:key.normals)for(size_t i:{0u,1u,2u,4u,5u,6u})editable[normal.offset+i]=true;
+        }
+        for(const auto& rotation:asset.rotations)for(size_t i:{0u,1u,2u,4u,5u,6u})editable[rotation.offset+i]=true;
         if(!mhm::Compose(asset,std::vector<float>(asset.keys.size(),0),output)||output!=asset.basis)throw std::runtime_error("Zero composition differs from exported baseline");
         unsigned cases=1;
         auto compose=[&](const std::vector<float>& weights){
@@ -22,6 +28,7 @@ int wmain(int argc,wchar_t** argv){try{
                 std::memcpy(expected.data()+delta.offset,position,12);fields.insert(delta.offset);
             }
             for(auto at:fields)if(std::memcmp(expected.data()+at,output.data()+at,12))throw std::runtime_error("Composed position differs from sparse deltas");
+            for(size_t i=0;i<output.size();i++)if(!editable[i]&&output[i]!=asset.basis[i])throw std::runtime_error("Non-deforming encoded attribute changed");
             cases++;
         };
         for(size_t i=0;i<asset.keys.size();i++)for(float weight:{.25f,.5f,.75f,1.f}){
@@ -35,7 +42,7 @@ int wmain(int argc,wchar_t** argv){try{
             +",\"model_sha256\":"+mhm::JsonString(item->profile.modelSha)+",\"asset_sha256\":"+mhm::JsonString(item->profile.packSha)
             +",\"mesh_count\":"+std::to_string(item->profile.meshCount)+",\"source_objects\":"+std::to_string(item->profile.objects.size())
             +",\"vertex_bytes\":"+std::to_string(asset.basis.size())+",\"composition_cases\":"+std::to_string(cases)
-            +",\"asset_format\":"+std::to_string(asset.perKeyNormals?2:1)+",\"keys\":[";
+            +",\"asset_format\":"+std::to_string(asset.perKeyNormals?2:1)+",\"non_deforming_bytes_preserved\":true,\"keys\":[";
         for(size_t i=0;i<asset.keys.size();i++){if(i)text+=',';text+=mhm::JsonString(asset.keys[i].info.id);}text+="]}";
     }
     if(first)throw std::runtime_error("No model sidecars found");

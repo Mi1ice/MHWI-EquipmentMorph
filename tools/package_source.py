@@ -108,7 +108,8 @@ def main():
         copy(ROOT / 'tools' / name, 'Tools/' + name)
     for name, source in [('output_files.py', addon / 'output_files.py'),
                          ('emit_equipment_morph_profile.py', addon / 'backend/emit_equipment_morph_profile.py'),
-                         ('mesh_contract.py', addon / 'backend/mesh_contract.py')]:
+                         ('mesh_contract.py', addon / 'backend/mesh_contract.py'),
+                         ('vertex_formats.py', addon / 'backend/vertex_formats.py')]:
         copy(source, 'Tools/author_backend/' + name)
     manifest = {'schema': 'mhwi-equipmentmorph-runtime-distribution-v1', 'project_name': 'MHWI-EquipmentMorph',
                 'version': PACKAGE.name.removeprefix('MHWI-EquipmentMorph-') if args.desktop else VERSION, 'files': payload,

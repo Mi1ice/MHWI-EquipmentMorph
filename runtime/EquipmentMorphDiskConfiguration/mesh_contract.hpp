@@ -4,24 +4,21 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include "vertex_formats.hpp"
 
 namespace mhm::meshcontract {
-// Confirmed against exact-build runtime records. Never infer unknown registration IDs.
-struct Format {uint32_t disk,native,stride;};
-inline constexpr Format formats[]{
-    {0xf637401c,4,32}, // IASkin4wt1UV
-    {0x3c730760,6,36}, // IASkin4wt1UVColor
-    {0x366995a7,10,44} // IASkin8wt1UVColor
-};
-inline std::optional<Format> Resolve(uint32_t disk){for(const auto& f:formats)if(f.disk==disk)return f;return {};}
+using vertexformats::Resolve;
 inline uint32_t U32(std::span<const unsigned char> row,size_t offset){
     return uint32_t(row[offset])|(uint32_t(row[offset+1])<<8)|(uint32_t(row[offset+2])<<16)|(uint32_t(row[offset+3])<<24);
 }
-inline bool FormatsMatch(std::span<const unsigned char> rows,std::span<const uint32_t> expected){
-    if(expected.empty()||rows.size()!=expected.size()*80)return false;
+template<class Snapshot> bool FormatsMatch(std::span<const unsigned char> rows,std::span<const uint32_t> expected,const Snapshot& declarations){
+    if(expected.empty()||expected.size()>4096||rows.size()!=expected.size()*80)return false;
     for(size_t i=0;i<expected.size();i++){
         const auto format=Resolve(expected[i]);const auto row=rows.subspan(i*80,80);
-        if(!format||row[14]!=format->stride||U32(row,24)!=format->native)return false;
+        const auto index=U32(row,24);
+        if(!format||row[14]!=format->stride||index==0xffff||index>=declarations.entries.size())return false;
+        const auto& actual=declarations.entries[index];
+        if(!actual.verified||actual.disk!=format->disk||actual.stride!=format->stride)return false;
     }return true;
 }
 inline bool Normalize(std::vector<unsigned char>& rows,bool unified){

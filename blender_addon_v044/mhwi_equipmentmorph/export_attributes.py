@@ -20,8 +20,11 @@ def preflight(collection,objects):
                 for item in layer.data:uv_bytes(item.uv)
             except (ValueError,OverflowError):reject('UV层 '+layer.name+' 无法编码为有限半精度数')
         valid={g.index for g in obj.vertex_groups if g.name in bones}
+        orphan={g.index:g.name for g in obj.vertex_groups if g.name.startswith('MhBone_') and g.name not in bones}
         maximum=0
         for vertex in mesh.vertices:
+            missing=[orphan[g.group] for g in vertex.groups if g.group in orphan and g.weight>=.001]
+            if missing:reject('骨骼顶点组 '+', '.join(missing)+' 没有对应骨骼，固定导出器无法保存其权重')
             count=sum(g.group in valid and g.weight>=.001 for g in vertex.groups)
             if count>8:reject('顶点 '+str(vertex.index)+' 超过8个有效骨骼权重（现有阈值0.001）')
             maximum=max(maximum,count)

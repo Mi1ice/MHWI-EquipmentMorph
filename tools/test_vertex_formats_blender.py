@@ -8,6 +8,7 @@ from authoring_test_support import *
 from mhwi_equipmentmorph import direct_export as direct
 from mhwi_equipmentmorph.backend.map_equipment_morph_job import model_meshes
 from mhwi_equipmentmorph.backend.vertex_formats import FORMATS
+from prepare_mhwi_equipmentmorph_resource_path import verify
 
 fixture,exporter=load_fixture()
 addon.register()
@@ -63,6 +64,9 @@ for shading in ('BASELINE','GEOMETRIC'):
         for i,c in enumerate(collections):assets.append(dict(collection=c,part='body',model_id='pl/test/body'+str(i),package='test',shading=shading,keys=[dict(id='Smile',source_key='Smile',author_shading=False)]))
         out=ARGS.output/(shading+str(debug));traces={}
         direct.export_direct(dict(assets=assets),out,debug,lambda i,a,t:traces.update({i:t}))
+        if ARGS.validator:
+            validated=verify(ARGS.validator,out,ROOT/'config')
+            check(validated['native_loader_valid'] and all(p['non_deforming_bytes_preserved'] for p in validated['parts']),'native loader and untouched encoded attributes '+str((shading,debug)))
         seen=set()
         for i,trace in traces.items():
             raw=(out/'nativePC'/('pl/test/body'+str(i)+'.mod3')).read_bytes();basis,rows=model_meshes(raw)
@@ -82,6 +86,9 @@ for shading in ('BASELINE','GEOMETRIC'):
                         check(basis[at+offset:at+offset+4]==want,'encoded color '+obj.name)
                     if f['weight_slots']:
                         offset=fields['Bone']['offset'];n=f['weight_slots'];check(basis[at+offset:at+offset+n]==bytes(range(n)),'bone indices '+obj.name)
+                        offset=fields['Weight']['offset'];size=fields['Weight']['size']
+                        want=bytes.fromhex('99cdd40c' if n==4 else 'cde0420a8f7b663d')
+                        check(basis[at+offset:at+offset+size]==want,'pinned quantized bone weights '+obj.name)
         check(seen=={v[0] for v in layouts},'all fourteen produced '+str((shading,debug)))
         after=snapshot()
         if after!=before:
@@ -98,20 +105,24 @@ check(obj.data.uv_layers.active_index==active,'active zero UV layer preserved')
 
 # Invalid attributes must be rejected before staging and keep old destination bytes.
 out=ARGS.output/'refused';out.mkdir();(out/'keep').write_bytes(b'old')
-for case in ('extra-color','point-color','float-color','extra-uv','ninth-weight'):
-    target=next(o for o in objects.values() if o.data.shape_keys and (len(o.vertex_groups)==8 if case=='ninth-weight' else len(o.vertex_groups)==4))
+for case in ('extra-color','point-color','float-color','extra-uv','ninth-weight','plain-third-uv','fifth-uv','bone-without-rig','missing-bone'):
+    target=next(o for o in objects.values() if o.data.shape_keys and (len(o.data.uv_layers)==(4 if case=='fifth-uv' else 2) and not o.vertex_groups if case in ('plain-third-uv','fifth-uv','bone-without-rig') else len(o.vertex_groups)==(8 if case=='ninth-weight' else 4)))
     asset=dict(collection=target.users_collection[0],part='body',model_id='pl/test/refused',package='refused',shading='BASELINE',keys=[dict(id='Smile',source_key='Smile',author_shading=False)])
-    attribute=None;layer=None;group=None
+    attribute=None;layer=None;group=None;old_layers={a.name for a in target.data.uv_layers};old_colors={a.name for a in target.data.color_attributes}
     if 'color' in case:
         if case=='extra-color' and not target.data.color_attributes:target.data.color_attributes.new(name='First',type='BYTE_COLOR',domain='CORNER')
         attribute=target.data.color_attributes.new(name='Unsaveable',type='FLOAT_COLOR' if case=='float-color' else 'BYTE_COLOR',domain='POINT' if case=='point-color' else 'CORNER')
-    elif case=='extra-uv':
-        while len(target.data.uv_layers)<3:layer=target.data.uv_layers.new(name='Extra')
-    else:group=target.vertex_groups.new(name='MhBone_008');group.add(list(range(4)),.01,'REPLACE')
+    elif case in ('extra-uv','plain-third-uv','fifth-uv'):
+        for _ in range(1 if case=='fifth-uv' else 3-len(target.data.uv_layers)):layer=target.data.uv_layers.new(name='Extra')
+    else:group=target.vertex_groups.new(name='MhBone_009' if case=='missing-bone' else 'MhBone_008');group.add(list(range(4)),.01,'REPLACE')
     changed=snapshot();message=rejected(lambda:direct.export_direct(dict(assets=[asset]),out),case)
     check(target.name in message,'object named '+case)
     check(snapshot()==changed and (out/'keep').read_bytes()==b'old' and not list(out.glob('morph-direct-stage-*')),'refusal restores data and output '+case)
     if attribute:target.data.color_attributes.remove(attribute)
     if layer:target.data.uv_layers.remove(layer)
     if group:target.vertex_groups.remove(group)
+    for a in list(target.data.uv_layers):
+        if a.name not in old_layers:target.data.uv_layers.remove(a)
+    for a in list(target.data.color_attributes):
+        if a.name not in old_colors:target.data.color_attributes.remove(a)
 addon.unregister();report('vertex-formats',runs=runs,formats=14,exporter_path=str(Path(exporter.__file__).resolve()))

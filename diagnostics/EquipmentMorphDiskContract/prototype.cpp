@@ -176,6 +176,11 @@ bool ApplyInputProof(safetyhook::Context& context,unsigned kind,std::uintptr_t o
     if(replacement!=e.input){
         bool matches=false;for(auto& buffer:part.buffers)if(buffer.wrapper==replacement)matches=privateprobe::Contract(buffer);
         if(!matches){adapter.Invalidate(0,"part_private_buffer_contract");return true;}
+    }
+    // Input can run after the launch check and after sampling outside gate.
+    // Validate the copied declaration generation at the actual use/commit path.
+    if(!DeclarationInputMatches(part.index,actual)){adapter.Invalidate(0,"equipment_part_identity_changed");return true;}
+    if(replacement!=e.input){
         context.r8=replacement;part.replacements++;
     }
     return true;
@@ -240,13 +245,13 @@ void LaunchStarting(safetyhook::Context& c) noexcept {
         }}
 }
 void PlayerGone(std::uintptr_t owner,const char* reason) noexcept {
-    std::lock_guard lock(gate);if(owner==anchorPlayer){anchorPlayer=0;for(auto& part:parts)part.adapter->Invalidate(0,reason);}
+    std::lock_guard lock(gate);if(owner==anchorPlayer){anchorPlayer=0;declarationBindings={};for(auto& part:parts)part.adapter->Invalidate(0,reason);}
 }
 void Remove(safetyhook::Context& c){PlayerGone(c.rcx,"equipment_player_removed");}
 void Destructor(safetyhook::Context& c){PlayerGone(c.rcx,"equipment_player_destroyed");}
 void ModelChanging(safetyhook::Context& c){
     std::lock_guard lock(gate);for(auto& part:parts){const auto id=part.adapter->Target();
-        if(id.Valid()&&c.rcx==id.owner&&c.rdx!=id.model)part.adapter->Invalidate(0,"equipment_part_model_replaced");}
+        if(id.Valid()&&c.rcx==id.owner&&c.rdx!=id.model){declarationBindings[part.index]={};part.adapter->Invalidate(0,"equipment_part_model_replaced");}}
 }
 bool CanSubmit(const launchpool::View& view){
     if(!view.live||view.requested!=view.applied)return false;

@@ -30,6 +30,7 @@ bool BufferUploadComplete(privateprobe::Buffer& buffer,std::uint64_t expected,st
 }
 void ResetPartLocked(Part& part){
     if(part.epoch==UINT64_MAX)throw std::runtime_error("Part epoch exhausted");
+    declarationBindings[part.index]={};
     part.epoch++;part.adapter=std::make_unique<LaunchAdapter>(part.epoch);part.drain=DrainBoundary{};
     part.retiring=false;part.target=0;part.updates=part.replacements=part.lastRevision=0;part.requested.clear();part.lastSample.clear();
     part.cadence=facesmooth::SampleGate{};

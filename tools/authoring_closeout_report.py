@@ -18,6 +18,7 @@ def inputs():
     files += list((ROOT/'tools').glob('*authoring*'))
     files += [ROOT/'tools/package_source.py',ROOT/'tools/desktop_notices.py',ROOT/'tools/blender_export_fixture.py',ROOT/'tools/test_key_selection_preview.py',ROOT/'tools/prepare_mhwi_equipmentmorph_resource_path.py',ROOT/'tools/build_equipment_morph_package_validator.ps1',ROOT/'tools/windows-toolchain.ps1',ROOT/'tools/validate_equipment_morph_packages.cpp',ROOT/'LICENSE',ROOT/'LICENSING.md',ROOT/'docs/AUTHOR_TOOLS.md',ROOT/'docs/USAGE.md',ROOT/'config/runtime.ini']
     files += list((ROOT/'runtime').rglob('*.hpp'))
+    files += [ROOT/'config/vertex_formats.json']
     for pattern in ('*.py','*.ps1','*.cpp','*.hpp'):files += list((ROOT/'tools').glob(pattern))
     return {p.relative_to(ROOT).as_posix():sha(p) for p in sorted(set(files)) if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc'}
 def run(command,log,extra_env=None):
@@ -48,7 +49,8 @@ def main():
             report['native_component']=dict(manifest_sha256=sha(native),**component)
             run(['powershell','-NoProfile','-File',ROOT/'tools/build_equipment_morph_package_validator.ps1','-OutputDirectory',output/'validator'],output/'validator-build.log')
             report['validator']=dict(path=str(output/'validator/EquipmentMorphPackageValidator.exe'),sha256=sha(output/'validator/EquipmentMorphPackageValidator.exe'))
-            suites=['test_authoring_publication.py','test_authored_shading_package.py','test_mhwi_equipmentmorph_authoring_clean.py','check_repository.py','test_check_repository.py']
+            suites=['test_authoring_publication.py','test_authored_shading_package.py','test_mhwi_equipmentmorph_authoring_clean.py','test_vertex_formats.py','check_repository.py','test_check_repository.py']
+            run([sys.executable,ROOT/'tools/generate_vertex_formats.py','--check'],output/'vertex-generation.log')
             if args.stage=='All':suites.append('test_package_authoring_candidate.py')
             report['python_suites']=[]
             for script in suites:

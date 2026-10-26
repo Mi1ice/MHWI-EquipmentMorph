@@ -7,6 +7,8 @@ import pprint
 ROOT=Path(__file__).resolve().parents[1]
 def render():
     data=json.loads((ROOT/'config/vertex_formats.json').read_bytes())
+    adapter=json.loads((ROOT/'blender_addon_v044/mhwi_equipmentmorph/direct_export_adapter.json').read_bytes())
+    if data['schema']!='mhwi-vertex-formats-v1' or data['exporter_sources']!=adapter['sources']:raise ValueError('Pinned exporter provenance differs')
     formats=data['formats'];seen=set();names=set()
     if len(formats)!=14:raise ValueError('Expected fourteen pinned regular layouts')
     for f in formats:

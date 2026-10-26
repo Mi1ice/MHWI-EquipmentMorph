@@ -54,12 +54,12 @@ def main():
     preview = types.ModuleType(NAME + '.shape_preview')
     preview.running = lambda: False
     sys.modules[preview.__name__] = preview
-    key = types.SimpleNamespace(value=0, mute=False, vertex_group='', relative_key=None)
     shape = types.SimpleNamespace(use_relative=True, reference_key=None, animation_data=None,
-                                  key_blocks=types.SimpleNamespace(get=lambda name: key))
+        key_blocks=types.SimpleNamespace(get=lambda name: types.SimpleNamespace(name=name,value=0,mute=False,vertex_group='',relative_key=None)))
     obj = types.SimpleNamespace(type='MESH', name='Fixture', library=None, animation_data=None,
-        constraints=[], modifiers=[], show_only_shape_key=False,
-        data=types.SimpleNamespace(library=None, animation_data=None, shape_keys=shape))
+        constraints=[], modifiers=[], show_only_shape_key=False,vertex_groups=[],
+        data=types.SimpleNamespace(library=None, animation_data=None, shape_keys=shape,color_attributes=[],vertices=[],
+            uv_layers=[types.SimpleNamespace(name='UV1',data=[types.SimpleNamespace(uv=(0,0))])]))
     collection = types.SimpleNamespace(library=None, all_objects=[obj])
     for count in (0, 1, 64, 65, 489, 512, 1024, 1025):
         keys = [dict(id=f'Key_{i:04}', source_key=f'Source_{i:04}', minimum=0, maximum=1,

@@ -4,6 +4,8 @@
 namespace observed {
 inline constexpr char exeHash[]="c2ebbbd2c49f216d484e31a5219bed419eb1e5e7d206d02cba040a3ab79d90ea";
 inline constexpr std::uintptr_t imageBytes=0x55D3000;
+// Declaration adapter is enabled only after Startup.inc verifies exeHash.
+inline constexpr std::uintptr_t declarationRootRva=0x51C73D0;
 inline constexpr std::uintptr_t ownerVtableRva=0x34A6D18;
 inline constexpr std::uintptr_t modelVtableRva=0x3507A18;
 inline constexpr std::uintptr_t vertexVtableRva=0x354D158;
