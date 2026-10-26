@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import os
+sys.stdout.reconfigure(encoding='utf-8')
 
 ROOT=Path(__file__).resolve().parents[1]
 def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -13,11 +15,12 @@ def write(path,value):
 def inputs():
     files=list((ROOT/'blender_addon_v044/mhwi_equipmentmorph').rglob('*'))
     files += list((ROOT/'tools').glob('*authoring*'))
-    files += [ROOT/'tools/package_source.py',ROOT/'tools/desktop_notices.py',ROOT/'tools/blender_export_fixture.py',ROOT/'LICENSE',ROOT/'LICENSING.md',ROOT/'docs/AUTHOR_TOOLS.md',ROOT/'docs/USAGE.md']
+    files += [ROOT/'tools/package_source.py',ROOT/'tools/desktop_notices.py',ROOT/'tools/blender_export_fixture.py',ROOT/'tools/test_key_selection_preview.py',ROOT/'tools/prepare_mhwi_equipmentmorph_resource_path.py',ROOT/'tools/build_equipment_morph_package_validator.ps1',ROOT/'tools/windows-toolchain.ps1',ROOT/'tools/validate_equipment_morph_packages.cpp',ROOT/'LICENSE',ROOT/'LICENSING.md',ROOT/'docs/AUTHOR_TOOLS.md',ROOT/'docs/USAGE.md',ROOT/'config/runtime.ini']
+    files += list((ROOT/'runtime').rglob('*.hpp'))
     return {p.relative_to(ROOT).as_posix():sha(p) for p in sorted(set(files)) if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc'}
 def run(command,log):
     with Path(log).open('w',encoding='utf-8') as stream:
-        result=subprocess.run([str(x) for x in command],cwd=ROOT,stdout=stream,stderr=subprocess.STDOUT)
+        result=subprocess.run([str(x) for x in command],cwd=ROOT,stdout=stream,stderr=subprocess.STDOUT,env=dict(os.environ,PYTHONIOENCODING='utf-8'))
     print(Path(log).read_text(encoding='utf-8',errors='replace')[-2500:])
     if result.returncode: raise RuntimeError(f'Command failed ({result.returncode}); {log}')
 def main():
@@ -34,14 +37,30 @@ def main():
         if 'Export' in stages:
             from package_source import addon_files
             addon_files(ROOT/'blender_addon_v044/mhwi_equipmentmorph')
+            native=ROOT/'blender_addon_v044/mhwi_equipmentmorph/_native/build/build.json'
+            component=json.loads(native.read_bytes())
+            for name,expected in component['source_sha256'].items():
+                if sha(ROOT/name)!=expected:raise ValueError('Native author component source differs: '+name)
+            report['native_component']=dict(manifest_sha256=sha(native),**component)
             run(['powershell','-NoProfile','-File',ROOT/'tools/build_equipment_morph_package_validator.ps1','-OutputDirectory',output/'validator'],output/'validator-build.log')
             report['validator']=dict(path=str(output/'validator/EquipmentMorphPackageValidator.exe'),sha256=sha(output/'validator/EquipmentMorphPackageValidator.exe'))
+            suites=['test_authoring_publication.py','test_authored_shading_package.py','test_mhwi_equipmentmorph_authoring_clean.py','check_repository.py','test_check_repository.py']
+            if args.stage=='All':suites.append('test_package_authoring_candidate.py')
+            for script in suites:
+                run([sys.executable,ROOT/'tools'/script],output/(script+'.log'))
+            report['python_suites']=['publication','candidate packaging','native component packaging','historical authoring backend','repository scan','repository scan tests']
         for stage in stages:
             script={'Entrypoints':'test_authoring_entrypoints_blender.py','Preflight':'test_authoring_preflight_blender.py','Export':'test_authoring_export_blender.py'}[stage]
             cmd=[args.blender,'--background','--factory-startup','--python-exit-code','1','--python',ROOT/'tools'/script,'--','--output',output/stage.lower()]
             if 'validator' in report: cmd += ['--validator',report['validator']['path']]
             run(cmd,output/(stage.lower()+'.log'))
             result=json.loads((output/stage.lower()/(stage.lower()+'.json')).read_bytes());report['checks']+=result['checks']
+            if 'exporter_path' in result:
+                base=Path(result['exporter_path']).parents[1]
+                adapter=json.loads((ROOT/'blender_addon_v044/mhwi_equipmentmorph/direct_export_adapter.json').read_bytes())
+                sources={str(base/name):sha(base/name) for name in adapter['sources']}
+                if list(sources.values())!=list(adapter['sources'].values()):raise ValueError('Pinned exporter inputs differ')
+                report['exporter']=dict(path=result['exporter_path'],sources=sources)
             if stage=='Preflight':
                 run([args.blender,'--background','--factory-startup','--python-exit-code','1','--python',ROOT/'tools/test_key_selection_preview.py','--','--no-save','--output',output/'key-preview.json'],output/'key-preview.log')
                 report['checks']+=json.loads((output/'key-preview.json').read_bytes())['checks']

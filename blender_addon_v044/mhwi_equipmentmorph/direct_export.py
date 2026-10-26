@@ -16,7 +16,7 @@ from .authoring import pin,write
 from .backend.equipment_morph_export_pipeline import digest,load_job
 from .backend.equipment_morph_package_pipeline import export_pipeline,package_id,PARTS
 from .backend.map_equipment_morph_job import model_meshes
-from .output_files import model_resource_id,retarget_model,publish
+from .output_files import model_resource_id,retarget_model,publish,checked_output
 
 TAG='mhwi_em_source_vertex'
 
@@ -225,7 +225,7 @@ def export_model(module,asset,path):
 
 def export_direct(recipe,output,debug=False,trace_callback=None):
     from .backend.capture_equipment_morph_job import capture
-    output=Path(output).resolve();assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
+    output=checked_output(output);assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
     for a in assets:a['package']=a['model_id'].rsplit('/',1)[-1]
     if output.exists() and not output.is_dir():raise ValueError('输出位置必须是文件夹')
     if not 0<len(assets)<=64 or len({a['model_id'].casefold() for a in assets})!=len(assets):raise ValueError('模型资源路径重复或超过64个')
@@ -234,6 +234,7 @@ def export_direct(recipe,output,debug=False,trace_callback=None):
     output.parent.mkdir(parents=True,exist_ok=True)
     stage_parent=output if output.is_dir() else output.parent
     stage=Path(tempfile.mkdtemp(prefix='morph-direct-stage-',dir=stage_parent))
+    committed=False
     try:
         work=stage/'authoring';work.mkdir();empty=work/'baseline_rotations.bin';empty.write_bytes(b'')
         for asset in assets:
@@ -273,8 +274,15 @@ def export_direct(recipe,output,debug=False,trace_callback=None):
             'source_indices_retained':True})
         if debug:publish(stage,output)
         else:publish(stage/'nativePC',output/'nativePC')
+        committed=True
         return result
     finally:
         if stage.exists():
             if stage.parent!=stage_parent or not stage.name.startswith('morph-direct-stage-'):raise ValueError('临时输出清理范围错误')
-            shutil.rmtree(stage)
+            # Nested publication can retain the only real recovery bytes here.
+            # Never erase them in the outer cleanup after rollback failed.
+            if not any(stage.rglob('morph-output-backup-*')):
+                try:shutil.rmtree(stage)
+                except OSError as cleanup:
+                    message='导出文件已发布；临时资料清理未完成：' if committed else '导出未完成；临时资料清理未完成：'
+                    raise RuntimeError(message+str(stage)) from cleanup

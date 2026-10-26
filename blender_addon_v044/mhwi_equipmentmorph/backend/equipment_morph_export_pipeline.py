@@ -182,12 +182,13 @@ def build_part(part, capture, export):
     files = {'basis.bin': basis, 'author-rotations.bin': rotations}
     keys = []
     for key_index, key in enumerate(part['keys']):
-        records = []
+        records = [];mapped_key = False
         for mapped in mapping['objects']:
             obj = objects[mapped['object']]
             name = key['source_key']
             if name not in obj['selected_keys']:
                 continue
+            mapped_key = True
             metadata = next(k for k in obj['keys'] if k['name'] == name)
             if metadata['relative'] != obj['basis_key'] or metadata['vertex_group'] or metadata['mute']:
                 raise ValueError('Only unmasked relative-to-basis keys supported')
@@ -201,8 +202,8 @@ def build_part(part, capture, export):
             for i in np.flatnonzero(np.any(delta != 0, axis=1)):
                 records.append((start+int(i)*stride, *map(float, delta[i])))
         raw = b''.join(struct.pack('<I3f', *r) for r in sorted(records))
-        if not raw:
-            raise ValueError('Key has no mapped deformation')
+        if not mapped_key:
+            raise ValueError('Key has no mapped source')
         if key.get('source_delta_reference') and raw != pinned(key['source_delta_reference']):
             raise ValueError('Source delta differs from companion/shading reference')
         if key.get('validated_positions'):
