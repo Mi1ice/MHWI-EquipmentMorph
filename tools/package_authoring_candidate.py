@@ -99,7 +99,9 @@ def finalize(output,receipt):
 
 def self_test(build,output):
     build=Path(build).resolve();output=Path(output).resolve();report=json.loads((output/'software-report.json').read_bytes())
-    work=Path(tempfile.mkdtemp(prefix='candidate-selftest-',dir=build));unpacked=work/'unpacked';unpacked.mkdir()
+    # Blender's embedded Windows Python cannot open the DLL at a >260-char
+    # nested evidence path. Keep this disposable unpacking under a short root.
+    work=Path(tempfile.mkdtemp(prefix='az-',dir=ROOT/'.build'));unpacked=work/'unpacked';unpacked.mkdir()
     manifest=json.loads((output/'manifest.json').read_bytes());validate_zip(output/'addon.zip',manifest['zip_files'])
     with zipfile.ZipFile(output/'addon.zip') as archive:
         for name in archive.namelist():
