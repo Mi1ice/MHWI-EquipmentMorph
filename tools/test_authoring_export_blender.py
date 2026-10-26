@@ -22,11 +22,60 @@ for row in asset.keys:row.selected=row.source in ('Smile','Unused_1')
 bpy.ops.mhwi_em.confirm_keys()
 baseline=scene();model_id=asset.model_id
 files=lambda p:sorted(x.relative_to(p).as_posix() for x in p.rglob('*') if x.is_file())
+
+# A short output root can still exceed the certified embedded-Python limit
+# inside the nested package. Rejection must precede exporter datablock changes.
+def sized_directory(root,size,letter='中'):
+    count=size-len(str(root.resolve()).encode('utf-16-le'))//2-1
+    width=len(letter.encode('utf-16-le'))//2
+    return root/(letter*(count//width)+'x'*(count%width))
+
+recipe=addon.recipe_from_ui(bpy.context)
+destination=sized_directory(ARGS.output,125);destination.mkdir()
+(destination/'keep').write_bytes(b'keep')
+old_model=destination/'nativePC'/(model_id+'.mod3');old_model.parent.mkdir(parents=True);old_model.write_bytes(b'old model')
+before=(config(state),scene(),[(o.name,o.data.uv_layers.active_index) for o in collection.all_objects if o.type=='MESH'])
+with patch.object(direct.tempfile,'mkdtemp',side_effect=AssertionError('temporary creation before path rejection')):
+    message=rejected(lambda:direct.export_direct(recipe,destination),'deep output production rejection')
+print('DEEP_OUTPUT_REJECTION',message)
+check('导出路径过长' in message and '缩短输出目录' in message and str(destination) in message,'deep output gives actionable path error')
+check((destination/'keep').read_bytes()==b'keep' and old_model.read_bytes()==b'old model' and not list(destination.glob('morph-direct-stage-*')),'deep output preserves old files without staging')
+check((config(state),scene(),[(o.name,o.data.uv_layers.active_index) for o in collection.all_objects if o.type=='MESH'])==before,'deep output preserves config source keys and active UV')
+
+# A later, longer model must reject the whole batch before creating output.
+destination=sized_directory(ARGS.output,118,'😀')/'new'
+long_model='pl/'+('long_'*10)+'model'
+batch={'assets':[recipe['assets'][0],dict(recipe['assets'][0],model_id=long_model)]}
+before=(config(state),scene())
+with patch.object(direct.tempfile,'mkdtemp',side_effect=AssertionError('temporary creation before batch rejection')):
+    message=rejected(lambda:direct.export_direct(batch,destination),'later longer model rejected')
+check('导出路径过长' in message and long_model.replace('/',os.sep) in message and not destination.exists(),'later model rejects whole batch before output creation')
+check((config(state),scene())==before,'later long path preserves author state')
+
+# A new output name belongs to final/backup paths even though stage is in its parent.
+destination=sized_directory(ARGS.output,190,'x')
+message=rejected(lambda:direct.export_direct(recipe,destination,debug=True),'new long output basename rejected')
+check('导出路径过长' in message and not destination.exists(),'new output final and backup paths checked')
+destination=sized_directory(ARGS.output,164,'x')
+message=rejected(lambda:direct.export_direct(recipe,destination),'backup path capacity rejected')
+check('导出路径过长' in message and 'morph-output-backup-' in message and not destination.exists(),'backup space checked even when final profile fits')
+
+# The last writable nested profile path (259 UTF-16 units) must still work.
+boundary=sized_directory(ARGS.output,124);boundary.mkdir()
+direct.export_direct(recipe,boundary)
+check(verify(ARGS.validator,boundary,ROOT/'config')['native_loader_valid'],'259 UTF16 nested profile path really exports')
+
+# Do not replace real short-path IO errors with a guessed length diagnosis.
+for error in (FileNotFoundError(2,'missing source'),PermissionError(13,'access denied')):
+    with patch.object(direct,'export_model',side_effect=error):
+        message=rejected(lambda:direct.export_direct(recipe,ARGS.output/'io-error'),'short IO reason retained')
+    check(str(error)==message and '路径过长' not in message,'real IO error not mislabeled '+type(error).__name__)
+
 runs={}
 for shading in ('BASELINE','GEOMETRIC'):
     asset.direct_shading=shading
     for debug in (False,True):
-        destination=ARGS.output/(shading+('-debug' if debug else '-normal'));state.output=str(destination);state.debug=debug
+        destination=ARGS.output/('中文-'+shading+('-debug' if debug else '-normal'));state.output=str(destination);state.debug=debug
         check(bpy.ops.mhwi_em.export_package()=={'FINISHED'},shading+' UI export '+str(debug))
         check(not list(destination.rglob('runtime.ini')),'no runtime ini '+shading+str(debug))
         if debug:
@@ -73,7 +122,8 @@ check(files(destination)==['keep'] and (config(state),scene())==before,'later mo
 recipe['assets'].pop()
 with patch.object(direct,'export_pipeline',side_effect=RuntimeError('package injected failure')):rejected(lambda:direct.export_direct(recipe,destination),'package generation failure')
 check(files(destination)==['keep'] and scene()==baseline,'package failure preserves destination and source')
-with patch.object(direct,'publish',side_effect=OSError('publish injected failure')):rejected(lambda:direct.export_direct(recipe,destination),'publish failure')
+with patch.object(direct,'publish',side_effect=OSError('publish injected failure')):message=rejected(lambda:direct.export_direct(recipe,destination),'publish failure')
+check('publish injected failure' in message,'publication fault injection reached')
 check(files(destination)==['keep'] and scene()==baseline,'publish failure preserves destination and source')
 
 # Keep a real nested recovery backup when inner publication fails to restore.
@@ -81,7 +131,8 @@ real_publish=direct.publish
 def retained_backup(stage,out):
     backup=Path(out)/'morph-output-backup-injected';backup.mkdir(parents=True);(backup/'old').write_bytes(b'original')
     raise RuntimeError('导出失败且自动恢复未完成；原文件备份保留在 '+str(backup))
-with patch.object(direct,'publish',side_effect=retained_backup):rejected(lambda:direct.export_direct(recipe,destination),'nested recovery failure')
+with patch.object(direct,'publish',side_effect=retained_backup):message=rejected(lambda:direct.export_direct(recipe,destination),'nested recovery failure')
+check('自动恢复未完成' in message and '备份保留' in message and '路径过长' not in message,'nested recovery fault reached and keeps priority message')
 check(any(p.read_bytes()==b'original' for p in destination.rglob('morph-output-backup-*/old')),'outer cleanup preserves nested recovery bytes')
 
 # Capacity guard belongs to model paths, not the five runtime slots.

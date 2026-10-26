@@ -37,6 +37,16 @@ def checked_output(output):
             raise ValueError('导出路径包含链接或联接：'+str(path))
     return output.resolve()
 
+def check_file_paths(paths):
+    # Certified Windows Blender 5.1.2 embedded Python: file < MAX_PATH,
+    # mkdir < MAX_PATH-12 (UTF-16 units, excluding NUL). Not a portable limit.
+    if os.name!='nt':return
+    for value in paths:
+        path=Path(os.path.abspath(value))
+        for candidate,limit in [(path,260),*((p,248) for p in path.parents)]:
+            if len(str(candidate).encode('utf-16-le'))//2>=limit:
+                raise ValueError('导出路径过长，请缩短输出目录后重试：'+str(candidate))
+
 def publish(stage,output):
     """Replace only exported files; keep unrelated files and roll back on failure."""
     stage=Path(stage).resolve();output=checked_output(output)

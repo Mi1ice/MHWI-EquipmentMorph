@@ -20,6 +20,23 @@ class PublicationTests(unittest.TestCase):
     def tearDown(self): self.temp.cleanup()
     def put(self,root,name,data):
         path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data);return path
+    @unittest.skipUnless(os.name=='nt','certified Windows embedded-Python limits')
+    def test_absolute_utf16_file_and_directory_boundaries(self):
+        # Explicit lengths from the Blender 5.1.2 probe, not a production helper.
+        for letter in ('x','中','😀'):
+            parent=self.root/(letter*20)
+            width=len(letter.encode('utf-16-le'))//2
+            def sized(size):
+                count=size-len(str(parent).encode('utf-16-le'))//2-1
+                return parent/(letter*(count//width)+'x'*(count%width))
+            publication.check_file_paths([sized(259)])
+            with self.assertRaisesRegex(ValueError,'导出路径过长.*缩短输出目录'):
+                publication.check_file_paths([sized(260)])
+            publication.check_file_paths([sized(247)/'x'])
+            with self.assertRaisesRegex(ValueError,'导出路径过长'):
+                publication.check_file_paths([sized(248)/'x'])
+        with patch.object(publication.os,'name','posix'):
+            publication.check_file_paths([str(self.root)+('/long'*100)])
     def test_success_only_replaces_owned_files(self):
         self.put(self.stage,'a',b'new');self.put(self.output,'a',b'old');self.put(self.output,'unrelated',b'keep')
         publication.publish(self.stage,self.output)

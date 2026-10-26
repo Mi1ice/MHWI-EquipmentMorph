@@ -65,6 +65,19 @@ def main():
     check(verify(args.validator,Path(state.output),ROOT/'config')['native_loader_valid'],'installed ZIP output accepted by current native loader')
     check(len([p for p in Path(state.output).rglob('*') if p.is_file()])==4,'installed ZIP ordinary export contains exactly four files')
     check(before=={o.name:fingerprint(o) for o in collection.all_objects if o.type=='MESH'},'installed addon preserves synthetic source data')
+    # Exercise the installed public operator, including its actual error report.
+    count=125-len(str(work).encode('utf-16-le'))//2-1
+    deep=work/('中'*count);deep.mkdir();(deep/'keep').write_bytes(b'old output')
+    state.output=str(deep)
+    # Capture RNA without importing source addon code or another test parser.
+    configuration_snapshot=lambda:(state.output,state.debug,asset.model_id,[(k.source,k.public_id,k.enabled,k.selected) for k in asset.keys])
+    configuration_before=configuration_snapshot()
+    try:bpy.ops.mhwi_em.export_package()
+    except RuntimeError as error:message=str(error)
+    else:raise AssertionError('installed ZIP did not reject deep output')
+    check('导出路径过长' in message and '缩短输出目录' in message and str(deep) in message,'installed ZIP reports actionable deep output error')
+    check(configuration_before==configuration_snapshot(),'installed ZIP path rejection preserves author configuration')
+    check(before=={o.name:fingerprint(o) for o in collection.all_objects if o.type=='MESH'} and (deep/'keep').read_bytes()==b'old output' and list(deep.iterdir())==[deep/'keep'],'installed ZIP path rejection preserves source and old output without staging')
     addon_utils.disable('mhwi_equipmentmorph',default_set=True)
     check(not bpy.app.timers.is_registered(startup_recovery) and not bpy.app.timers.is_registered(preview.watch),'final disable removes pending timers')
     check(not (configuration/'userpref.blend').exists(),'no preferences saved')

@@ -16,7 +16,7 @@ from .authoring import pin,write
 from .backend.equipment_morph_export_pipeline import digest,load_job
 from .backend.equipment_morph_package_pipeline import export_pipeline,package_id,PARTS
 from .backend.map_equipment_morph_job import model_meshes
-from .output_files import model_resource_id,retarget_model,publish,checked_output,PublicationCleanupError
+from .output_files import model_resource_id,retarget_model,publish,checked_output,check_file_paths,PublicationCleanupError
 
 TAG='mhwi_em_source_vertex'
 
@@ -227,12 +227,42 @@ def export_model(module,asset,path):
         mapping_method='clone-point-index-through-serializer',authored_shading_method='source-corner-normals-final-UV-MikkTSpace',geometric_corner_domain='before-shading-seam-split',export_matrix=[list(r) for r in module.exportMatrix],serialized_objects=serialized,
         undefined_normal_policy=normal_policy,antiparallel_normal_policy=antiparallel_policy,geometric_normal_fallbacks=fallbacks),normal_data
 
+def check_export_paths(output,assets,debug):
+    # Mirror only this fixed pipeline's longest filenames in each directory.
+    # tempfile names have eight random characters in certified Blender 5.1.2.
+    check_file_paths([output/'result.json'])
+    stage=(output if output.is_dir() else output.parent)/'morph-direct-stage-xxxxxxxx'
+    package=stage/'morph-package-stage-xxxxxxxx'
+    backup='morph-output-backup-xxxxxxxx'
+    final=[];paths=[]
+    for index,asset in enumerate(assets):
+        model=asset['model_id'];part=asset['part']
+        native=[Path('nativePC')/(model+suffix) for suffix in
+                ('.mod3','.morph/asset.mhmpack','.morph/model.mhmprofile','.morph/profile.json')]
+        work=Path('authoring')/str(index)
+        author=[work/'baseline_rotations.bin',work/(part+'.coordinates.json'),work/'package_job.json',
+                Path('authoring')/(part+'.keys.json')]
+        exported=Path('export')/model/'author-rotations.bin'
+        paths += [stage/p for p in native+author]+[package/p for p in native]+[package/exported]
+        # The inner publication only replaces the staged MOD3, not new profiles.
+        paths.append(stage/'nativePC'/backup/(model+'.mod3'))
+        final += native
+        if debug:final += author+[Path('generated')/exported]
+    final += [Path('result.json')] if debug else []
+    paths += [output/p for p in final]
+    # Reserve recovery space too: re-exporting must not fail while backing up.
+    if debug:paths += [(output if output.is_dir() else output.parent)/backup/p for p in final]
+    else:paths += [(output/'nativePC' if (output/'nativePC').is_dir() else output)/backup/p.relative_to('nativePC') for p in final]
+    check_file_paths(paths)
+
 def export_direct(recipe,output,debug=False,trace_callback=None):
     from .backend.capture_equipment_morph_job import capture
-    output=checked_output(output);assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
+    output=Path(output).absolute();assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
     for a in assets:a['package']=a['model_id'].rsplit('/',1)[-1]
     if output.exists() and not output.is_dir():raise ValueError('输出位置必须是文件夹')
     if not 0<len(assets)<=64 or len({a['model_id'].casefold() for a in assets})!=len(assets):raise ValueError('模型资源路径重复或超过64个')
+    check_export_paths(output,assets,debug)
+    output=checked_output(output)
     module=editor_module()
     for asset in assets:preflight(asset)
     output.parent.mkdir(parents=True,exist_ok=True)
