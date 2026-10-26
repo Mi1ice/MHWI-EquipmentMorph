@@ -42,6 +42,12 @@ check('导出路径过长' in message and '缩短输出目录' in message and st
 check((destination/'keep').read_bytes()==b'keep' and old_model.read_bytes()==b'old model' and not list(destination.glob('morph-direct-stage-*')),'deep output preserves old files without staging')
 check((config(state),scene(),[(o.name,o.data.uv_layers.active_index) for o in collection.all_objects if o.type=='MESH'])==before,'deep output preserves config source keys and active UV')
 
+# Model the OS canonicalizer expanding a short spelling (e.g. an 8.3 name).
+# No alias is created: the contract under test is preflight of its real result.
+with patch.object(direct,'checked_output',return_value=destination.resolve()),patch.object(direct.tempfile,'mkdtemp',side_effect=AssertionError('resolved long path reached staging')):
+    message=rejected(lambda:direct.export_direct(recipe,ARGS.output/'short-spelling'),'resolved output checked before staging')
+check('导出路径过长' in message and str(destination.resolve()) in message,'preflight uses actual canonical output path')
+
 # A later, longer model must reject the whole batch before creating output.
 destination=sized_directory(ARGS.output,118,'😀')/'new'
 long_model='pl/'+('long_'*10)+'model'

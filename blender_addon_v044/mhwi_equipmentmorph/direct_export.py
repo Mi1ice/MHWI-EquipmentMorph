@@ -230,7 +230,6 @@ def export_model(module,asset,path):
 def check_export_paths(output,assets,debug):
     # Mirror only this fixed pipeline's longest filenames in each directory.
     # tempfile names have eight random characters in certified Blender 5.1.2.
-    check_file_paths([output/'result.json'])
     stage=(output if output.is_dir() else output.parent)/'morph-direct-stage-xxxxxxxx'
     package=stage/'morph-package-stage-xxxxxxxx'
     backup='morph-output-backup-xxxxxxxx'
@@ -257,12 +256,14 @@ def check_export_paths(output,assets,debug):
 
 def export_direct(recipe,output,debug=False,trace_callback=None):
     from .backend.capture_equipment_morph_job import capture
-    output=Path(output).absolute();assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
+    output=Path(output).absolute()
+    check_file_paths([output/'result.json'])
+    output=checked_output(output)
+    assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
     for a in assets:a['package']=a['model_id'].rsplit('/',1)[-1]
     if output.exists() and not output.is_dir():raise ValueError('输出位置必须是文件夹')
     if not 0<len(assets)<=64 or len({a['model_id'].casefold() for a in assets})!=len(assets):raise ValueError('模型资源路径重复或超过64个')
     check_export_paths(output,assets,debug)
-    output=checked_output(output)
     module=editor_module()
     for asset in assets:preflight(asset)
     output.parent.mkdir(parents=True,exist_ok=True)
