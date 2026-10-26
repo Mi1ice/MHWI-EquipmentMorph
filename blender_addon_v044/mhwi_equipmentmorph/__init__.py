@@ -238,6 +238,7 @@ class MHWI_EM_OT_Import(Operator,ImportHelper):
     bl_idname='mhwi_em.import_job';bl_label='导入已验证作业'
     filename_ext='.json'
     filter_glob:StringProperty(default='*.json',options={'HIDDEN'})
+    def invoke(self,context,event):return self.execute(context)
     def execute(self,context):
         self.report({'ERROR'},RETIRED_REASON);return {'CANCELLED'}
 

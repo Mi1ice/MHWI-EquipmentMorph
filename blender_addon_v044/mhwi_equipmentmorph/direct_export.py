@@ -16,7 +16,7 @@ from .authoring import pin,write
 from .backend.equipment_morph_export_pipeline import digest,load_job
 from .backend.equipment_morph_package_pipeline import export_pipeline,package_id,PARTS
 from .backend.map_equipment_morph_job import model_meshes
-from .output_files import model_resource_id,retarget_model,publish,checked_output
+from .output_files import model_resource_id,retarget_model,publish,checked_output,PublicationCleanupError
 
 TAG='mhwi_em_source_vertex'
 
@@ -234,7 +234,7 @@ def export_direct(recipe,output,debug=False,trace_callback=None):
     output.parent.mkdir(parents=True,exist_ok=True)
     stage_parent=output if output.is_dir() else output.parent
     stage=Path(tempfile.mkdtemp(prefix='morph-direct-stage-',dir=stage_parent))
-    committed=False
+    committed=False;publishing_final=False
     try:
         work=stage/'authoring';work.mkdir();empty=work/'baseline_rotations.bin';empty.write_bytes(b'')
         for asset in assets:
@@ -272,10 +272,14 @@ def export_direct(recipe,output,debug=False,trace_callback=None):
         write(work/'README.json',{'replayable':False,'staging_root':str(stage),
             'reason':'archived paired-run evidence; files are now under the output directory',
             'source_indices_retained':True})
+        publishing_final=True
         if debug:publish(stage,output)
         else:publish(stage/'nativePC',output/'nativePC')
         committed=True
         return result
+    except PublicationCleanupError as error:
+        if publishing_final:committed=error.committed;raise
+        raise RuntimeError('阶段文件写入完成但未发布最终输出；清理失败，资料保留在 '+str(stage)) from error
     finally:
         if stage.exists():
             if stage.parent!=stage_parent or not stage.name.startswith('morph-direct-stage-'):raise ValueError('临时输出清理范围错误')

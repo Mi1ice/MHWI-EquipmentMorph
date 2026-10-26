@@ -5,6 +5,11 @@ import re
 import shutil
 import tempfile
 
+class PublicationCleanupError(RuntimeError):
+    def __init__(self,message,committed):
+        super().__init__(message)
+        self.committed=committed
+
 def model_resource_id(value):
     value=value.strip().replace('\\','/')
     if not value:raise ValueError('请填写游戏资源路径')
@@ -73,4 +78,4 @@ def publish(stage,output):
             try:shutil.rmtree(backup)
             except OSError as cleanup:
                 message='导出文件已发布；备份清理未完成：' if committed else '导出未发布或已恢复；备份清理未完成：'
-                raise RuntimeError(message+str(backup)) from cleanup
+                raise PublicationCleanupError(message+str(backup),committed) from cleanup

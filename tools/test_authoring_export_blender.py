@@ -106,6 +106,25 @@ with patch.object(direct.shutil,'rmtree',side_effect=cleanup_fail):
     message=rejected(lambda:direct.export_direct(recipe,destination),'postcommit cleanup failure reported')
 check('已发布' in message and verify(ARGS.validator,destination,ROOT/'config')['native_loader_valid'],'cleanup failure explicitly preserves already-published valid result')
 
+def backup_and_stage_cleanup_fail(path,*a,**kw):
+    if Path(path).name.startswith(('morph-output-backup-','morph-direct-stage-')):raise OSError('injected nested cleanup')
+    return real_remove(path,*a,**kw)
+destination=ARGS.output/'cleanup-inner'
+with patch.object(direct.shutil,'rmtree',side_effect=backup_and_stage_cleanup_fail):
+    message=rejected(lambda:direct.export_direct(recipe,destination),'inner committed cleanup failure reported')
+check('未发布最终输出' in message and not (destination/'nativePC').exists(),'inner staging commit must not be reported as final publication')
+
+real_publish=direct.publish
+def cleanup_final(stage,out):
+    # Let inner transactions finish; fail cleanup only in the public transaction.
+    if Path(out)==destination/'nativePC':
+        with patch.object(direct.shutil,'rmtree',side_effect=backup_and_stage_cleanup_fail):return real_publish(stage,out)
+    return real_publish(stage,out)
+destination=ARGS.output/'cleanup-final'
+with patch.object(direct,'publish',side_effect=cleanup_final),patch.object(direct.shutil,'rmtree',side_effect=cleanup_fail):
+    message=rejected(lambda:direct.export_direct(recipe,destination),'final publication and stage cleanup both fail')
+check('已发布' in message and verify(ARGS.validator,destination,ROOT/'config')['native_loader_valid'],'dual cleanup error still reports actual final commit')
+
 # One minimal real 1024-key export; the four-mode matrix above stays small.
 keys=[]
 for i in range(1024):

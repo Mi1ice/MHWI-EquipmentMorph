@@ -36,6 +36,11 @@ for mode in ('DIRECT','LEGACY'):
 state.source_mode='DIRECT';addon.refresh_keys(asset);asset.keys[0].selected=True;bpy.ops.mhwi_em.confirm_keys()
 shape_preview.start(asset,bpy.context,True)
 before=(config(state),scene(),id(shape_preview._SESSION))
+browser=[]
+operator=SimpleNamespace(filepath='retired.json',report=lambda *a:None)
+operator.execute=lambda context:addon.MHWI_EM_OT_Import.execute(operator,context)
+result=addon.MHWI_EM_OT_Import.invoke(operator,SimpleNamespace(window_manager=SimpleNamespace(fileselect_add=lambda *a:browser.append(True))),None)
+check(result=={'CANCELLED'} and not browser,'retired invoke refuses before opening a file chooser')
 for op,kw in [('import_job',dict(filepath=str(ARGS.output/'must-not-read.json'))),('read_model',{}),('collect_meshes',{})]:
     with patch.object(addon.authoring,'import_job',side_effect=AssertionError('retired file read')),patch.object(addon,'load_meshes',side_effect=AssertionError('retired model read')):
         cancelled(lambda:getattr(bpy.ops.mhwi_em,op)(**kw),'retired operator rejected '+op)
@@ -53,6 +58,10 @@ with patch.object(addon.authoring,'export_recipe',side_effect=AssertionError('re
 check((config(state),scene(),id(shape_preview._SESSION))==before,'legacy guards preserve configuration and active preview')
 shape_preview.stop();state.source_mode='DIRECT'
 cancelled(lambda:bpy.ops.mhwi_em.export_package(),'direct empty confirmation refused')
+for item in bpy.context.selected_objects:item.select_set(False)
+obj.select_set(True);bpy.context.view_layer.objects.active=obj;bpy.ops.object.mode_set(mode='EDIT')
+cancelled(lambda:bpy.ops.mhwi_em.export_package(),'direct object mode requirement enforced')
+bpy.ops.object.mode_set(mode='OBJECT')
 state.assets.clear();layout=Layout();addon.MHWI_EM_PT_Export.draw(SimpleNamespace(layout=layout),bpy.context)
 check('source_mode' not in layout.props and 'mhwi_em.import_job' not in layout.buttons,'empty UI stays direct')
 addon.unregister();addon.register();addon.unregister()

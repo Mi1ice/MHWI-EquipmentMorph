@@ -1,37 +1,33 @@
-# 0.4.4 作者与 MOD 管理工具
+# 作者插件 0.4.4：集合联合导出候选
 
-后续自动表情适配约定（功能开发中，尚未交付）：若目标面部使用形态键跟随游戏表情，
-由 MOD 作者移除该网格上原生表情骨骼的权重，避免重复变形；头部、颈部等必要跟随权重仍须保留。
-隐藏原生头部与读取其表情信号是两件事，具体 MOD 组合仍需验证隐藏后原生面部动画是否更新。
+本候选只包含 Blender 作者插件和必要许可证／作者原生组件，正式版本号保持 0.4.4；本地软件验证不等于正式发行、GUI 或游戏验收。安装由用户另行安排，候选不包含游戏运行时、面板、眨眼、配置或模型素材。
 
-单个MOD只携带模型和模型旁的形态键包。公共`runtime.ini`由游戏端运行时安装，工具不从MOD复制这份文件。检查、安装与换装均不需要Blender导出的Debug资料。
+## 准备与选择
 
-检查精简导出：
+使用已认证 Blender 5.1.2 与 MHW Model Editor 0.12。导出器逐项源码摘要必须与插件的 direct_export_adapter.json 一致，修改版本或源码后需重新验证。插件附带的 Windows x64 作者法线组件仅用于导出，不是游戏组件。
 
-```powershell
-./Check-EquipmentMorph.ps1 -ExportDirectory 'D:/MODExport/MyMod' -RuntimeConfig 'D:/Runtime/MHWI-EquipmentMorph-0.5.0'
-```
+在 N 侧栏 MHWI-EquipmentMorph 中添加配置，选择 MOD3 集合。保留性别／套装／部位选择和高级手动资源路径，例如 `pl/f_equip/pl105_0000/body/mod/f_body105_0000`，相对 nativePC，无需 .mod3 后缀。
 
-运行时配置目录也可填写`游戏目录/nativePC/plugins/MHWEquipmentMorph`。检查已安装的全部包：
+刷新候选、搜索并勾选，然后点击“使用选中形态键”。筛选不取消隐藏项；同名源键可参与多个网格。已确认列表配置接口名称，使用 1～63 个可打印 ASCII 字符，同一模型不能重复；中文源键保留原名。每模型最多 1024 动态键，不截断名称、不静默丢键；零位移键也保留。作者批量最多 64 个不同模型路径，与运行时五部位／5120 单批试验边界分别理解。
 
-```powershell
-./Check-EquipmentMorph.ps1 -GameDirectory '游戏目录'
-```
+动态键须为 0、未静音、相对 Basis、无顶点组遮罩。未选键按当前固定值烘焙进模型基准。骨架处于静止姿态，作者先处理其他会改变形状或拓扑的修改器；动画、约束、链接对象和绝对键不在当前支持范围。插件不自动归零、清动画、应用修改器或删除空键。预览使用独立副本，正常退出后恢复原状态；导出可能让 Blender 标记工程已修改，但不保存工程。
 
-计划安装（只读），确认后追加`--install`；已有模型内容冲突时需审阅并明确添加`--replace`：
+正式界面只提供集合联合导出。“已有 MOD3／导入已验证作业／读取模型网格／绑定选中网格”入口已退役，旧操作符调用及显式 LEGACY 导出会拒绝，保留配置与活动预览。不提供旧配置兼容、迁移或清空向导。历史底层研究代码的存在不表示旧流程仍正式支持。
 
-```powershell
-python ./manage_equipment_morph_mod.py --source 'D:/MODExport/MyMod' --game '游戏目录'
-```
+## 普通与 Debug
 
-先关闭游戏并安装游戏端运行时。只安装MOD3和每个包的三个文件，保留共享配置与其它MOD。安装失败会回滚本次模型文件，备份／收据仍在游戏的`.mod-installation`目录。
+选择任意可写普通文件夹，插件创建 nativePC 子目录。每模型普通输出恰好四个文件：模型 .mod3 和同名 .morph 目录内的 asset.mhmpack、model.mhmprofile、profile.json。不要拆开混配不同导出批次的模型与包。
 
-换装生成新目录，原文件保持：
+Debug 额外保留 authoring、generated 和 result.json；两种模式均不输出 runtime.ini。重用旧目录时只替换本次目标，保留无关文件、历史 Debug 资料和旧 runtime.ini。普通导出不会把旧 result.json 当本次结果；新建空输出目录更易核对交付内容。
 
-```powershell
-python ./prepare_mhwi_equipmentmorph_resource_path.py --source 'D:/MODExport/MyMod' --output 'D:/MODExport/MyMod-Pl001' --part body --equipment-id 001 --runtime-config 'D:/Runtime/MHWI-EquipmentMorph-0.5.0'
-```
+基准法线与逐键几何法线策略保持；无定义／反向端点默认拒绝，已有显式例外不自动成为默认。一次性 489 键分组和两空键排除决定不作为产品默认。
 
-也可使用`--model-id`指定完整资源路径，与`--equipment-id`互斥。同部位存在多个模型时先选择只包含一个待迁移模型的输入。这个入口管理导出的MOD3与形态键数据；完整MOD的材质、纹理、物理关联迁移仍属于后续压缩包工具的范围。
+## 失败反馈与验证边界
 
-需要Python 3.10或更新版本；所需标准库及包格式后端随工具包提供，无需Blender或numpy。原生验证器沿用运行时0.5.0，只读验证模型身份与包内容；源码来自项目公开仓库的`tools/validate_equipment_morph_packages.cpp`及其引用的runtime头文件。本工具源码随包提供，GPL许可见LICENSE。
+预检、序列化、包生成和多模型后项失败在最终发布前停止。可捕获的发布异常尝试恢复同路径原文件，保留无关输出。自动恢复未完成时反馈实际备份位置；不要删除这些 morph-output-backup-* 目录及其所在阶段目录，应先核对并恢复。若文件已发布但清理失败，提示明确说明“已发布”；仅阶段文件写入则明确说明最终输出未发布。备份清理可能不完整，不能将提示当作断电／强杀原子提交保证。
+
+软件检查使用独立后台 factory-startup 小合成场景，不读取私人工程，不保存 .blend，不安装插件到用户环境。候选 ZIP 在隔离解包后再次注册、确认键、实际联合导出并经当前原生包验证。外置 self-test-receipt.json 绑定 ZIP 摘要，manifest.json 的 candidate_complete 仅在自检通过后为 true；SHA256SUMS 列出交付文件摘要。历史 489 键法线／视觉结果保留原身份，本候选未重跑实机视觉。
+
+用户后续清单：安装另行安排后检查界面仅联合导出；选择集合、搜索／确认键、固定非零外形和预览恢复；普通／Debug 新目录与已有目录导出；不支持输入拒绝后配置保持。GUI、当前工程、游戏及完整五部位生命周期／性能不由本软件检查替代。
+
+源码仓库 docs/USAGE.md 另有模型／包检查和 MOD 管理的历史工具说明；这些工具不随本独立作者 ZIP 携带。

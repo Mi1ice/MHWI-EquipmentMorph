@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import os
+import re
 sys.stdout.reconfigure(encoding='utf-8')
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -17,6 +18,7 @@ def inputs():
     files += list((ROOT/'tools').glob('*authoring*'))
     files += [ROOT/'tools/package_source.py',ROOT/'tools/desktop_notices.py',ROOT/'tools/blender_export_fixture.py',ROOT/'tools/test_key_selection_preview.py',ROOT/'tools/prepare_mhwi_equipmentmorph_resource_path.py',ROOT/'tools/build_equipment_morph_package_validator.ps1',ROOT/'tools/windows-toolchain.ps1',ROOT/'tools/validate_equipment_morph_packages.cpp',ROOT/'LICENSE',ROOT/'LICENSING.md',ROOT/'docs/AUTHOR_TOOLS.md',ROOT/'docs/USAGE.md',ROOT/'config/runtime.ini']
     files += list((ROOT/'runtime').rglob('*.hpp'))
+    for pattern in ('*.py','*.ps1','*.cpp','*.hpp'):files += list((ROOT/'tools').glob(pattern))
     return {p.relative_to(ROOT).as_posix():sha(p) for p in sorted(set(files)) if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc'}
 def run(command,log):
     with Path(log).open('w',encoding='utf-8') as stream:
@@ -26,6 +28,7 @@ def run(command,log):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--stage',choices=['Entrypoints','Preflight','Export','All'],default='All');parser.add_argument('--blender',type=Path,required=True);parser.add_argument('--output',type=Path,required=True);args=parser.parse_args()
     output=args.output.resolve();output.mkdir(parents=True,exist_ok=True)
+    write(output/'report.json',dict(schema='mhwi-authoring-closeout-v1',stage=args.stage,software_checks_passed=False,error='Dependency inspection or verification has not completed',background_blender_tested=False,gui_tested=False,game_tested=False,formal_acceptance_complete=False))
     report=dict(schema='mhwi-authoring-closeout-v1',stage=args.stage,software_checks_passed=False,checks=[],source_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),dirty=bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=ROOT,text=True).strip()),inputs=inputs(),blender=dict(path=str(args.blender.resolve()),sha256=sha(args.blender)),python=dict(path=sys.executable,sha256=sha(sys.executable)),background_blender_tested=False,gui_tested=False,game_tested=False,formal_acceptance_complete=False,reused_reports=[])
     write(output/'report.json',report) # Invalidate any previous All before work starts.
     try:
@@ -46,9 +49,16 @@ def main():
             report['validator']=dict(path=str(output/'validator/EquipmentMorphPackageValidator.exe'),sha256=sha(output/'validator/EquipmentMorphPackageValidator.exe'))
             suites=['test_authoring_publication.py','test_authored_shading_package.py','test_mhwi_equipmentmorph_authoring_clean.py','check_repository.py','test_check_repository.py']
             if args.stage=='All':suites.append('test_package_authoring_candidate.py')
+            report['python_suites']=[]
             for script in suites:
                 run([sys.executable,ROOT/'tools'/script],output/(script+'.log'))
-            report['python_suites']=['publication','candidate packaging','native component packaging','historical authoring backend','repository scan','repository scan tests']
+                log=(output/(script+'.log')).read_text(encoding='utf-8',errors='replace')
+                found=re.search(r'Ran (\d+) tests',log) or re.search(r'PASS: (\d+)',log)
+                row=dict(script=script,passed_checks=int(found[1]) if found else None,log_sha256=sha(output/(script+'.log')))
+                if script=='check_repository.py':
+                    match=re.search(r'PASS: (\d+) public source files, (\d+) Python syntax checks',log)
+                    row=dict(script=script,public_source_files=int(match[1]),python_syntax_checks=int(match[2]),log_sha256=row['log_sha256'])
+                report['python_suites'].append(row)
         for stage in stages:
             script={'Entrypoints':'test_authoring_entrypoints_blender.py','Preflight':'test_authoring_preflight_blender.py','Export':'test_authoring_export_blender.py'}[stage]
             cmd=[args.blender,'--background','--factory-startup','--python-exit-code','1','--python',ROOT/'tools'/script,'--','--output',output/stage.lower()]
@@ -64,6 +74,7 @@ def main():
             if stage=='Preflight':
                 run([args.blender,'--background','--factory-startup','--python-exit-code','1','--python',ROOT/'tools/test_key_selection_preview.py','--','--no-save','--output',output/'key-preview.json'],output/'key-preview.log')
                 report['checks']+=json.loads((output/'key-preview.json').read_bytes())['checks']
+        if inputs()!=report['inputs']:raise ValueError('Source inputs changed during verification')
         report['background_blender_tested']=True;report['software_checks_passed']=True
         report['outputs']={p.relative_to(output).as_posix():sha(p) for p in output.rglob('*') if p.is_file() and p.name not in ('report.json','report.tmp')}
     except Exception as error:
