@@ -51,7 +51,7 @@ def preflight(asset):
     names=[k['source_key'] for k in asset['keys']]
     if len(set(names))!=len(names):raise ValueError('源形态键重复')
     if any(k.get('author_shading') for k in asset['keys']):raise ValueError('联合导出不使用共享作者旋转数据')
-    objects=[o for o in collection.all_objects if o.type=='MESH'];controlled=[]
+    objects=[o for o in collection.all_objects if o.type=='MESH'];controlled=[];found=set()
     if not objects:raise ValueError('集合没有网格')
     for obj in objects:
         mesh=obj.data;shape=mesh.shape_keys
@@ -66,9 +66,12 @@ def preflight(asset):
                 if any(max(abs(b.matrix[r][c]-b.bone.matrix_local[r][c]) for r in range(4) for c in range(4))>1e-7 for b in rig.pose.bones):raise ValueError('骨架必须处于静止姿态')
         selected=[shape.key_blocks.get(n) for n in names] if shape else []
         selected=[k for k in selected if k]
+        found.update(k.name for k in selected)
         for key in selected:
             if key.value!=0 or key.mute or key.vertex_group or key.relative_key!=shape.reference_key:raise ValueError('动态键须为零、未静音、相对Basis且无顶点组：'+key.name)
         if selected:controlled.append(obj)
+    missing=set(names)-found
+    if missing:raise ValueError('已选动态键在集合中缺失：'+', '.join(sorted(missing)))
     if not controlled:raise ValueError('集合中没有选定的动态键')
     return objects,controlled,load_job_validation
 

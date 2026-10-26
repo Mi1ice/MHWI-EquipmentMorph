@@ -42,6 +42,9 @@ def main():
             if 'validator' in report: cmd += ['--validator',report['validator']['path']]
             run(cmd,output/(stage.lower()+'.log'))
             result=json.loads((output/stage.lower()/(stage.lower()+'.json')).read_bytes());report['checks']+=result['checks']
+            if stage=='Preflight':
+                run([args.blender,'--background','--factory-startup','--python-exit-code','1','--python',ROOT/'tools/test_key_selection_preview.py','--','--no-save','--output',output/'key-preview.json'],output/'key-preview.log')
+                report['checks']+=json.loads((output/'key-preview.json').read_bytes())['checks']
         report['background_blender_tested']=True;report['software_checks_passed']=True
         report['outputs']={p.relative_to(output).as_posix():sha(p) for p in output.rglob('*') if p.is_file() and p.name not in ('report.json','report.tmp')}
     except Exception as error:
