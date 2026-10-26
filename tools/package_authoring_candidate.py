@@ -90,9 +90,11 @@ def finalize(output,receipt):
     if (receipt.get('zip_sha256')!=sha(output/'addon.zip') or receipt.get('zip_sha256')!=manifest['zip_sha256']
         or receipt.get('validator_sha256')!=report['validator']['sha256'] or receipt.get('blender_sha256')!=report['blender']['sha256']
         or not receipt.get('passed') or receipt.get('passed')!=len(receipt.get('checks',[]))
-        or receipt.get('background_blender_tested') is not True or receipt.get('addon_from_zip') is not True):raise ValueError('Missing or mismatched candidate ZIP self-test')
+        or receipt.get('background_blender_tested') is not True or receipt.get('addon_from_zip') is not True
+        or receipt.get('installation_tested') is not True or receipt.get('enable_via_addon_utils') is not True
+        or receipt.get('installed_files')!={name.removeprefix('mhwi_equipmentmorph/'):digest for name,digest in manifest['zip_files'].items()}):raise ValueError('Missing or mismatched candidate ZIP installation self-test')
     write(output/'self-test-receipt.json',receipt)
-    manifest.update(candidate_complete=True,self_test_receipt_sha256=sha(output/'self-test-receipt.json'))
+    manifest.update(candidate_complete=True,isolated_installation_tested=True,self_test_receipt_sha256=sha(output/'self-test-receipt.json'))
     write(output/'manifest.json',manifest)
     (output/'SHA256SUMS').write_text(''.join(sha(p)+'  '+p.name+'\n' for p in sorted(output.iterdir()) if p.is_file() and p.name!='SHA256SUMS'),encoding='utf-8')
     return manifest
@@ -101,14 +103,12 @@ def self_test(build,output):
     build=Path(build).resolve();output=Path(output).resolve();report=json.loads((output/'software-report.json').read_bytes())
     # Blender's embedded Windows Python cannot open the DLL at a >260-char
     # nested evidence path. Keep this disposable unpacking under a short root.
-    work=Path(tempfile.mkdtemp(prefix='az-',dir=ROOT/'.build'));unpacked=work/'unpacked';unpacked.mkdir()
+    work=Path(tempfile.mkdtemp(prefix='ai-',dir=ROOT/'.build'))
     manifest=json.loads((output/'manifest.json').read_bytes());validate_zip(output/'addon.zip',manifest['zip_files'])
-    with zipfile.ZipFile(output/'addon.zip') as archive:
-        for name in archive.namelist():
-            path=unpacked/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(archive.read(name))
-    run([report['blender']['path'],'--background','--factory-startup','--python-exit-code','1','--python',ROOT/'tools/test_authoring_candidate_blender.py','--','--output',work/'result','--validator',report['validator']['path'],'--addon-root',unpacked],work/'blender.log')
-    receipt=json.loads((work/'result/candidate-selftest.json').read_bytes())
-    receipt.update(zip_sha256=sha(output/'addon.zip'),validator_sha256=sha(report['validator']['path']),blender_sha256=sha(report['blender']['path']),work_directory=str(work),log_sha256=sha(work/'blender.log'),check_script_sha256=sha(ROOT/'tools/test_authoring_candidate_blender.py'))
+    environment={name:str(work/directory) for name,directory in [('BLENDER_USER_SCRIPTS','scripts'),('BLENDER_USER_CONFIG','config'),('BLENDER_USER_EXTENSIONS','extensions')]}
+    run([report['blender']['path'],'--background','--factory-startup','--python-exit-code','1','--python',ROOT/'tools/test_authoring_install_blender.py','--','--workspace',work,'--zip',output/'addon.zip','--validator',report['validator']['path'],'--exporter-addons',Path(report['exporter']['path']).parents[5]],work/'blender.log',extra_env=environment)
+    receipt=json.loads((work/'candidate-install.json').read_bytes())
+    receipt.update(zip_sha256=sha(output/'addon.zip'),validator_sha256=sha(report['validator']['path']),blender_sha256=sha(report['blender']['path']),work_directory=str(work),log_sha256=sha(work/'blender.log'),check_script_sha256=sha(ROOT/'tools/test_authoring_install_blender.py'),isolated_environment=environment)
     return receipt
 
 def main():

@@ -20,9 +20,10 @@ def inputs():
     files += list((ROOT/'runtime').rglob('*.hpp'))
     for pattern in ('*.py','*.ps1','*.cpp','*.hpp'):files += list((ROOT/'tools').glob(pattern))
     return {p.relative_to(ROOT).as_posix():sha(p) for p in sorted(set(files)) if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc'}
-def run(command,log):
+def run(command,log,extra_env=None):
     with Path(log).open('w',encoding='utf-8') as stream:
-        result=subprocess.run([str(x) for x in command],cwd=ROOT,stdout=stream,stderr=subprocess.STDOUT,env=dict(os.environ,PYTHONIOENCODING='utf-8'))
+        environment=dict(os.environ,PYTHONIOENCODING='utf-8');environment.update(extra_env or {})
+        result=subprocess.run([str(x) for x in command],cwd=ROOT,stdout=stream,stderr=subprocess.STDOUT,env=environment)
     print(Path(log).read_text(encoding='utf-8',errors='replace')[-2500:])
     if result.returncode: raise RuntimeError(f'Command failed ({result.returncode}); {log}')
 def main():

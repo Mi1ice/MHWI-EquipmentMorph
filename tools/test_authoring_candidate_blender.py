@@ -1,4 +1,4 @@
-"""Small real export from the exact unpacked ZIP; never installs the addon."""
+"""Historical direct-register export check; not an installation acceptance test."""
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))

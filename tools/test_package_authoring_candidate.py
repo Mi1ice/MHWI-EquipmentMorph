@@ -44,10 +44,19 @@ class CandidateTests(unittest.TestCase):
         manifest=candidate.assemble(self.build,self.output)
         self.assertFalse(manifest['candidate_complete'])
         with self.assertRaises(ValueError):candidate.finalize(self.output,{})
-        receipt=dict(passed=5,checks=['fixture']*5,zip_sha256=reports.sha(self.output/'addon.zip'),validator_sha256=self.report['validator']['sha256'],background_blender_tested=True,addon_from_zip=True,blender_sha256=self.report['blender']['sha256'])
+        receipt=dict(passed=5,checks=['fixture']*5,zip_sha256=reports.sha(self.output/'addon.zip'),validator_sha256=self.report['validator']['sha256'],background_blender_tested=True,addon_from_zip=True,blender_sha256=self.report['blender']['sha256'],installation_tested=True,enable_via_addon_utils=True,installed_files={name.removeprefix('mhwi_equipmentmorph/'):digest for name,digest in manifest['zip_files'].items()})
         candidate.finalize(self.output,receipt)
         self.assertTrue(json.loads((self.output/'manifest.json').read_bytes())['candidate_complete'])
         candidate.validate_zip(self.output/'addon.zip',manifest['zip_files'])
+    def test_direct_registration_receipt_cannot_complete(self):
+        manifest=candidate.assemble(self.build,self.output)
+        receipt=dict(passed=1,checks=['direct-register fixture'],zip_sha256=reports.sha(self.output/'addon.zip'),validator_sha256=self.report['validator']['sha256'],background_blender_tested=True,addon_from_zip=True,blender_sha256=self.report['blender']['sha256'],installed_files={name.removeprefix('mhwi_equipmentmorph/'):digest for name,digest in manifest['zip_files'].items()})
+        with self.assertRaises(ValueError):candidate.finalize(self.output,receipt)
+    def test_changed_installed_files_cannot_complete(self):
+        manifest=candidate.assemble(self.build,self.output)
+        receipt=dict(passed=1,checks=['installation fixture'],zip_sha256=reports.sha(self.output/'addon.zip'),validator_sha256=self.report['validator']['sha256'],background_blender_tested=True,addon_from_zip=True,blender_sha256=self.report['blender']['sha256'],installation_tested=True,enable_via_addon_utils=True,installed_files={name.removeprefix('mhwi_equipmentmorph/'):digest for name,digest in manifest['zip_files'].items()})
+        receipt['installed_files'][next(iter(receipt['installed_files']))]='0'*64
+        with self.assertRaises(ValueError):candidate.finalize(self.output,receipt)
     def test_failed_all(self):self.refuse(lambda r:r.update(software_checks_passed=False))
     def test_partial_stage(self):self.refuse(lambda r:r.update(stage='Export'))
     def test_failed_single_stage_invalidates_old_all(self):
