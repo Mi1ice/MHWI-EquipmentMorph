@@ -31,17 +31,18 @@ def main():
     check(bpy.ops.preferences.addon_install(filepath=str(args.zip),enable_on_install=True,overwrite=False)=={'FINISHED'},'real Blender ZIP installation and automatic restricted enable')
     import mhwi_equipmentmorph as addon
     from mhwi_equipmentmorph import shape_preview as preview
+    startup_recovery=getattr(preview,'recover_after_register',preview.recover)
     installed=scripts/'addons/mhwi_equipmentmorph'
     check(Path(addon.__file__).resolve()==installed/'__init__.py','enabled module loaded from ZIP installation')
     check(addon_utils.check('mhwi_equipmentmorph')==(True,True),'Blender records the installed addon as enabled')
-    check(bpy.app.timers.is_registered(preview.recover),'initial recovery is deferred until data access is available')
+    check(bpy.app.timers.is_registered(startup_recovery),'initial recovery is deferred until data access is available')
     # Run the registered callback in restored context; no GUI loop or user data.
-    preview.recover()
+    startup_recovery()
     handlers=lambda:{name:len(getattr(bpy.app.handlers,name)) for name in ('save_pre','load_pre','undo_pre','redo_pre','render_pre','load_post','undo_post','redo_post')}
     expected=handlers()
     check(all(getattr(bpy.app.handlers,name).count(preview.before_operation)==1 for name in ('save_pre','load_pre','undo_pre','redo_pre','render_pre')),'pre-operation cleanup handlers registered once')
     addon_utils.disable('mhwi_equipmentmorph',default_set=True)
-    check(not hasattr(bpy.types.WindowManager,'mhwi_equipmentmorph') and not bpy.app.timers.is_registered(preview.recover),'disable removes RNA property and pending recovery timer')
+    check(not hasattr(bpy.types.WindowManager,'mhwi_equipmentmorph') and not bpy.app.timers.is_registered(startup_recovery),'disable removes RNA property and pending recovery timer')
     errors=[]
     check(addon_utils.enable('mhwi_equipmentmorph',default_set=True,handle_error=errors.append) is addon and not errors,'actual restricted re-enable succeeds')
     check(handlers()==expected,'disable and re-enable do not duplicate handlers')
@@ -53,6 +54,11 @@ def main():
     asset=state.assets.add();asset.collection=collection;asset.target_mode='MANUAL';asset.model_id='pl/f_equip/pl105_0000/body/mod/f_body105_0000'
     addon.refresh_keys(asset);next(key for key in asset.keys if key.source=='Smile').selected=True
     check(bpy.ops.mhwi_em.confirm_keys()=={'FINISHED'},'installed addon confirms real shape key')
+    preview.start(asset,bpy.context,True)
+    preview_objects={o.name for o in bpy.data.objects}
+    startup_recovery()
+    check(preview.running() and {o.name for o in bpy.data.objects}==preview_objects,'deferred startup recovery does not delete a newly active preview')
+    preview.stop()
     before={o.name:fingerprint(o) for o in collection.all_objects if o.type=='MESH'}
     state.output=str(work/'export')
     check(bpy.ops.mhwi_em.export_package()=={'FINISHED'},'installed addon performs real paired export')
@@ -60,7 +66,7 @@ def main():
     check(len([p for p in Path(state.output).rglob('*') if p.is_file()])==4,'installed ZIP ordinary export contains exactly four files')
     check(before=={o.name:fingerprint(o) for o in collection.all_objects if o.type=='MESH'},'installed addon preserves synthetic source data')
     addon_utils.disable('mhwi_equipmentmorph',default_set=True)
-    check(not bpy.app.timers.is_registered(preview.recover) and not bpy.app.timers.is_registered(preview.watch),'final disable removes pending timers')
+    check(not bpy.app.timers.is_registered(startup_recovery) and not bpy.app.timers.is_registered(preview.watch),'final disable removes pending timers')
     check(not (configuration/'userpref.blend').exists(),'no preferences saved')
     return dict(addon_path=str(installed/'__init__.py'),zip_sha256=sha(args.zip),installed_files={p.relative_to(installed).as_posix():sha(p) for p in installed.rglob('*') if p.is_file() and '__pycache__' not in p.parts})
 
