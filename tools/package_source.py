@@ -40,6 +40,13 @@ def addon_files(addon):
     return [path for path in sorted(addon.rglob('*')) if path.is_file() and '__pycache__' not in path.parts and path.suffix!='.pyc'
             and path.name not in ('LICENSE','LICENSING.md') and (native not in path.parents or path in generated)]
 
+def runtime_author_helpers(addon):
+    return {'output_files.py':addon/'output_files.py',
+            'capacity.py':addon/'capacity.py',
+            'emit_equipment_morph_profile.py':addon/'backend/emit_equipment_morph_profile.py',
+            'mesh_contract.py':addon/'backend/mesh_contract.py',
+            'vertex_formats.py':addon/'backend/vertex_formats.py'}
+
 def main():
     global PACKAGE
     parser = argparse.ArgumentParser()
@@ -106,10 +113,7 @@ def main():
     copy(ROOT / '.build/current-validation/package-validator/EquipmentMorphPackageValidator.exe', 'Tools/EquipmentMorphPackageValidator.exe')
     for name in ('Check-EquipmentMorph.ps1', 'prepare_mhwi_equipmentmorph_resource_path.py', 'manage_equipment_morph_mod.py'):
         copy(ROOT / 'tools' / name, 'Tools/' + name)
-    for name, source in [('output_files.py', addon / 'output_files.py'),
-                         ('emit_equipment_morph_profile.py', addon / 'backend/emit_equipment_morph_profile.py'),
-                         ('mesh_contract.py', addon / 'backend/mesh_contract.py'),
-                         ('vertex_formats.py', addon / 'backend/vertex_formats.py')]:
+    for name, source in runtime_author_helpers(addon).items():
         copy(source, 'Tools/author_backend/' + name)
     manifest = {'schema': 'mhwi-equipmentmorph-runtime-distribution-v1', 'project_name': 'MHWI-EquipmentMorph',
                 'version': PACKAGE.name.removeprefix('MHWI-EquipmentMorph-') if args.desktop else VERSION, 'files': payload,

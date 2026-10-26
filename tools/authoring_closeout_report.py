@@ -49,7 +49,7 @@ def main():
             report['native_component']=dict(manifest_sha256=sha(native),**component)
             run(['powershell','-NoProfile','-File',ROOT/'tools/build_equipment_morph_package_validator.ps1','-OutputDirectory',output/'validator'],output/'validator-build.log')
             report['validator']=dict(path=str(output/'validator/EquipmentMorphPackageValidator.exe'),sha256=sha(output/'validator/EquipmentMorphPackageValidator.exe'))
-            suites=['test_authoring_publication.py','test_authored_shading_package.py','test_mhwi_equipmentmorph_authoring_clean.py','test_vertex_formats.py','check_repository.py','test_check_repository.py']
+            suites=['test_authoring_publication.py','test_authored_shading_package.py','test_mhwi_equipmentmorph_authoring_clean.py','test_vertex_formats.py','test_runtime_package_helpers.py','check_repository.py','test_check_repository.py']
             run([sys.executable,ROOT/'tools/generate_vertex_formats.py','--check'],output/'vertex-generation.log')
             if args.stage=='All':suites.append('test_package_authoring_candidate.py')
             report['python_suites']=[]
