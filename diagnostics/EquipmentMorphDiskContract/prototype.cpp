@@ -281,9 +281,9 @@ template<class Log> void WriteInputCycleRejection(Log& log,Part& part){
 }
 template<class Log> void WriteState(Log& log,Part& part,const char* event){
     // Snapshot references are cheap; format actual-count arrays on the worker.
-    const auto [v,id,live,ready,started,reason,replacements,originalBypasses,postSignalDraws]=[&]{
+    const auto [v,id,live,ready,started,reason,replacements,originalBypasses,postSignalDraws,workers,signals,boundaries]=[&]{
         std::lock_guard lock(gate);const auto& a=*part.adapter;
-        return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason(),part.replacements,a.OriginalBypasses(),a.PostSignalDraws()};
+        return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason(),part.replacements,a.OriginalBypasses(),a.PostSignalDraws(),a.Fixed().workers,a.Signals(),a.Boundaries()};
     }();
     // Remaining part fields belong to this worker. Formatting and disk IO must
     // not hold the gate also used by game callbacks.
@@ -291,7 +291,7 @@ template<class Log> void WriteState(Log& log,Part& part,const char* event){
     const auto capacity=requested.size()+applied.size()+2048;
     if(capacity>65536)throw std::runtime_error("Part state log bound");
     std::vector<char> line(capacity);
-    const auto count=std::snprintf(line.data(),line.size(),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu,\"original_input_bypasses\":%llu,\"post_signal_original_draws\":%llu,\"same_weight_publications\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,replacements,originalBypasses,postSignalDraws,v.sameWeightPublications);
+    const auto count=std::snprintf(line.data(),line.size(),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu,\"original_input_bypasses\":%llu,\"post_signal_original_draws\":%llu,\"same_weight_publications\":%llu,\"observed_tick\":%llu,\"model_id\":\"%s\",\"model_sha256\":\"%s\",\"pack_sha256\":\"%s\",\"native_workers\":%u,\"cycle_open\":%s,\"completed_signals\":%llu,\"joined_boundaries\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,replacements,originalBypasses,postSignalDraws,v.sameWeightPublications,::GetTickCount64(),part.asset->model.c_str(),part.asset->modelSha.c_str(),part.asset->packSha.c_str(),workers,v.frameOpen?"true":"false",signals,boundaries);
     if(count<0||static_cast<size_t>(count)>=line.size()||!log.Write(line.data()))throw std::runtime_error("Part state log");
 }
 

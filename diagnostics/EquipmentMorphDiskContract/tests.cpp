@@ -27,9 +27,11 @@ BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T 
 #include <cstdio>
 #include <thread>
 #include "RetirementTests.hpp"
+#include "FivePartLifecycleTests.hpp"
 #include "InputFastPathTests.hpp"
 #include "LaunchValidationTests.hpp"
 #include "WorkerCountTests.hpp"
+#include "LifecycleLogTests.hpp"
 #include "IdleSamplingTests.hpp"
 #include "BatchedReadTests.hpp"
 #include "RuntimeInputTests.hpp"
@@ -43,8 +45,10 @@ BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T 
 int wmain(int argc,wchar_t** argv){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
     checks+=retirementtest::Run(std::filesystem::absolute(argv[0]).parent_path()/"retirement-regression.ndjson");
+    checks+=fivepartlifecycletests::Run(std::filesystem::absolute(argv[0]).parent_path()/"five-part-lifecycle-regression.ndjson");
     checks+=inputfasttest::Run();
     checks+=workercounttest::Run();
+    checks+=lifecyclelogtests::Run();
     checks+=launchvalidationtest::Run();
     checks+=idlesamplingtest::Run();
     checks+=directweighttests::Run();
