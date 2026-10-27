@@ -168,9 +168,13 @@ def evaluate(manifest,case,records,observations,header):
         if any(visual.get(k) is not True for k in attest):visual=dict(visual,status='not_observed',reason='equipment_sequence_attestation_missing')
     elif kind in ('title','history'):
         removed=next((i for i,r in enumerate(annotated) if r.get('event')=='automatic_main_player_changed' and r.get('waiting') is True),None)
-        passed=removed is not None
+        # PlayerGone clears the anchor in the removal callback. Refresh can
+        # therefore see zero unchanged and omit the worker's waiting event.
+        # Its per-part retirement reason is direct evidence of that same path.
+        passed=True
         for part in case['parts']:
-            at=next((i for i,r in enumerate(annotated) if removed is not None and i>removed and r.get('event')=='public_part_retired' and r.get('part')==part and r.get('target')),None)
+            at=next((i for i,r in enumerate(annotated) if r.get('event')=='public_part_retired' and r.get('part')==part and r.get('target') and
+                     ((removed is not None and i>removed) or r.get('reason') in ('equipment_player_removed','equipment_player_destroyed'))),None)
             if at is None:passed=False;continue
             proof,ready_at,new=replacement(annotated,at,len(annotated))
             if proof=='failed':failures.append('retirement_completion_failed')

@@ -90,6 +90,25 @@ class C06Tests(unittest.TestCase):
         for r in self.records:
             if r.get('event')=='part_ready_original_inputs':r['target']=10
         self.assertEqual(self.run_case()['status'],'failed')
+    def direct_player_removal_fixture(self,reason):
+        self.title_fixture();self.records.pop(0)
+        for r in self.records:
+            if r.get('event')=='public_part_retired':r['reason']=reason
+    def test_title_direct_player_remove_and_destroy(self):
+        for reason in ('equipment_player_removed','equipment_player_destroyed'):
+            self.direct_player_removal_fixture(reason)
+            self.assertEqual(self.run_case()['status'],'passed')
+    def test_title_equipment_switch_is_not_player_removal(self):
+        self.direct_player_removal_fixture('equipment_part_identity_changed')
+        self.assertEqual(self.run_case()['status'],'not_observed')
+    def test_title_direct_removal_still_requires_all_parts(self):
+        self.direct_player_removal_fixture('equipment_player_removed')
+        self.records=[r for r in self.records if not(r.get('event')=='public_part_retired' and r['part']==4)]
+        self.assertEqual(self.run_case()['status'],'not_observed')
+    def test_title_direct_removal_still_requires_gpu_completion(self):
+        self.direct_player_removal_fixture('equipment_player_removed')
+        self.records=[r for r in self.records if r.get('event')!='part_retirement_complete']
+        self.assertEqual(self.run_case()['status'],'not_observed')
     def test_restore_rejects_pre_retirement_controls(self):
         self.switch_fixture();self.case['kind']='restore'
         self.obs['basic'].update(sources_restored=True,source_attribution_confirmed=True,manual_override_observed=True,release_to_daily_source_observed=True)
