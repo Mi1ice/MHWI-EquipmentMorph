@@ -173,12 +173,21 @@ def evaluate(manifest,case,records,observations,header):
         # Its per-part retirement reason is direct evidence of that same path.
         passed=True
         for part in case['parts']:
-            at=next((i for i,r in enumerate(annotated) if r.get('event')=='public_part_retired' and r.get('part')==part and r.get('target') and
-                     ((removed is not None and i>removed) or r.get('reason') in ('equipment_player_removed','equipment_player_destroyed'))),None)
-            if at is None:passed=False;continue
-            proof,ready_at,new=replacement(annotated,at,len(annotated))
-            if proof=='failed':failures.append('retirement_completion_failed')
-            if proof!='passed':passed=False;continue
+            all_retire=[i for i,r in enumerate(annotated) if r.get('event')=='public_part_retired' and r.get('part')==part and r.get('target')]
+            first=next((n for n,i in enumerate(all_retire) if (removed is not None and i>removed) or
+                        annotated[i].get('reason') in ('equipment_player_removed','equipment_player_destroyed')),None)
+            if first is None:passed=False;continue
+            # Once removal is established, ordinary equipment changes also end
+            # a generation; controls from that retired target cannot finish this case.
+            retire=all_retire[first:]
+            for n,at in enumerate(retire):
+                end=retire[n+1] if n+1<len(retire) else len(annotated)
+                proof,ready_at,new=replacement(annotated,at,end)
+                if proof=='failed':failures.append('retirement_completion_failed')
+                if proof!='passed':passed=False;break
+            if proof!='passed':continue
+            # Every intermediate generation must retire safely and start neutral.
+            # The requested renewed control belongs to the final loaded character.
             fresh=[s for s in annotated[ready_at:] if s.get('part')==part and s.get('epoch')==new['epoch'] and s.get('target')==new['target'] and 'applied' in s]
             if not sequence(fresh,[.5,0],0):passed=False
         if passed:live='passed'

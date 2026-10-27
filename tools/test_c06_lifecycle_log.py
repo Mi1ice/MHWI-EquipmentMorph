@@ -109,6 +109,41 @@ class C06Tests(unittest.TestCase):
         self.direct_player_removal_fixture('equipment_player_removed')
         self.records=[r for r in self.records if r.get('event')!='part_retirement_complete']
         self.assertEqual(self.run_case()['status'],'not_observed')
+    def history_multistage_fixture(self):
+        self.direct_player_removal_fixture('equipment_player_removed');self.case['kind']='history'
+        # Gallery/menu/load can rebuild several generations. Intermediate
+        # characters need neutral readiness; renewed control is on final load.
+        self.records=[r for r in self.records if r.get('event')!='part_state' or r['epoch']==1]
+        for p in range(5):
+            self.records += [
+                {'event':'public_part_retired','part':p,'epoch':2,'target':20+p,'old_handle_stale':True,'reason':'equipment_player_removed'},
+                {'event':'part_retirement_complete','part':p,'epoch':2,'successor_joined':True,'covered_signal':8,'draw_completed':8,'upload_floor':25,'upload_completed':25,'part_buffers':3},
+                dict(self.state(0),part=p,target=30+p,epoch=3,event='part_ready_original_inputs'),
+                dict(self.state(.5),part=p,target=30+p,epoch=3),dict(self.state(0),part=p,target=30+p,epoch=3)]
+    def test_history_controls_on_final_generation(self):
+        self.history_multistage_fixture();self.assertEqual(self.run_case()['status'],'passed')
+    def test_history_intermediate_completion_required(self):
+        self.history_multistage_fixture();self.records=[r for r in self.records if not(r.get('event')=='part_retirement_complete' and r['epoch']==1)]
+        self.assertEqual(self.run_case()['status'],'not_observed')
+    def test_history_intermediate_inherited_weight_fails(self):
+        self.history_multistage_fixture()
+        for r in self.records:
+            if r.get('event')=='part_ready_original_inputs' and r['epoch']==2:r.update(requested=[.5],applied=[.5])
+        self.assertEqual(self.run_case()['status'],'failed')
+    def test_history_earlier_control_cannot_replace_final_control(self):
+        self.history_multistage_fixture();self.records=[r for r in self.records if not(r.get('event')=='part_state' and r['epoch']==3)]
+        self.records += [dict(self.state(w),part=p,target=20+p,epoch=2) for p in range(5) for w in (.5,0)]
+        self.assertEqual(self.run_case()['status'],'not_observed')
+    def test_history_later_equipment_rebind_needs_its_own_controls(self):
+        self.history_multistage_fixture()
+        for p in range(5):
+            self.records += [
+                {'event':'public_part_retired','part':p,'epoch':3,'target':30+p,'old_handle_stale':True,'reason':'equipment_part_identity_changed'},
+                {'event':'part_retirement_complete','part':p,'epoch':3,'successor_joined':True,'covered_signal':10,'draw_completed':10,'upload_floor':30,'upload_completed':30,'part_buffers':3},
+                dict(self.state(0),part=p,target=40+p,epoch=4,event='part_ready_original_inputs')]
+        self.assertEqual(self.run_case()['status'],'not_observed')
+        self.records += [dict(self.state(w),part=p,target=40+p,epoch=4) for p in range(5) for w in (.5,0)]
+        self.assertEqual(self.run_case()['status'],'passed')
     def test_restore_rejects_pre_retirement_controls(self):
         self.switch_fixture();self.case['kind']='restore'
         self.obs['basic'].update(sources_restored=True,source_attribution_confirmed=True,manual_override_observed=True,release_to_daily_source_observed=True)
