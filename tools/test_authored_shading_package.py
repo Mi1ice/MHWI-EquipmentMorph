@@ -9,7 +9,9 @@ import package_source
 
 ROOT=Path(__file__).resolve().parents[1]
 ADDON=ROOT/'blender_addon_v044/mhwi_equipmentmorph'
-folder=Path(tempfile.mkdtemp(prefix='author-package-',dir=ROOT/'.build/capacity-validation'))
+parent=ROOT/'.build/capacity-validation'
+parent.mkdir(parents=True,exist_ok=True)
+folder=Path(tempfile.mkdtemp(prefix='author-package-',dir=parent))
 checks=0
 def check(value,label):
     global checks
