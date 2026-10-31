@@ -1,3 +1,4 @@
+param([string]$OutputDirectory,[switch]$Symbols)
 $ErrorActionPreference = 'Stop'
 $taskWorkspace = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-toolchain.ps1')
@@ -8,7 +9,7 @@ $taskSdkVersion=$taskToolchain.SdkVersion
 
 $taskDependencyDir = Join-Path $taskWorkspace 'research/safetyhook-local-v0.7.0'
 $taskSourceDir = Join-Path $taskWorkspace 'diagnostics/EquipmentMorphDiskContract'
-$taskOutputDir = Join-Path $taskWorkspace '.build/cleanup-validation/native'
+$taskOutputDir = if($OutputDirectory){[IO.Path]::GetFullPath($OutputDirectory)}else{Join-Path $taskWorkspace '.build/cleanup-validation/native'}
 New-Item -ItemType Directory -Path $taskOutputDir -Force | Out-Null
 $taskIncludes = @((Join-Path $taskCompilerRoot 'include'), $taskDependencyDir)
 foreach ($taskPart in @('ucrt','shared','um')) { $taskIncludes += Join-Path $taskSdkRoot ('Include/' + $taskSdkVersion + '/' + $taskPart) }
@@ -28,9 +29,11 @@ foreach ($taskTarget in @('dll','tests')) {
     $taskSource = if ($taskTarget -eq 'dll') { 'prototype.cpp' } else { 'tests.cpp' }
     $taskName = if ($taskTarget -eq 'dll') { 'MHWEquipmentMorphConfiguredPrototype.dll' } else { 'EquipmentMorphDiskContractTests.exe' }
     $taskArgs = $taskCommon + @('/std:c++latest','/EHsc','/W4','/WX','/fp:strict','/c',(Join-Path $taskSourceDir $taskSource),('/Fo' + (Join-Path $taskOutputDir ($taskTarget + '.obj'))))
+    if($Symbols){$taskArgs += '/Z7'}
     & $taskCompiler @taskArgs
     if ($LASTEXITCODE -ne 0) { throw ('Candidate compilation failed: ' + $taskTarget) }
     $taskLinkArgs = @('/NOLOGO','/MACHINE:X64','/Brepro',('/OUT:"' + (Join-Path $taskOutputDir $taskName) + '"'))
+    if($Symbols){$taskLinkArgs += @('/DEBUG:FULL','/OPT:REF','/OPT:ICF','/INCREMENTAL:NO',('/PDB:"'+(Join-Path $taskOutputDir ($taskTarget+'.pdb'))+'"'))}
     foreach ($taskObject in @($taskTarget,'safetyhook','Zydis')) { $taskLinkArgs += '"' + (Join-Path $taskOutputDir ($taskObject + '.obj')) + '"' }
     $taskLinkArgs += $taskLibraries | ForEach-Object { '/LIBPATH:"' + $_ + '"' }
     $taskLinkArgs += @('kernel32.lib','user32.lib','bcrypt.lib')
