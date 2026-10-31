@@ -159,14 +159,16 @@ preview.start(asset,bpy.context,True);layout=Layout();addon.draw_keys(layout,ass
 check('preview_weight' in layout.props and 'mhwi_em.reset_preview' in layout.buttons and 'mhwi_em.end_preview' in layout.buttons,'preview uses separate full-width sliders and reset/exit controls')
 preview.stop()
 
-# Real save handler must remove copies before writing a sacrificial fixture file.
-folder=ROOT/'.build/current-validation/key-preview-tests';folder.mkdir(parents=True,exist_ok=True)
-saved=Path(tempfile.mkdtemp(dir=folder))/'synthetic.blend'
-preview.start(asset,bpy.context,True);key('key1').preview_weight=1
-bpy.ops.wm.save_as_mainfile(filepath=str(saved),copy=True)
-check(not preview.running() and not any(c.name.startswith('MHWI 临时形态键预览') for c in bpy.data.collections),'save_pre ends preview before saving synthetic fixture')
-with bpy.data.libraries.load(str(saved)) as (source,destination):
-    check(not any(n.startswith('MHWI 预览') for n in source.objects),'saved fixture contains no preview objects')
+# Closeout runs explicitly skip file IO; default retains the historical save test.
+saved=None
+if '--no-save' not in sys.argv:
+    folder=ROOT/'.build/current-validation/key-preview-tests';folder.mkdir(parents=True,exist_ok=True)
+    saved=Path(tempfile.mkdtemp(dir=folder))/'synthetic.blend'
+    preview.start(asset,bpy.context,True);key('key1').preview_weight=1
+    bpy.ops.wm.save_as_mainfile(filepath=str(saved),copy=True)
+    check(not preview.running() and not any(c.name.startswith('MHWI 临时形态键预览') for c in bpy.data.collections),'save_pre ends preview before saving synthetic fixture')
+    with bpy.data.libraries.load(str(saved)) as (source,destination):
+        check(not any(n.startswith('MHWI 预览') for n in source.objects),'saved fixture contains no preview objects')
 check(all(preview.before_operation in getattr(bpy.app.handlers,n) for n in ('load_pre','undo_pre','redo_pre','render_pre')),'file/undo/render cleanup handlers registered')
 preview.start(asset,bpy.context,True);addon.unregister()
 check(not preview.running() and counts()[0:3]==baseline[0:3],'unregister removes preview and independent meshes')
@@ -178,5 +180,5 @@ check(True,'registration lifecycle repeats cleanly')
 report={'version':'0.4.4','passed':len(checks),'checks':checks,'blender':list(bpy.app.version),
         'original_key_values_never_written_by_preview':True,'real_mod_project_used':False,
         'user_project_saved':False,'synthetic_fixture_saved_for_cleanup_test':str(saved)}
-(ROOT/'.build/current-validation/addon-key-preview.json').write_bytes((json.dumps(report,ensure_ascii=False,indent=2)+'\n').encode('utf-8'))
+(Path(sys.argv[sys.argv.index('--output')+1]) if '--output' in sys.argv else ROOT/'.build/current-validation/addon-key-preview.json').write_bytes((json.dumps(report,ensure_ascii=False,indent=2)+'\n').encode('utf-8'))
 print('PASS: '+str(len(checks))+' key confirmation and preview checks')

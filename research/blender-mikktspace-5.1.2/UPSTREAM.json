@@ -1,0 +1,13 @@
+{
+  "commit": "ec6e62d40fa9e9d1bea33ad5d00148c99a4f0832",
+  "changes": "Unmodified upstream headers; serial build without WITH_TBB",
+  "path": "intern/mikktspace",
+  "repository": "https://github.com/blender/blender",
+  "tag": "v5.1.2",
+  "sources": {
+    "mikk_util.hh": "49c6c1a3ea1ab5f1b2ded452dea180a4dbdc030d2210e804106bf1c779a51585",
+    "mikk_atomic_hash_set.hh": "8da952d4433c90160940e77e57f44b2234b66b96f68ceeaa5932b77e9540f18b",
+    "mikktspace.hh": "6a196ad4b95b358bbd35add358a81a0ff1aab9828b38469072f0f6409e31d907",
+    "mikk_float3.hh": "2b314080f18abed0ab714b1b868793cfd4b055fb2e970cee8d71289ba76a692a"
+  }
+}

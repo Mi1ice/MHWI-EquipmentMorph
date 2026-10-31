@@ -1,5 +1,5 @@
 #pragma once
-#include "../../runtime/EquipmentMorphControlBridge/Protocol.hpp"
+#include "PanelData.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/include/mhw_morph_identity.h"
 #include <Windows.h>
 #include <algorithm>
@@ -13,6 +13,8 @@
 #include <vector>
 
 namespace morphpreset {
+inline constexpr size_t MaxFileBytes=1024*1024;
+
 inline const char* PartName(uint32_t part){const char* names[]={"头部","身体","腕部","腰部","腿部"};return part<5?names[part]:"装备";}
 inline bool Hex(std::string_view text,size_t size){return text.size()==size&&std::all_of(text.begin(),text.end(),[](char c){return (c>='0'&&c<='9')||(c>='a'&&c<='f');});}
 inline bool Ascii(std::string_view text,size_t maximum){return !text.empty()&&text.size()<=maximum&&std::all_of(text.begin(),text.end(),[](unsigned char c){return c>=32&&c<=126;});}
@@ -25,7 +27,7 @@ inline void Validate(const Document& doc){
     if(!Hex(doc.id,32)||!Utf8(doc.name)||doc.parts.empty()||doc.parts.size()>5)throw std::runtime_error("预设名称、编号或部位数量无效");
     std::set<uint32_t> parts;
     for(const auto& part:doc.parts){
-        if(part.part>4||!parts.insert(part.part).second||!Ascii(part.model,127)||!Hex(part.modelSha,64)||!Hex(part.packSha,64)||part.keys.empty()||part.keys.size()>64)
+        if(part.part>4||!parts.insert(part.part).second||!Ascii(part.model,127)||!Hex(part.modelSha,64)||!Hex(part.packSha,64)||part.keys.empty()||part.keys.size()>morphpanel::KeysPerTarget)
             throw std::runtime_error("预设装备身份无效或重复");
         std::set<std::string> keys;
         for(const auto& key:part.keys)if(!Ascii(key.id,63)||!keys.insert(key.id).second||!std::isfinite(key.weight)||key.weight<0||key.weight>1)
@@ -39,8 +41,9 @@ inline std::string Quote(std::string_view text){
 // file access. Object order is irrelevant; duplicate properties are rejected.
 namespace json {
 struct Value {enum Kind{String,Number,Object,Array,Boolean} kind=String;std::string text;double number=0;std::map<std::string,Value> object;std::vector<Value> array;};
+struct Limits {size_t bytes=256*1024,nodes=4096,array=320;unsigned depth=8;size_t string=1024;};
 class Reader {
-    std::string_view input;size_t at=0,nodes=0;
+    std::string_view input;Limits limits;size_t at=0,nodes=0;
     [[noreturn]] static void Fail(){throw std::runtime_error("预设 JSON 格式无效");}
     void Space(){while(at<input.size()&&(input[at]==' '||input[at]=='\n'||input[at]=='\r'||input[at]=='\t'))at++;}
     bool Take(char c){Space();if(at<input.size()&&input[at]==c){at++;return true;}return false;}
@@ -48,7 +51,7 @@ class Reader {
     std::string String(){
         if(!Take('"'))Fail();std::string out;
         while(at<input.size()){
-            const unsigned char c=static_cast<unsigned char>(input[at++]);if(c=='"')return out;if(c<32)Fail();
+            const unsigned char c=static_cast<unsigned char>(input[at++]);if(c=='"'){if(out.size()>limits.string)Fail();return out;}if(c<32)Fail();
             if(c!='\\'){out+=static_cast<char>(c);continue;}
             if(at==input.size())Fail();const char e=input[at++];
             if(e=='"'||e=='\\'||e=='/')out+=e;
@@ -60,16 +63,16 @@ class Reader {
                 else if(code<0x10000){out+=static_cast<char>(0xe0|(code>>12));out+=static_cast<char>(0x80|((code>>6)&63));out+=static_cast<char>(0x80|(code&63));}
                 else{out+=static_cast<char>(0xf0|(code>>18));out+=static_cast<char>(0x80|((code>>12)&63));out+=static_cast<char>(0x80|((code>>6)&63));out+=static_cast<char>(0x80|(code&63));}
             }else Fail();
-            if(out.size()>1024)Fail();
+            if(out.size()>limits.string)Fail();
         }Fail();
     }
     Value Read(unsigned depth){
-        if(depth>8||++nodes>4096)Fail();Space();if(at==input.size())Fail();Value value;
+        if(depth>limits.depth||++nodes>limits.nodes)Fail();Space();if(at==input.size())Fail();Value value;
         if(input[at]=='"'){value.text=String();return value;}
         if(input.substr(at,4)=="true"){at+=4;value.kind=Value::Boolean;value.number=1;return value;}
         if(input.substr(at,5)=="false"){at+=5;value.kind=Value::Boolean;return value;}
         if(Take('{')){value.kind=Value::Object;if(Take('}'))return value;do{auto key=String();if(!Take(':')||value.object.size()>=16)Fail();auto item=Read(depth+1);if(!value.object.emplace(std::move(key),std::move(item)).second)Fail();if(Take('}'))return value;}while(Take(','));Fail();}
-        if(Take('[')){value.kind=Value::Array;if(Take(']'))return value;do{if(value.array.size()>=320)Fail();value.array.push_back(Read(depth+1));if(Take(']'))return value;}while(Take(','));Fail();}
+        if(Take('[')){value.kind=Value::Array;if(Take(']'))return value;do{if(value.array.size()>=limits.array)Fail();value.array.push_back(Read(depth+1));if(Take(']'))return value;}while(Take(','));Fail();}
         const auto start=at;if(input[at]=='-')at++;if(at==input.size())Fail();
         if(input[at]=='0')at++;else{if(input[at]<'1'||input[at]>'9')Fail();while(at<input.size()&&input[at]>='0'&&input[at]<='9')at++;}
         if(at<input.size()&&input[at]=='.'){at++;const auto begin=at;while(at<input.size()&&input[at]>='0'&&input[at]<='9')at++;if(at==begin)Fail();}
@@ -78,7 +81,8 @@ class Reader {
         if(result.ec!=std::errc{}||result.ptr!=input.data()+at||!std::isfinite(value.number))Fail();return value;
     }
 public:
-    explicit Reader(std::string_view text):input(text){if(input.size()>256*1024)Fail();}
+    explicit Reader(std::string_view text):Reader(text,Limits{}){}
+    Reader(std::string_view text,Limits budget):input(text),limits(budget){if(input.size()>limits.bytes)Fail();}
     Value Parse(){auto value=Read(0);Space();if(at!=input.size())Fail();return value;}
 };
 inline const Value& Field(const Value& value,const char* name,Value::Kind kind){
@@ -88,8 +92,8 @@ inline const Value& Field(const Value& value,const char* name,Value::Kind kind){
 inline void Fields(const Value& value,size_t count){if(value.kind!=Value::Object||value.object.size()!=count)throw std::runtime_error("预设包含未知字段");}
 }
 inline Document Decode(std::string_view text){
-    const auto root=json::Reader(text).Parse();json::Fields(root,4);
-    if(json::Field(root,"schema",json::Value::Number).number!=1)throw std::runtime_error("不支持的预设版本");
+    const auto root=json::Reader(text,{MaxFileBytes,32768,1024,8,1024}).Parse();json::Fields(root,4);
+    if(json::Field(root,"schema",json::Value::Number).number!=2)throw std::runtime_error("不支持的预设版本");
     Document doc;doc.id=json::Field(root,"id",json::Value::String).text;doc.name=json::Field(root,"name",json::Value::String).text;
     for(const auto& entry:json::Field(root,"parts",json::Value::Array).array){
         json::Fields(entry,5);const auto number=json::Field(entry,"part",json::Value::Number).number;if(number<0||number>4||std::floor(number)!=number)throw std::runtime_error("预设部位无效");
@@ -99,16 +103,16 @@ inline Document Decode(std::string_view text){
     }Validate(doc);return doc;
 }
 inline std::string Encode(const Document& doc){
-    Validate(doc);std::string out="{\n  \"schema\": 1,\n  \"id\": "+Quote(doc.id)+",\n  \"name\": "+Quote(doc.name)+",\n  \"parts\": [";bool firstPart=true;
+    Validate(doc);std::string out="{\n  \"schema\": 2,\n  \"id\": "+Quote(doc.id)+",\n  \"name\": "+Quote(doc.name)+",\n  \"parts\": [";bool firstPart=true;
     for(const auto& part:doc.parts){if(!firstPart)out+=',';firstPart=false;out+="\n    {\"part\": "+std::to_string(part.part)+", \"model\": "+Quote(part.model)+", \"model_sha256\": "+Quote(part.modelSha)+", \"pack_sha256\": "+Quote(part.packSha)+", \"keys\": [";bool firstKey=true;
         for(const auto& key:part.keys){if(!firstKey)out+=',';firstKey=false;char number[64]{};const auto result=std::to_chars(number,number+sizeof(number),key.weight,std::chars_format::general,std::numeric_limits<float>::max_digits10);if(result.ec!=std::errc{})throw std::runtime_error("权重编码失败");out+="{\"id\": "+Quote(key.id)+", \"weight\": "+std::string(number,result.ptr)+'}';}out+="]}";
-    }return out+"\n  ]\n}\n";
+    }out+="\n  ]\n}\n";if(out.size()>MaxFileBytes)throw std::runtime_error("预设文件超过容量限制");return out;
 }
 using Identities=std::array<MhmAssetIdentity,5>;
 inline bool ValidIdentity(const MhmAssetIdentity& identity,uint64_t handle){return identity.handle==handle&&identity.model_sha256[64]==0&&identity.pack_sha256[64]==0&&Hex(std::string_view(identity.model_sha256,64),64)&&Hex(std::string_view(identity.pack_sha256,64),64);}
 struct PartMatch {uint32_t part=0;std::string reason;};
 struct Match {bool compatible=false;std::string message;std::vector<MhmUpdate> updates;unsigned matched=0,total=0;std::vector<PartMatch> parts;};
-inline Match Check(const Document& doc,const mhmcontrol::Response& data,const Identities& identities){
+inline Match Check(const Document& doc,const morphpanel::Snapshot& data,const Identities& identities){
     Match result;unsigned matched=0;std::string reason;
     for(const auto& part:doc.parts){
         const mhmcontrol::Target* target=nullptr;for(uint32_t i=0;i<data.targetCount;i++)if(data.targets[i].info.part==part.part)target=&data.targets[i];
@@ -129,7 +133,7 @@ inline Match Check(const Document& doc,const mhmcontrol::Response& data,const Id
     result.compatible=matched==doc.parts.size();result.message=result.compatible?"全部匹配（"+std::to_string(matched)+" 个部位）":"匹配 "+std::to_string(matched)+"／"+std::to_string(doc.parts.size())+" · "+reason;
     if(!result.compatible)result.updates.clear();return result;
 }
-inline Document Capture(const mhmcontrol::Response& data,const Identities& identities,std::string id,std::string name){
+inline Document Capture(const morphpanel::Snapshot& data,const Identities& identities,std::string id,std::string name){
     Document doc;doc.id=std::move(id);doc.name=std::move(name);
     for(uint32_t i=0;i<data.targetCount;i++){
         const auto& target=data.targets[i];Part part;part.part=target.info.part;part.model=target.info.model_id;
@@ -140,7 +144,7 @@ inline Document Capture(const mhmcontrol::Response& data,const Identities& ident
     }
     if(doc.parts.empty())throw std::runtime_error("请先接管至少一个形态键；已接管的零权重也可保存");Validate(doc);return doc;
 }
-inline bool SameContributions(const Document& doc,const mhmcontrol::Response& data,const Identities& identities){
+inline bool SameContributions(const Document& doc,const morphpanel::Snapshot& data,const Identities& identities){
     const auto match=Check(doc,data,identities);if(!match.compatible)return false;size_t owned=0;
     for(uint32_t i=0;i<data.keyCount;i++)if(data.keys[i].owned){owned++;const auto& key=data.keys[i];const auto found=std::find_if(match.updates.begin(),match.updates.end(),[&](const auto& v){return v.target==key.target&&v.key==key.index&&v.weight==key.contribution;});if(found==match.updates.end())return false;}
     return owned==match.updates.size();

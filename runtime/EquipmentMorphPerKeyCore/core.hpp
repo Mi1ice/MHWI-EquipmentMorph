@@ -1,6 +1,7 @@
 #pragma once
 #include "include/mhw_morph_host.h"
 #include "include/mhw_morph_identity.h"
+#include "capacity_limits.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -15,7 +16,7 @@
 #include <vector>
 
 namespace mhm {
-inline constexpr MhmLimits limits{5,64,32,320,256};
+inline constexpr MhmLimits limits{capacity::targets,capacity::keys_per_target,capacity::sources,capacity::batch_updates,capacity::events};
 struct Key { MhmKeyInfo info{}; std::vector<MhmDelta> deltas,normals; };
 struct Asset {
     uint32_t part=0;

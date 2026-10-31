@@ -34,6 +34,31 @@ struct Fixture : inputfasttest::Fixture {
 };
 inline unsigned Run(){
     unsigned count=0;auto check=[&](bool ok,const char* reason){if(!ok)throw std::runtime_error(reason);count++;};
+    for(unsigned field=0;field<6;++field){
+        if(field==3)continue; // Worker count is per completed batch, not an immutable identity.
+        Fixture f;f.Launch(0);f.Launch(1);f.Launch(2);f.Finish();
+        const auto fixed=f.Adapter().Fixed();
+        facecontinuous::Frame observed{Address(f.engine),Address(f.renderer),0x30000,f.counter,f.counter,f.workers,0,GetCurrentThreadId()};
+        if(field==0)observed.engine+=16;
+        if(field==1)observed.renderer+=16;
+        if(field==2)observed.fence+=16;
+        if(field==3)observed.workers=4;
+        if(field==4)observed.thread++;
+        if(field==5){observed.before++;observed.after++;}
+        check(!f.Adapter().Launch(observed,0,0x70000)&&!f.Adapter().Live(),"launch diagnostic preserves strict rejection");
+        const auto proof=f.Adapter().LaunchFailure();
+        check(proof&&proof->mismatch==(1u<<field)&&proof->lastSignal==f.counter&&proof->expected.engine==fixed.engine
+            &&proof->observed.before==observed.before,"launch diagnostic identifies exact differing field");
+        f.Adapter().Invalidate(0,"equipment_main_player_changed");
+        check(f.Adapter().LaunchFailure()->mismatch==proof->mismatch,"later lifecycle change preserves first rejection evidence");
+        struct Log {
+            bool unlocked=false;std::string text;
+            bool Write(const char* line){std::thread callback([&]{if(facecontinuous::gate.try_lock()){unlocked=true;facecontinuous::gate.unlock();}});callback.join();text=line;return true;}
+        } log;
+        facecontinuous::WriteLaunchRejection(log,f.Part());
+        check(log.unlocked&&log.text.find("\"mismatch_mask\":"+std::to_string(1u<<field))!=log.text.npos
+            &&log.text.back()=='\n',"launch rejection formatting happens outside native gate");
+    }
     constexpr std::uint64_t frameReads=9; // EngineFacts plus this worker's event.
     {
         Fixture f;check(f.Launch(0)>frameReads&&f.Adapter().Started(),"first worker validates the complete equipment identity");

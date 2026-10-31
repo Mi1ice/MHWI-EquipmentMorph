@@ -2,6 +2,15 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstdint>
+#include <cstdlib>
+#include <new>
+namespace hostallocationtest {inline thread_local bool enabled=false;inline thread_local size_t calls=0,failAt=SIZE_MAX;}
+void* operator new(std::size_t size){if(hostallocationtest::enabled&&hostallocationtest::calls++==hostallocationtest::failAt)throw std::bad_alloc();if(auto p=std::malloc(size?size:1))return p;throw std::bad_alloc();}
+void* operator new[](std::size_t size){return ::operator new(size);}
+void operator delete(void* p)noexcept{std::free(p);}
+void operator delete[](void* p)noexcept{std::free(p);}
+void operator delete(void* p,std::size_t)noexcept{std::free(p);}
+void operator delete[](void* p,std::size_t)noexcept{std::free(p);}
 namespace inputfasttest {inline thread_local std::uint64_t reads=0;inline void(*afterRead)(LPCVOID,SIZE_T)=nullptr;}
 namespace diagnosticstest {inline thread_local std::uint64_t qpcCalls=0;}
 BOOL WINAPI CountTimingQpc(LARGE_INTEGER* value){++diagnosticstest::qpcCalls;return ::QueryPerformanceCounter(value);}
@@ -11,14 +20,18 @@ BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T 
 }
 #define ReadProcessMemory CountInputReads
 #define QueryPerformanceCounter CountTimingQpc
+#include "../../runtime/EquipmentMorphPerKeyCore/group_smoothing.hpp"
 #include "prototype.cpp"
 #undef QueryPerformanceCounter
 #undef ReadProcessMemory
 #include <cstdio>
 #include <thread>
 #include "RetirementTests.hpp"
+#include "FivePartLifecycleTests.hpp"
 #include "InputFastPathTests.hpp"
 #include "LaunchValidationTests.hpp"
+#include "WorkerCountTests.hpp"
+#include "LifecycleLogTests.hpp"
 #include "IdleSamplingTests.hpp"
 #include "BatchedReadTests.hpp"
 #include "RuntimeInputTests.hpp"
@@ -26,30 +39,44 @@ BOOL WINAPI CountInputReads(HANDLE process,LPCVOID address,LPVOID output,SIZE_T 
 #include "SameWeightTests.hpp"
 #include "DiagnosticsTests.hpp"
 #include "DrawFilterTests.hpp"
+#include "CapacityTests.hpp"
+#include "DirectWeightTests.hpp"
+#include "VertexDeclarationTests.hpp"
+#include "SafePerformanceTests.hpp"
 int wmain(int argc,wchar_t** argv){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
+    checks+=safeperformancetests::Run();
     checks+=retirementtest::Run(std::filesystem::absolute(argv[0]).parent_path()/"retirement-regression.ndjson");
+    checks+=fivepartlifecycletests::Run(std::filesystem::absolute(argv[0]).parent_path()/"five-part-lifecycle-regression.ndjson");
     checks+=inputfasttest::Run();
+    checks+=workercounttest::Run();
+    checks+=lifecyclelogtests::Run();
     checks+=launchvalidationtest::Run();
     checks+=idlesamplingtest::Run();
+    checks+=directweighttests::Run();
     checks+=batchedreadtest::Run();
+    checks+=vertexdeclarationtests::Run();
     checks+=runtimeinputtest::Run();
     checks+=inputconcurrencytest::Run();
     checks+=sameweighttest::Run();
+    checks+=capacitytests::Run();
     checks+=diagnosticstest::Run(std::filesystem::absolute(argv[0]).parent_path()/"input-diagnostics-regression.ndjson");
     checks+=drawfiltertest::Run(std::filesystem::absolute(argv[0]).parent_path()/"draw-filter-regression.ndjson");
     auto put=[](std::vector<unsigned char>& raw,size_t at,uint64_t value,size_t bytes){for(size_t i=0;i<bytes;i++)raw[at+i]=static_cast<unsigned char>(value>>(i*8));};
     constexpr size_t meshStart=128,vertexStart=meshStart+3*80;
     std::vector<unsigned char> model(vertexStart+112);std::memcpy(model.data(),"MOD\0",4);put(model,4,237,2);put(model,8,3,2);put(model,24,112,4);put(model,72,meshStart,8);put(model,80,vertexStart,8);
     uint32_t offset=0;std::vector<uint32_t> diskFormats;
-    for(size_t i=0;i<3;i++){const auto& f=mhm::meshcontract::formats[i];const auto row=meshStart+i*80;put(model,row+2,1,2);put(model,row+14,f.stride,1);put(model,row+20,offset,4);put(model,row+24,f.disk,4);offset+=f.stride;diskFormats.push_back(f.disk);}
+    struct Historical {uint32_t disk,native,stride;};constexpr Historical historical[]{{0xf637401c,4,32},{0x3c730760,6,36},{0x366995a7,10,44}};
+    for(size_t i=0;i<3;i++){const auto& f=historical[i];const auto row=meshStart+i*80;put(model,row+2,1,2);put(model,row+14,f.stride,1);put(model,row+20,offset,4);put(model,row+24,f.disk,4);offset+=f.stride;diskFormats.push_back(f.disk);}
     std::vector<unsigned char> disk(model.begin()+meshStart,model.begin()+vertexStart),runtime=disk;
-    for(size_t i=0;i<3;i++){put(runtime,i*80+24,mhm::meshcontract::formats[i].native,4);runtime[i*80+42]=static_cast<unsigned char>(i+1);put(runtime,i*80+72,0x12340000+i*4096,8);}
-    check(mhm::meshcontract::FormatsMatch(runtime,diskFormats),"all proven disk/native format pairs and strides");
-    auto changed=runtime;put(changed,24,6,4);check(!mhm::meshcontract::FormatsMatch(changed,diskFormats),"wrong initialized format rejected even though digest would ignore field");
-    changed=runtime;changed[14]++;check(!mhm::meshcontract::FormatsMatch(changed,diskFormats),"wrong stride rejected");
-    auto unknown=diskFormats;unknown[0]=0xa756f2f9;check(!mhm::meshcontract::FormatsMatch(runtime,unknown),"unproven mapping refused");
-    check(!mhm::meshcontract::FormatsMatch(std::span(runtime).first(runtime.size()-1),diskFormats),"partial table refused");
+    for(size_t i=0;i<3;i++){put(runtime,i*80+24,historical[i].native,4);runtime[i*80+42]=static_cast<unsigned char>(i+1);put(runtime,i*80+72,0x12340000+i*4096,8);}
+    captureddeclarations::Memory memory;auto read=[](uintptr_t at,void* out,size_t bytes){return observer::Read(at,out,bytes);};mhm::declarations::Snapshot declarations;
+    check(mhm::declarations::Capture(read,memory.Slot(),declarations),"captured declaration fixture validates all templates");
+    check(mhm::meshcontract::FormatsMatch(runtime,diskFormats,declarations),"original three captured disk/native format pairs and strides");
+    auto changed=runtime;put(changed,24,6,4);check(!mhm::meshcontract::FormatsMatch(changed,diskFormats,declarations),"wrong initialized format rejected even though digest would ignore field");
+    changed=runtime;changed[14]++;check(!mhm::meshcontract::FormatsMatch(changed,diskFormats,declarations),"wrong stride rejected");
+    auto unknown=diskFormats;unknown[0]=0xdeadbeef;check(!mhm::meshcontract::FormatsMatch(runtime,unknown,declarations),"unknown format refused");
+    check(!mhm::meshcontract::FormatsMatch(std::span(runtime).first(runtime.size()-1),diskFormats,declarations),"partial table refused");
     auto normalized=disk;auto loaded=runtime;check(mhm::meshcontract::Normalize(normalized,true)&&mhm::meshcontract::Normalize(loaded,true)&&normalized==loaded,"uniform disk/runtime table contract");
     changed=loaded;changed[20]^=1;check(mhm::pack::Digest(changed)!=mhm::pack::Digest(normalized),"vertex start remains part of exact contract");
     changed=runtime;auto legacy=disk;mhm::meshcontract::Normalize(changed,false);mhm::meshcontract::Normalize(legacy,false);check(changed!=legacy,"legacy body still retains initialized fields");
@@ -243,31 +270,31 @@ int wmain(int argc,wchar_t** argv){try{
         if(!ReadFile(file,text.data(),static_cast<DWORD>(text.size()),&count,nullptr)||count!=text.size()
             ||!SetFilePointerEx(file,zero,nullptr,FILE_END))throw std::runtime_error("Log read");return text;
     };
-    auto manyKeys=normals;manyKeys.keys.resize(64);
-    for(unsigned i=0;i<64;i++){auto& k=manyKeys.keys[i];sprintf_s(k.info.id,"Key_%u",i);k.info.maximum=1;}
-    check(mhm::Validate(manyKeys),"64-key logging asset is valid");
+    auto manyKeys=normals;manyKeys.keys.resize(1024);
+    for(unsigned i=0;i<1024;i++){auto& k=manyKeys.keys[i];sprintf_s(k.info.id,"Key_%u",i);k.info.maximum=1;}
+    check(mhm::Validate(manyKeys),"1024-key logging asset is valid");
     facecontinuous::Part logged;logged.asset=std::make_shared<const mhm::Asset>(manyKeys);
     logged.epoch=logged.target=logged.updates=logged.replacements=UINT64_MAX-1;
     check(logged.adapter->Arm()&&logged.adapter->Capture({0x10000,0x20000,0x30000,0x40000},0x30000)
-        &&logged.adapter->PublishResources({0x50000,0x60000,0x70000}),"64-key logging adapter ready");
-    launchpool::MorphVersion loggedVersion;loggedVersion.weights.fill(.13724681f);loggedVersion.frame=UINT64_MAX-1;loggedVersion.revision=UINT64_MAX-2;
+        &&logged.adapter->PublishResources({0x50000,0x60000,0x70000}),"1024-key logging adapter ready");
+    std::vector<float> loggedWeights(1024,.13724681f);auto loggedVersion=launchpool::MorphVersion::FromWeights(loggedWeights,UINT64_MAX-1,UINT64_MAX-2);
     check(logged.adapter->Request(loggedVersion)&&logged.adapter->Launch({0x10000,0x20000,0x30000,10,10,1,0,1},0,0x40000)
         &&logged.adapter->Wait({0x10000,0x20000,0x30000,10,10,1,0,1},0,0x41000,0)
         &&logged.adapter->Boundary({0x10000,0x20000,0x30000,10,10,1,0,1})
         &&logged.adapter->Signal(0x20000,0x30000,11,11,11,true),"logging adapter completed first cycle");
     const auto logToken=logged.adapter->Prepare();
     check(logToken&&logged.adapter->BeginUpload(*logToken)&&logged.adapter->QueueUpload(*logToken,20)&&logged.adapter->Completed(20,11)
-        &&logged.adapter->Launch({0x10000,0x20000,0x30000,11,11,1,0,1},0,0x40000),"64-key weights published for state logging");
+        &&logged.adapter->Launch({0x10000,0x20000,0x30000,11,11,1,0,1},0,0x40000),"1024-key weights published for state logging");
     facecontinuous::WriteState(weightLog,logged,"part_state");
     const auto loggedState=readLog(weightLog.file);
     check(loggedState.ends_with("}\n")&&loggedState.find("\"replacements\":18446744073709551614")!=std::string::npos,
-        "64-key state log retains closing fields and newline");
-    const auto weightText=facecontinuous::Weights(loggedVersion.weights,64);
+        "1024-key state log retains closing fields and newline");
+    const auto weightText=facecontinuous::Weights(loggedVersion.Weights(),1024);
     check(loggedState.find("\"requested\":"+weightText)!=std::string::npos&&loggedState.find("\"applied\":"+weightText)!=std::string::npos,
-        "state log preserves both complete 64-key arrays");
+        "state log preserves both complete 1024-key arrays");
     check(logged.adapter->Wait({0x10000,0x20000,0x30000,11,11,1,0,1},0,0x41000,0)
         &&logged.adapter->Boundary({0x10000,0x20000,0x30000,11,11,1,0,1})&&logged.adapter->Signal(0x20000,0x30000,12,12,12,true),"logged decimal frame completed");
-    loggedVersion.weights.fill(std::numeric_limits<float>::denorm_min());loggedVersion.frame=UINT64_MAX;loggedVersion.revision=UINT64_MAX-1;
+    std::fill(loggedWeights.begin(),loggedWeights.end(),std::numeric_limits<float>::denorm_min());loggedVersion=launchpool::MorphVersion::FromWeights(loggedWeights,UINT64_MAX,UINT64_MAX-1);
     check(logged.adapter->Request(loggedVersion),"scientific notation weights requested");
     const auto scientificToken=logged.adapter->Prepare();
     check(scientificToken&&logged.adapter->BeginUpload(*scientificToken)&&logged.adapter->QueueUpload(*scientificToken,21)
@@ -275,7 +302,7 @@ int wmain(int argc,wchar_t** argv){try{
     facecontinuous::WriteState(weightLog,logged,"part_state");
     launchpool::Slot logPrevious;logPrevious.retirementFence=logPrevious.coverageFence=UINT64_MAX-1;logPrevious.joinedAfterUse=true;
     facecontinuous::WriteUpload(weightLog,logged,2,loggedVersion,UINT64_MAX-1,std::string(64,'f'),logPrevious);
-    auto records=readLog(weightLog.file);const auto scientificText=facecontinuous::Weights(loggedVersion.weights,64);
+    auto records=readLog(weightLog.file);const auto scientificText=facecontinuous::Weights(loggedVersion.Weights(),1024);
     check(records.find("\"requested\":"+scientificText)!=std::string::npos&&records.find("\"applied\":"+scientificText)!=std::string::npos
         &&records.find("\"weights\":"+scientificText)!=std::string::npos&&records.ends_with("\"previous_joined\":true}\n"),"state and upload logs retain full scientific notation arrays");
     facecontinuous::Part oneKey;auto oneAsset=normals;oneAsset.keys.resize(1);oneKey.asset=std::make_shared<const mhm::Asset>(oneAsset);
@@ -285,7 +312,7 @@ int wmain(int argc,wchar_t** argv){try{
     facecontinuous::WriteUpload(weightLog,oneKey,0,zeroVersion,1,std::string(64,'0'),{});
     records=readLog(weightLog.file);
     check(records.find("\"requested\":[0],\"applied\":[0]")!=std::string::npos
-        &&records.find("\"weights\":"+facecontinuous::Weights(zeroVersion.weights,64))!=std::string::npos&&records.find("\"weights\":[0]")!=std::string::npos,
+        &&records.find("\"weights\":"+facecontinuous::Weights(zeroVersion.Weights(),1024))!=std::string::npos&&records.find("\"weights\":[0]")!=std::string::npos,
         "zero and one-key records remain complete");
     const auto completeBytes=weightLog.bytes;
     check(!weightLog.Write("")&&!weightLog.Write("{\"event\":\"unfinished\"}")&&weightLog.bytes==completeBytes&&readLog(weightLog.file)==records,

@@ -69,8 +69,8 @@ def capture(job_path, output):
                 selected[name] = coords(key).tolist()
                 metadata.append({'name': name, 'relative': key.relative_key.name, 'vertex_group': key.vertex_group,
                                  'value': key.value, 'mute': key.mute})
-        if not mesh.uv_layers.active:
-            raise ValueError('Mapped mesh has no active UV')
+        if not mesh.uv_layers:
+            raise ValueError('Mapped mesh has no UV1')
         evaluated = obj.evaluated_get(depsgraph)
         temporary = evaluated.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
         try:
@@ -83,7 +83,7 @@ def capture(job_path, output):
                      'basis': basis, 'selected_keys': selected, 'keys': metadata,
                      'matrix_world': [list(row) for row in obj.matrix_world], 'evaluated_positions': positions,
                      'loop_vertices': [loop.vertex_index for loop in mesh.loops],
-                     'uv': [list(uv.uv) for uv in mesh.uv_layers.active.data], 'legacy_fingerprint': before[obj.name]})
+                     'uv': [list(uv.uv) for uv in mesh.uv_layers[0].data], 'legacy_fingerprint': before[obj.name]})
     if ui_before != state() or before != {o.name: fingerprint(o) for o in objects}:
         raise ValueError('Source/UI state changed during capture')
     report = {'schema': 'mhw-equipment-morph-job-capture-v2', 'job_sha256': digest(job_path.read_bytes()),

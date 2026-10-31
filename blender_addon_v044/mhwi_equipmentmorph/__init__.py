@@ -179,26 +179,13 @@ class MHWI_EM_OT_Suit(Operator):
 class MHWI_EM_OT_Model(Operator):
     bl_idname='mhwi_em.read_model';bl_label='读取模型网格'
     def execute(self,context):
-        try:
-            asset=active(context);load_meshes(asset)
-            if asset.target_mode=='MANUAL' and not asset.model_id:asset.model_id=authoring.resource_id(bpy.path.abspath(asset.model))
-            settings(context).status='模型网格已读取';return {'FINISHED'}
-        except Exception as error:self.report({'ERROR'},str(error));return {'CANCELLED'}
+        self.report({'ERROR'},RETIRED_REASON);return {'CANCELLED'}
+
 class MHWI_EM_OT_Collect(Operator):
     bl_idname='mhwi_em.collect_meshes';bl_label='使用选中的网格'
     def execute(self,context):
-        try:
-            shape_preview.stop()
-            asset=active(context);meshes=load_meshes(asset);objects=[o for o in context.selected_objects if o.type=='MESH']
-            if not objects:raise ValueError('请先选择参与变形的网格')
-            asset.bindings.clear();asset.mapping='';asset.reference_capture=''
-            for obj in objects:
-                binding=asset.bindings.add();binding.object_name=obj.name
-                materials={m.name for m in obj.data.materials if m};matches=[m for m in meshes if m['material'] in materials]
-                if len(matches)==1:binding.mesh=str(matches[0]['mesh'])
-            for key in asset.keys:key.proof_json='{}'
-            refresh_keys(asset);settings(context).status='已收集网格；请选择目标模型网格及动态键';return {'FINISHED'}
-        except Exception as error:self.report({'ERROR'},str(error));return {'CANCELLED'}
+        self.report({'ERROR'},RETIRED_REASON);return {'CANCELLED'}
+
 class MHWI_EM_OT_Keys(Operator):
     bl_idname='mhwi_em.refresh_keys';bl_label='刷新可用形态键'
     def execute(self,context):
@@ -251,64 +238,36 @@ class MHWI_EM_OT_Import(Operator,ImportHelper):
     bl_idname='mhwi_em.import_job';bl_label='导入已验证作业'
     filename_ext='.json'
     filter_glob:StringProperty(default='*.json',options={'HIDDEN'})
+    def invoke(self,context,event):return self.execute(context)
     def execute(self,context):
-        try:
-            recipe=authoring.import_job(self.filepath)
-            for entry in recipe['assets']:
-                for binding in entry['bindings']:
-                    if binding['object'] not in bpy.data.objects:raise ValueError('工程缺少网格：'+binding['object'])
-            state=settings(context);state.source_mode='LEGACY';state.assets.clear();state.matrix_json=json.dumps(recipe['export_matrix'])
-            for entry in recipe['assets']:
-                asset=state.assets.add()
-                asset.target_mode='MANUAL'
-                for field in ['part','package','model','model_id','mapping','reference_capture','shading','author_rotations','contract_mode','contract_file']:setattr(asset,field,entry[field])
-                load_meshes(asset)
-                for binding in entry['bindings']:item=asset.bindings.add();item.object_name=binding['object'];item.mesh=str(binding['mesh'])
-                for key in entry['keys']:
-                    item=asset.keys.add();item.source=key['source_key'];item.public_id=key['id'];item.enabled=True;item.author_shading=key['author_shading'];item.proof_json=json.dumps(key)
-                refresh_keys(asset)
-            state.active_asset=0;state.status='已导入；固定修正保留，动态键已选择';return {'FINISHED'}
-        except Exception as error:self.report({'ERROR'},str(error));return {'CANCELLED'}
+        self.report({'ERROR'},RETIRED_REASON);return {'CANCELLED'}
+
+RETIRED_REASON='旧已有MOD3／导入作业入口已退役；请使用集合联合导出'
+def require_direct(state):
+    if state.source_mode!='DIRECT':raise ValueError(RETIRED_REASON)
 
 def recipe_from_ui(context):
-    shape_preview.stop()
-    state=settings(context);assets=[]
-    if state.source_mode=='DIRECT':
-        for asset in state.assets:
-            model_id=equipment_selection.target(asset)
-            assets.append(dict(part=asset.part,package=model_id.rsplit('/',1)[-1],collection=asset.collection,model_id=model_id,
-                keys=[dict(id=k.public_id,source_key=k.source,author_shading=False) for k in key_selection.confirmed(asset,True)],
-                shading=asset.direct_shading,use_blender_material_name=asset.use_blender_material_name))
-        return {'assets':assets}
-    matrix=json.loads(state.matrix_json) if state.matrix_json else json.loads((Path(__file__).parent/'coordinate_reference.json').read_text())['export_matrix']
+    state=settings(context);require_direct(state)
+    shape_preview.stop();assets=[]
     for asset in state.assets:
-        meshes=load_meshes(asset);bindings=[]
-        for binding in asset.bindings:
-            match=next((m for m in meshes if str(m['mesh'])==binding.mesh),None)
-            if match is None:raise ValueError('请选择 '+binding.object_name+' 的目标模型网格')
-            bindings.append({'object':binding.object_name,'mesh':match['mesh'],'material':match['material']})
-        keys=[]
-        for key in key_selection.confirmed(asset,False):
-            proof=json.loads(key.proof_json);proof.update(id=key.public_id,source_key=key.source,author_shading=asset.shading in ('AUTHOR','INTENT') and key.author_shading);keys.append(proof)
-        assets.append({'part':asset.part,'package':asset.package,'model':bpy.path.abspath(asset.model),'model_id':equipment_selection.target(asset),
-            'mapping':bpy.path.abspath(asset.mapping) if asset.mapping else '',
-            'reference_capture':bpy.path.abspath(asset.reference_capture) if asset.reference_capture else '',
-            'bindings':bindings,'keys':keys,'shading':asset.shading,
-            'author_rotations':bpy.path.abspath(asset.author_rotations) if asset.author_rotations else '',
-            'contract_mode':asset.contract_mode,'contract_file':bpy.path.abspath(asset.contract_file) if asset.contract_file else ''})
-    return {'project_name':authoring.NAME,'assets':assets,'export_matrix':matrix}
+        model_id=equipment_selection.target(asset)
+        assets.append(dict(part=asset.part,package=model_id.rsplit('/',1)[-1],collection=asset.collection,model_id=model_id,
+            keys=[dict(id=k.public_id,source_key=k.source,author_shading=False) for k in key_selection.confirmed(asset,True)],
+            shading=asset.direct_shading,use_blender_material_name=asset.use_blender_material_name))
+    return {'assets':assets}
 class MHWI_EM_OT_Export(Operator):
     bl_idname='mhwi_em.export_package';bl_label='生成装备形态键数据包'
     def execute(self,context):
         state=settings(context)
+        try:require_direct(state)
+        except ValueError as error:
+            self.report({'ERROR'},str(error));return {'CANCELLED'}
         try:
             shape_preview.stop()
             if context.mode!='OBJECT':raise ValueError('请切换到对象模式')
             if not state.output:raise ValueError('请选择输出文件夹')
-            if state.source_mode=='DIRECT':
-                from .direct_export import export_direct
-                result=export_direct(recipe_from_ui(context),bpy.path.abspath(state.output),debug=state.debug)
-            else:result=authoring.export_recipe(recipe_from_ui(context),bpy.path.abspath(state.output),debug=state.debug)
+            from .direct_export import export_direct
+            result=export_direct(recipe_from_ui(context),bpy.path.abspath(state.output),debug=state.debug)
             state.result_path=str(Path(bpy.path.abspath(state.output))/'result.json') if state.debug else ''
             state.status='生成完成：'+str(len(result['assets']))+'部位；'+('Debug资料已保留' if state.debug else '仅输出模型与形态键包')
             self.report({'INFO'},state.status);return {'FINISHED'}
@@ -318,12 +277,11 @@ class MHWI_EM_OT_Export(Operator):
 class MHWI_EM_PT_Export(Panel):
     bl_label='MHWI-EquipmentMorph';bl_idname='MHWI_EM_PT_export';bl_space_type='VIEW_3D';bl_region_type='UI';bl_category='MHWI-EquipmentMorph'
     def draw(self,context):
-        layout=self.layout;state=settings(context);layout.prop(state,'source_mode')
-        if state.source_mode=='LEGACY':layout.operator('mhwi_em.import_job')
+        layout=self.layout;state=settings(context)
         layout.template_list('MHWI_EM_UL_Assets','',state,'assets',state,'active_asset',rows=3)
         row=layout.row(align=True);row.operator('mhwi_em.add_asset',icon='ADD');row.operator('mhwi_em.remove_asset',icon='REMOVE')
         asset=active(context)
-        if asset and state.source_mode=='DIRECT':
+        if asset:
             box=layout.box();draw_target(box,asset);box.prop(asset,'collection')
             box.prop(asset,'use_blender_material_name');draw_keys(box,asset,context)
             box.prop(asset,'direct_shading')
@@ -331,24 +289,9 @@ class MHWI_EM_PT_Export(Panel):
             layout.prop(state,'output',text='输出文件夹');layout.prop(state,'debug');layout.operator('mhwi_em.export_package',text='导出 MOD3＋形态键数据',icon='EXPORT')
             layout.label(text=state.status)
             return
-        if asset:
-            box=layout.box();draw_target(box,asset);box.prop(asset,'package');box.prop(asset,'model');box.operator('mhwi_em.read_model')
-            box.operator('mhwi_em.collect_meshes');box.template_list('MHWI_EM_UL_Bindings','',asset,'bindings',asset,'active_binding',rows=3)
-            draw_keys(box,asset,context)
-            box.label(text='动态键源值须为0；neck等固定修正保留')
-            box.prop(asset,'shading')
-            if asset.shading=='AUTHOR':box.prop(asset,'author_rotations')
-            if asset.shading=='INTENT':box.label(text='共享作者方向；参与键取最高权重')
-            if asset.shading=='GEOMETRIC':
-                box.label(text='各键独立采集并叠加；端点混合近似')
-                box.label(text='需要支持逐键法线的运行时')
-            box.prop(asset,'contract_mode')
-            box.label(text='新生成包需要磁盘契约v2运行时')
-            if asset.contract_mode=='recorded':box.prop(asset,'contract_file')
-            if asset.mapping:box.label(text='沿用准确来源的既有映射')
         field_help(layout,state)
-        layout.prop(state,'output');layout.prop(state,'debug');layout.operator('mhwi_em.export_package',icon='EXPORT');layout.label(text=state.status)
-        layout.label(text='只读采集，不保存工程；新模型仍需最终检查')
+        layout.prop(state,'output',text='输出文件夹');layout.prop(state,'debug')
+        layout.operator('mhwi_em.export_package',text='导出 MOD3＋形态键数据',icon='EXPORT');layout.label(text=state.status)
 
 def draw_keys(box,asset,context):
     box.operator('mhwi_em.refresh_keys')
@@ -396,9 +339,6 @@ def field_help(layout,state):
     box.label(text='高级手动路径：相对 nativePC')
     box.label(text='例：pl/f_equip/pl105_0000/')
     box.label(text='     body/mod/f_body105_0000')
-    if state.source_mode=='LEGACY':
-        box.label(text='包名：英文、数字、_ 或 -')
-        box.label(text='例：equipment-body；最多63字符')
     box.label(text='接口名称：1至63个ASCII字符')
     box.label(text='例：vrc.blink；同一模型内不重复')
     box.label(text='输出：任意可写文件夹（可以已存在）')

@@ -64,11 +64,14 @@ inline Profile DecodeProfile(std::span<const unsigned char> raw){
     for(uint32_t i=0;i<objects;i++){
         SourceObject object;object.name=Utf8(in,1024);object.fingerprint=Sha(in);
         if(!names.insert(object.name).second)throw std::runtime_error("Profile duplicate object");
-        const auto values=in.U32();if(!values||values>256)throw std::runtime_error("Profile baseline keys");std::set<std::string> ids;
+        const auto values=in.U32();if(!values||values>capacity::profile_source_values)throw std::runtime_error("Profile baseline keys");std::set<std::string> ids;
+        uint32_t dynamicValues=0,fixedValues=0;
         for(uint32_t j=0;j<values;j++){
             SourceValue value;value.name=Utf8(in,1024);auto bits=in.U32();std::memcpy(&value.weight,&bits,4);value.flags=in.U32();
             if(!ids.insert(value.name).second||!std::isfinite(value.weight)||std::abs(value.weight)>1000000||value.flags>3)throw std::runtime_error("Profile baseline value");
             if((value.flags&2)&&(value.weight!=0||(value.flags&1)))throw std::runtime_error("Dynamic source key nonzero or muted");
+            if(value.flags&2){if(++dynamicValues>capacity::keys_per_target)throw std::runtime_error("Profile dynamic key bound");}
+            else if(++fixedValues>capacity::fixed_source_values)throw std::runtime_error("Profile fixed value bound");
             object.values.push_back(std::move(value));
         }p.objects.push_back(std::move(object));
     }
@@ -79,12 +82,9 @@ inline uint64_t UInt(std::span<const unsigned char> raw,size_t at,size_t count){
     uint64_t n=0;for(size_t i=0;i<count;i++)n|=static_cast<uint64_t>(raw[at+i])<<(i*8);return n;
 }
 inline unsigned Stride(uint32_t format){
-    switch(format){
-    case 0xa756f2f9:return 24;case 0xa5104ca0:return 28;case 0xc3ac03a1:return 36;case 0xc9690ab8:return 40;
-    case 0x818904dc:return 28;case 0x0f06033f:return 32;case 0xf637401c:return 32;case 0xf471fe45:return 36;
-    case 0x3c730760:return 36;case 0xb2fc0083:return 40;case 0x81f58067:return 40;case 0x83b33e3e:return 44;
-    case 0x366995a7:return 44;case 0xb8e69244:return 48;default:throw std::runtime_error("Unsupported MOD3 vertex format");
-    }
+    const auto* layout=meshcontract::Resolve(format);
+    if(!layout)throw std::runtime_error("Unsupported MOD3 vertex format");
+    return layout->stride;
 }
 inline void ValidateModel(Profile& p,const Asset& asset,std::span<const unsigned char> raw){
     if(raw.size()!=p.modelBytes||pack::Digest(raw)!=p.modelSha||raw.size()<88||std::memcmp(raw.data(),"MOD\0",4)||UInt(raw,4,2)!=237)throw std::runtime_error("Installed MOD3 identity/version");

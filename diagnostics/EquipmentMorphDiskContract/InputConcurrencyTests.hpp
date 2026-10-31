@@ -139,6 +139,84 @@ inline unsigned Run(){
         Fixture f;Activate(f);const auto proof=Sample(f);Need(proof.valid);f.Cycle();auto context=f.Context(1);Apply(f,context,proof);
         check(context.r8==Address(f.source)&&!f.Adapter().Live()&&std::strcmp(f.Adapter().Reason(),"input_outside_launch_cycle")==0,"sample cannot cross a native cycle counter");
     }
+    // The captured failure was a draw after Signal: closed cycle, stable native
+    // counter equal to lastSignal (one past the previous launch counter).
+    for(float weight:{0.f,.6f}){
+        Fixture f;if(weight!=0)Activate(f);
+        for(unsigned i=0;i<12;i++)f.Input(2,weight!=0);
+        f.EndCycle();const auto before=f.Adapter().View();const auto target=f.Part().target;
+        f.Input(2);
+        check(f.Adapter().Live()&&!f.Adapter().InputRejection()&&f.Part().target==target,
+            "post-signal original draw keeps its binding instead of rejecting the closed cycle");
+        check(f.Adapter().PostSignalDraws()==1,"post-signal pass-through has a bounded aggregate count");
+        struct StateLog {std::string record;bool Write(const char* line){record=line;return true;}} log;
+        facecontinuous::WriteState(log,f.Part(),"part_state");
+        check(log.record.find("\"post_signal_original_draws\":1")!=std::string::npos,"worker state exposes post-signal original draws without callback logging");
+        const auto after=f.Adapter().View();bool sameSlots=true;
+        for(unsigned i=0;i<3;i++)sameSlots=sameSlots&&before.slots[i].phase==after.slots[i].phase
+            &&before.slots[i].usePending==after.slots[i].usePending&&before.slots[i].joinedAfterUse==after.slots[i].joinedAfterUse
+            &&before.slots[i].lastUseSignal==after.slots[i].lastUseSignal&&before.slots[i].retirementFence==after.slots[i].retirementFence
+            &&before.slots[i].coverageFence==after.slots[i].coverageFence;
+        check(after.live&&!after.frameOpen&&before.active==after.active&&before.publicationCounter==after.publicationCounter
+            &&before.requested==after.requested&&before.applied==after.applied&&sameSlots,
+            "post-signal draw adds no private resource use or publication and preserves retirement proof");
+        f.StartCycle();f.Input(1,weight!=0);f.Input(3,weight!=0);f.EndCycle();
+        check(f.Adapter().Live(),"next native cycle still substitutes nonzero input with complete compute coverage");
+    }
+    for(unsigned change=0;change<8;change++){
+        Fixture f;Activate(f);f.EndCycle();auto id=f.Adapter().Target();
+        auto passed=Address(f.source);auto before=f.counter,after=f.counter;
+        unsigned kind=2;bool dispatch=false;
+        switch(change){
+            case 0:kind=1;break;
+            case 1:kind=3;dispatch=true;break;
+            case 2:before=after=f.counter-1;break;
+            case 3:before=after=f.counter+1;break;
+            case 4:after++;break;
+            case 5:passed=Address(f.wrappers[0]);break;
+            case 6:id.model++;break;
+            case 7:before=after=UINT64_MAX;break;
+        }
+        const auto result=f.Adapter().Input(id,passed,before,after,dispatch,kind);
+        check(result==passed&&!f.Adapter().Live(),"closed-cycle exception cannot authorize compute, dispatch, stale/unstable counter, private input or changed model");
+    }
+    {
+        Fixture f;Activate(f);f.EndCycle();Put(f.player,0x430,std::uintptr_t{1});f.Input(2);
+        check(!f.Adapter().Live(),"post-signal draw still performs the production mutable stream identity check");
+    }
+    for(unsigned cause=0;cause<3;cause++){
+        Fixture f;Activate(f);check(!f.Adapter().InputRejection(),"normal cycles have no rejection diagnostic");
+        const auto tracked=f.counter;const auto id=f.Adapter().Target();
+        std::uint64_t before=tracked,after=tracked;
+        if(cause==0)f.EndCycle();
+        else if(cause==1)after++;
+        else before=after=tracked+1;
+        const auto input=f.Adapter().Input(id,Address(f.source),before,after,false,2);
+        const auto rejected=f.Adapter().InputRejection();
+        check(input==Address(f.source)&&!f.Adapter().Live()&&rejected.has_value(),"every rejected cycle proof preserves original input and invalidates the adapter");
+        check(rejected->open==(cause!=0)&&rejected->before==before&&rejected->after==after&&rejected->counter==tracked
+            &&rejected->lastSignal==(cause==0?tracked+1:tracked)&&rejected->kind==2&&!rejected->dispatch,
+            "rejection retains closed-cycle, crossing-read and tracked-counter evidence before invalidation");
+        f.Adapter().Input(id,Address(f.source),999,1000,true,3);
+        check(f.Adapter().InputRejection()->before==before&&f.Adapter().InputRejection()->kind==2,"later callbacks cannot replace first rejection evidence");
+        struct Log {
+            bool unlocked=false;std::string record;
+            bool Write(const char* line){
+                std::thread callback([&]{unlocked=facecontinuous::gate.try_lock();if(unlocked)facecontinuous::gate.unlock();});callback.join();
+                record=line;return true;
+            }
+        } log;
+        facecontinuous::WriteInputCycleRejection(log,f.Part());
+        check(log.unlocked&&log.record.find("\"event\":\"input_cycle_rejected\"")!=std::string::npos
+            &&log.record.find("\"cycle_open\":"+std::string(cause==0?"false":"true"))!=std::string::npos
+            &&log.record.find("\"tracked_counter\":"+std::to_string(tracked))!=std::string::npos&&log.record.back()=='\n',
+            "worker emits complete rejection evidence without blocking the native callback gate");
+    }
+    {
+        Fixture f;Activate(f);f.Adapter().Input(f.Adapter().Target(),Address(f.source),f.counter,f.counter+1,true,3);
+        const auto r=f.Adapter().InputRejection();
+        check(r&&r->dispatch&&r->kind==3,"dispatch failures retain their distinct callback kind");
+    }
     return count;
 }
 }

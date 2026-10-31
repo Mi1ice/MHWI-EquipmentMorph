@@ -5,6 +5,11 @@ import re
 import shutil
 import tempfile
 
+class PublicationCleanupError(RuntimeError):
+    def __init__(self,message,committed):
+        super().__init__(message)
+        self.committed=committed
+
 def model_resource_id(value):
     value=value.strip().replace('\\','/')
     if not value:raise ValueError('请填写游戏资源路径')
@@ -24,9 +29,27 @@ def retarget_model(value,equipment_id=''):
     if not folder or not name or folder[1]!=name[2]:raise ValueError('资源路径中的套装目录与模型 ID 不一致，不能自动迁移')
     return value[:folder.start(1)]+equipment_id+value[folder.end(1):name.start(2)]+equipment_id+value[name.end(2):]
 
+def checked_output(output):
+    # Check lexical ancestors BEFORE resolve erases a root link/junction.
+    output=Path(output).absolute()
+    for path in [output,*output.parents]:
+        if path.is_symlink() or (hasattr(path,'is_junction') and path.is_junction()):
+            raise ValueError('导出路径包含链接或联接：'+str(path))
+    return output.resolve()
+
+def check_file_paths(paths):
+    # Certified Windows Blender 5.1.2 embedded Python: file < MAX_PATH,
+    # mkdir < MAX_PATH-12 (UTF-16 units, excluding NUL). Not a portable limit.
+    if os.name!='nt':return
+    for value in paths:
+        path=Path(os.path.abspath(value))
+        for candidate,limit in [(path,260),*((p,248) for p in path.parents)]:
+            if len(str(candidate).encode('utf-16-le'))//2>=limit:
+                raise ValueError('导出路径过长，请缩短输出目录后重试：'+str(candidate))
+
 def publish(stage,output):
     """Replace only exported files; keep unrelated files and roll back on failure."""
-    stage=Path(stage).resolve();output=Path(output).resolve()
+    stage=Path(stage).resolve();output=checked_output(output)
     if output.exists() and not output.is_dir():raise ValueError('输出位置必须是文件夹')
     files=sorted(p for p in stage.rglob('*') if p.is_file())
     for source in files:
@@ -37,7 +60,7 @@ def publish(stage,output):
             if path.exists() and (path==destination and not path.is_file() or path!=destination and not path.is_dir()):raise ValueError('导出路径与已有文件夹/文件冲突：'+str(path))
     output.parent.mkdir(parents=True,exist_ok=True)
     backup=Path(tempfile.mkdtemp(prefix='morph-output-backup-',dir=output if output.is_dir() else output.parent))
-    replaced=[];created=[];directories=[];recovery_failed=False
+    replaced=[];created=[];directories=[];recovery_failed=False;committed=False
     try:
         for source in files:
             destination=output/source.relative_to(stage)
@@ -49,6 +72,7 @@ def publish(stage,output):
                 os.replace(destination,saved);replaced.append((saved,destination))
             else:created.append(destination)
             os.replace(source,destination)
+        committed=True
     except Exception as error:
         try:
             for destination in reversed(created):
@@ -60,4 +84,8 @@ def publish(stage,output):
             raise RuntimeError('导出失败且自动恢复未完成；原文件备份保留在 '+str(backup)) from recovery
         raise error
     finally:
-        if not recovery_failed:shutil.rmtree(backup)
+        if not recovery_failed:
+            try:shutil.rmtree(backup)
+            except OSError as cleanup:
+                message='导出文件已发布；备份清理未完成：' if committed else '导出未发布或已恢复；备份清理未完成：'
+                raise PublicationCleanupError(message+str(backup),committed) from cleanup

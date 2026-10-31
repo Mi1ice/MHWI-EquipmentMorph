@@ -10,7 +10,7 @@ PRIVATE = re.compile(r'(?i)[A-Z]:[\\/]+(?:Users|MHmod|SteamLibrary|Milice)[\\/]|
 
 def main():
     paths = []
-    ignored = {'.git', '.build', '.venv', '__pycache__', 'build', 'bin', 'obj', 'node_modules', 'target', 'gen'}
+    ignored = {'.git', '.codegraph', '.superpowers', '.build', '.venv', '__pycache__', 'build', 'bin', 'obj', 'node_modules', 'target', 'gen'}
     for directory, folders, files in os.walk(ROOT, followlinks=False):
         folders[:] = [name for name in folders if name not in ignored and not (Path(directory) / name).is_symlink()]
         paths.extend(Path(directory) / name for name in files)

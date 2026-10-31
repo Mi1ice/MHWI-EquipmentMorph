@@ -25,6 +25,16 @@ inline bool ParseWeight(std::string_view text,float& weight) {
     weight=candidate==0?0:candidate;return true;
 }
 // Runtime gate serializes these methods; no native calls while held.
+struct InputCycleRejection {
+    bool open=false,syncSeen=false,dispatch=false;
+    unsigned kind=0,launches=0,waits=0,compute=0,draw=0,dispatches=0;
+    std::uint64_t before=0,after=0,counter=0,lastSignal=0;
+};
+struct LaunchRejection {
+    Frame expected{},observed{};
+    std::uint64_t counter=0,lastSignal=0;
+    unsigned mismatch=0;
+};
 class LaunchAdapter {
     std::uint64_t bindingEpoch=1;
     launchpool::Pool pool;
@@ -36,10 +46,13 @@ class LaunchAdapter {
     std::array<std::uintptr_t,8> launchEvents{},waitEvents{};
     bool armed=false,ready=false,started=false,failed=false,open=false,syncSeen=false,originalCycle=false;
     unsigned launches=0,nextWait=0;
-    std::uint64_t counter=0,lastSignal=0,boundaries=0,signals=0,inputs=0,dispatches=0,uploadDone=0,drawDone=0,originalBypasses=0;
+    std::uint64_t counter=0,lastSignal=0,boundaries=0,signals=0,inputs=0,dispatches=0,uploadDone=0,drawDone=0,originalBypasses=0,postSignalDraws=0;
     const char* reason="none";
+    std::optional<InputCycleRejection> inputRejection;
+    std::optional<LaunchRejection> launchRejection;
     bool Bad(const char* why){if(failed)return false;failed=true;ready=false;open=false;reason=why;pool.Invalidate();return false;}
-    bool Same(Frame f)const{return f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.workers==fixed.workers&&f.thread==fixed.thread;}
+    bool SameIdentity(Frame f)const{return f.engine==fixed.engine&&f.renderer==fixed.renderer&&f.fence==fixed.fence&&f.thread==fixed.thread;}
+    bool Same(Frame f)const{return SameIdentity(f)&&f.workers==fixed.workers;}
     bool Batch(Frame f)const{return Same(f)&&f.mode==batch.mode&&f.before==counter;}
 public:
     explicit LaunchAdapter(std::uint64_t epoch=1):bindingEpoch(epoch){}
@@ -51,6 +64,8 @@ public:
     bool Started()const{return started&&!failed;}
     bool HasLaunched()const{return started;}
     const char* Reason()const{return reason;}
+    std::optional<InputCycleRejection> InputRejection()const{return inputRejection;}
+    std::optional<LaunchRejection> LaunchFailure()const{return launchRejection;}
     Frame Fixed()const{return fixed;}
     unsigned PendingWaits()const{return nextWait;}
     std::uint64_t Boundaries()const{return boundaries;}
@@ -58,6 +73,7 @@ public:
     std::uint64_t Inputs()const{return inputs;}
     std::uint64_t Dispatches()const{return dispatches;}
     std::uint64_t OriginalBypasses()const{return originalBypasses;}
+    std::uint64_t PostSignalDraws()const{return postSignalDraws;}
     bool PassOriginalInput(){
         if(!Started()||!open||!originalCycle)return false;
         originalBypasses++;return true;
@@ -86,7 +102,16 @@ public:
         if(index==0){
             if(open||launches||nextWait)return Bad("launch_before_previous_signal");
             if(!started){fixed=f;lastSignal=f.before;if(!pool.Start(f.before,bindingEpoch)||!pool.Request(latest))return Bad("pool_start_failed");started=true;}
-            if(!Same(f)||f.before!=lastSignal)return Bad("launch_identity_or_counter");
+            if(!SameIdentity(f)||f.before!=lastSignal){
+                const unsigned mismatch=(f.engine!=fixed.engine?1u:0u)|(f.renderer!=fixed.renderer?2u:0u)
+                    |(f.fence!=fixed.fence?4u:0u)|(f.workers!=fixed.workers?8u:0u)|(f.thread!=fixed.thread?16u:0u)
+                    |(f.before!=lastSignal?32u:0u);
+                launchRejection=LaunchRejection{fixed,f,counter,lastSignal,mismatch};
+                return Bad("launch_identity_or_counter");
+            }
+            // All workers/waits from the previous cycle ended at Signal.
+            // The native engine can choose a new count for this complete batch.
+            fixed.workers=f.workers;
             if(!pool.Launch(f.before))return Bad("pool_launch_rejected");
             const auto view=pool.Get();
             // Freeze this route until Signal. Requests and upload completions
@@ -122,9 +147,20 @@ public:
         if(!Started()||seen.owner!=target.owner)return passed;
         const auto actual=target;
         if(seen!=actual){Bad("target_identity_changed");return passed;}
-        if(!open||before!=after||before!=counter){Bad("input_outside_launch_cycle");return passed;}
+        // Native draws can arrive after Signal and before the next Launch.
+        // Keep their original source; private inputs remain cycle-bound so no
+        // uncovered GPU use can outlive the completed retirement proof.
+        if(!open&&!dispatch&&kind==2&&passed==actual.source&&before==after&&before==lastSignal&&lastSignal==counter+1){
+            postSignalDraws++;return passed;
+        }
+        if(!open||before!=after||before!=counter){
+            // Retain the first rejected proof before Bad closes the cycle.
+            // No formatting, allocation or logging on the native callback.
+            inputRejection=InputCycleRejection{open,syncSeen,dispatch,kind,launches,nextWait,cycleCompute,cycleDraw,cycleDispatch,before,after,counter,lastSignal};
+            Bad("input_outside_launch_cycle");return passed;
+        }
         const auto slot=pool.Input(before,after);
-        if(!pool.Get().live){Bad("pool_input_rejected");return passed;}
+        if(!pool.IsLive()){Bad("pool_input_rejected");return passed;}
         const auto expected=slot?handles[*slot]:actual.source;
         if((!dispatch&&passed!=actual.source)||(dispatch&&passed!=expected)){Bad("input_or_dispatch_contract");return passed;}
         if(dispatch){cycleDispatch++;dispatches++;return passed;}

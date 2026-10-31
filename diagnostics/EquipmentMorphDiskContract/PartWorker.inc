@@ -30,8 +30,9 @@ bool BufferUploadComplete(privateprobe::Buffer& buffer,std::uint64_t expected,st
 }
 void ResetPartLocked(Part& part){
     if(part.epoch==UINT64_MAX)throw std::runtime_error("Part epoch exhausted");
+    declarationBindings[part.index]={};
     part.epoch++;part.adapter=std::make_unique<LaunchAdapter>(part.epoch);part.drain=DrainBoundary{};
-    part.retiring=false;part.target=0;part.updates=part.replacements=part.smoothingRevision=part.lastRevision=0;part.requested.clear();part.lastSample.clear();
+    part.retiring=false;part.target=0;part.updates=part.replacements=part.lastRevision=0;part.requested.clear();part.lastSample.clear();
     part.cadence=facesmooth::SampleGate{};
     if(armed&&part.asset&&!part.blocked&&!part.adapter->Arm())throw std::runtime_error("Fresh part arm");
 }
@@ -52,6 +53,8 @@ void ActivateWanted(Part& part){
     part.payload.clear();ResetPartLocked(part);
 }
 void EndPart(privateprobe::Log& log,Part& part,privateprobe::UploadFence& upload,DrawingFence& drawing){
+    WriteLaunchRejection(log,part);
+    WriteInputCycleRejection(log,part); // Once per retired generation, outside native callbacks.
     const auto oldTarget=part.target;part.binding.reset();part.target=0;
     if(oldTarget){MhmApi api{};MhmWeightState values[64]{};std::uint32_t count=0;std::uint64_t req=0,app=0;
         if(MhwMorphGetApi(MHM_API_VERSION,sizeof(api),&api)!=MHM_OK||api.read_weights(oldTarget,values,64,&count,&req,&app)!=MHM_STALE)throw std::runtime_error("Part handle not retired");}
@@ -141,17 +144,19 @@ void InitializePart(privateprobe::Log& log,Part& part,privateprobe::UploadFence&
     part.reusable=false;
     part.binding=std::make_unique<equipmentmorph::PartBinding>();part.binding->Attach(*part.asset);part.target=part.binding->target;
     part.payload.resize(part.asset->basis.size());
-    MhmTargetInfo descriptor{};descriptor.handle=part.target;descriptor.part=part.asset->part;descriptor.key_count=static_cast<unsigned>(part.asset->keys.size());std::memcpy(descriptor.model_id,part.asset->model.c_str(),part.asset->model.size()+1);
-    if(part.smoother.Reset({&descriptor,1},now)!=MHM_OK||!part.cadence.Reset(now))throw std::runtime_error("Part smoother reset");
+    if(!part.cadence.Reset(now))throw std::runtime_error("Part cadence reset");
     {std::lock_guard lock(gate);if(!part.adapter->Live()||!Matches(part.index,identity,true)){part.adapter->Invalidate(0,"equipment_part_identity_changed");return;}
         if(!part.adapter->PublishResources(handles))throw std::runtime_error("Part publication");}
     WriteState(log,part,"part_ready_original_inputs");
 }
 void WriteUpload(privateprobe::Log& log,const Part& part,unsigned slot,const launchpool::MorphVersion& version,std::uint64_t stamp,
                  const std::string& sha,const launchpool::Slot& previous){
-    char line[4096]{};const auto weights=Weights(version.weights,static_cast<unsigned>(part.asset->keys.size()));
-    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"part_upload_queued\",\"part\":%u,\"epoch\":%llu,\"slot\":%u,\"core_frame\":%llu,\"revision\":%llu,\"weights\":%s,\"stamp\":%llu,\"payload_sha256\":\"%s\",\"previous_retirement_fence\":%llu,\"previous_coverage_fence\":%llu,\"previous_joined\":%s}\n",part.asset->part,part.epoch,slot,version.frame,version.revision,weights.c_str(),stamp,sha.c_str(),previous.retirementFence,previous.coverageFence,previous.joinedAfterUse?"true":"false");
-    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Part upload log");
+    const auto weights=Weights(version.Weights(),static_cast<unsigned>(part.asset->keys.size()));
+    const auto capacity=weights.size()+1024;
+    if(capacity>65536)throw std::runtime_error("Part upload log bound");
+    std::vector<char> line(capacity);
+    const auto count=std::snprintf(line.data(),line.size(),"{\"event\":\"part_upload_queued\",\"part\":%u,\"epoch\":%llu,\"slot\":%u,\"core_frame\":%llu,\"revision\":%llu,\"weights\":%s,\"stamp\":%llu,\"payload_sha256\":\"%s\",\"previous_retirement_fence\":%llu,\"previous_coverage_fence\":%llu,\"previous_joined\":%s}\n",part.asset->part,part.epoch,slot,version.frame,version.revision,weights.c_str(),stamp,sha.c_str(),previous.retirementFence,previous.coverageFence,previous.joinedAfterUse?"true":"false");
+    if(count<0||static_cast<size_t>(count)>=line.size()||!log.Write(line.data()))throw std::runtime_error("Part upload log");
 }
 bool PartStep(privateprobe::Log& log,Part& part,privateprobe::UploadFence& upload,DrawingFence& drawing,std::uint64_t now){
     launchpool::View view{};bool live=false,started=false;
@@ -162,15 +167,10 @@ bool PartStep(privateprobe::Log& log,Part& part,privateprobe::UploadFence& uploa
     if(!live)return false;
     if(started)part.binding->Acknowledge(view);part.binding->Collect(view);
     auto& requested=part.requested;std::uint64_t revision=0;if(!part.binding->Requested(static_cast<unsigned>(part.asset->keys.size()),requested,revision))return false;
-    // The public revision changes on submit, release, expiry or target changes.
-    // Poll it at the existing rate, but do not rebuild identical smooth targets.
-    if(revision!=part.smoothingRevision){
-        std::vector<MhmUpdate> desired;desired.reserve(requested.size());for(unsigned k=0;k<requested.size();k++)desired.push_back({part.target,k,requested[k]});
-        if(part.smoother.SetTargets(desired,revision,now)!=MHM_OK)throw std::runtime_error("Part smooth target");part.smoothingRevision=revision;
-    }
+    // Capture the arbitration result and its revision at the existing cadence.
+    // Scheduling may coalesce requests; the host does not create new weights.
     if(part.cadence.Due(now)&&CanSubmit(view)){
-        std::vector<MhmUpdate> sampled;std::uint64_t sampledRevision=0;
-        if(part.smoother.Sample(now,sampled,sampledRevision)!=MHM_OK)throw std::runtime_error("Part smooth sample");std::vector<float> values;for(const auto& value:sampled)values.push_back(value.weight);
+        const auto& values=requested;const auto sampledRevision=revision;
         if(values!=part.lastSample||sampledRevision!=part.lastRevision){launchpool::MorphVersion version{};
             if(part.binding->Capture(values,sampledRevision,version)){
                 std::lock_guard lock(gate);if(part.adapter->Live()){

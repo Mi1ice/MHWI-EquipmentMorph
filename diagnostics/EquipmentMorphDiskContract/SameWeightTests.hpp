@@ -1,10 +1,10 @@
 #pragma once
 namespace sameweighttest {
-inline launchpool::MorphVersion Version(float weight,std::uint64_t frame){launchpool::MorphVersion v{};v.weights[0]=weight;v.frame=v.revision=frame;return v;}
+inline launchpool::MorphVersion Version(float weight,std::uint64_t frame,unsigned size=1){std::vector<float> values(size);values[0]=weight;return launchpool::MorphVersion::FromWeights(values,frame,frame);}
 struct ActivePool {
     launchpool::Pool pool;launchpool::Token token{};std::uint64_t counter=100;
-    ActivePool(){
-        using inputfasttest::Need;Need(pool.Start(counter)&&pool.Request(Version(.6f,1)));
+    explicit ActivePool(unsigned size=1){
+        using inputfasttest::Need;Need(pool.Start(counter)&&pool.Request(Version(.6f,1,size)));
         const auto next=pool.Prepare();Need(next.has_value());token=*next;
         Need(pool.BeginUpload(token)&&pool.UploadQueued(token,20)&&pool.Completed(20,counter)&&pool.Launch(counter));End();
     }
@@ -34,7 +34,7 @@ inline unsigned Run(){
         check(f.pool.Prepare().has_value(),"a one-ULP weight change still requires a new payload");
     }
     {
-        ActivePool f;auto weight=Version(.6f,2);weight.weights[63]=1e-9f;Need(f.pool.Request(weight));
+        ActivePool f(64);std::vector<float> values(64);values[0]=.6f;values[63]=1e-9f;const auto weight=launchpool::MorphVersion::FromWeights(values,2,2);Need(f.pool.Request(weight));
         check(f.pool.Prepare().has_value(),"exact equality covers all sixty-four weights without rounding or tolerance");
     }
     {

@@ -1,5 +1,19 @@
 # 源码构建与验证
 
+作者角点法线保真修复加入独立计算组件。从源码运行联合导出前执行 `./tools/build_authored_shading.ps1`；容量Paired／All和完整源码入口会自动执行。组件仅供Windows x64作者插件使用，不进入游戏核心。完整作者ZIP带有当前组件与许可证，见[作者法线与切线](AUTHORED_SHADING.md)。
+
+## 1024键容量候选
+
+`codex/capacity-paired-export` 的容量候选使用独立入口，不沿用下面历史组件包的验收：
+
+```powershell
+./tools/check_morph_capacity.ps1 -Stage All -Python 'python.exe' -Blender '你的Blender目录/blender.exe'
+```
+
+也可单独执行 `Data`、`Sdk`、`Paired` 或 `Host`。Paired需要上述固定版本的Blender与模型导出插件，独立后台运行；Host只用合成原生资源，不安装钩子。任一阶段失败都会令入口失败。报告写入 `.build/capacity-validation/all-report.json`，包含执行状态、源码与产物摘要；核心候选位于 `.build/cleanup-validation/native/MHWEquipmentMorphConfiguredPrototype.dll`。
+
+候选仅验证核心、当前SDK和作者联合导出组合，未重新适配现有面板／预设／自动表情，也未执行完整 `check_source.ps1 -ImGui`。不能将已有发行安装包当作本候选。容量、兼容边界及后续测量见[容量候选](CAPACITY_CANDIDATE.md)。
+
 ## 环境
 
 - Windows x64，PowerShell 7，Git。
@@ -33,7 +47,7 @@ ImGui 入口构建核心、检查器、游戏内面板和 SDK 示例，执行原
 
 可选 Dear ImGui 游戏内面板使用 `./tools/build_mhwi_equipmentmorph_imgui.ps1` 独立构建，输出 `.build/current-validation/imgui/`，包括面板 DLL、软件测试程序、开发候选清单与许可证。它不重建／安装核心，也不需要 Tauri 工具链；验证范围和实机步骤见[面板说明](../controls/MHWI-EquipmentMorph-ImGui/README.md)。
 
-ImGui 构建入口自动执行无窗口的输入、控制和预设检查：当前为99项输入、33项控制和307项合成预设检查；指定 `-CoreCandidate` 时另核对2项本地核心导出，共309项。图形窗口程序仅编译，不启动。用户指定后续界面／实机测试由其手动完成；助手不执行会创建窗口的历史 `test_mhwi_equipmentmorph_imgui.ps1`。历史先／后加载和队列回归的记录仍保留。
+ImGui 构建入口自动执行无窗口的输入、控制和预设检查：当前分支为99项输入、54项控制与筛选和307项合成预设检查；指定 `-CoreCandidate` 时另核对2项本地核心导出，共309项。图形窗口程序仅编译，不启动。用户指定后续界面／实机测试由其手动完成；助手不执行会创建窗口的历史 `test_mhwi_equipmentmorph_imgui.ps1`。历史先／后加载和队列回归的记录仍保留。
 
 当前面板的完整源码验证使用 `./tools/check_source.ps1 -ImGui -Python './.venv/Scripts/python.exe'`，会构建核心和ImGui，生成仅核心与核心＋ImGui两种包，并执行合成目录安装、升级添加组件、回退、卸载和冲突检查。与 `-Desktop` 互斥，不启动游戏或界面。只重复打包时使用 `python ./tools/package_source.py --core-only` 或 `--imgui`；后者读取 `.build/current-validation/imgui/MHWEquipmentMorphImGui.dll`。包输出分别为 `.build/packages/MHWI-EquipmentMorph-0.6.0-core` 与 `-imgui`，使用说明见[组件安装说明](IMGUI_INSTALLATION.md)。这些包不携带旧预设或配置迁移器。
 

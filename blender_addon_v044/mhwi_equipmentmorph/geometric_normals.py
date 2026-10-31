@@ -13,9 +13,12 @@ from .normal_authoring import angle,rotate,source_state,unit
 from .backend.equipment_morph_export_pipeline import uv_bytes
 from .backend.map_equipment_morph_job import model_meshes
 
+class AntiparallelDirection(ValueError):
+    """The endpoint directions do not define a unique transport axis."""
+
 def transported(normal,base,target):
     base=unit(base);target=unit(target);cosine=float(np.clip(np.dot(base,target),-1,1))
-    if cosine<-.999999:raise ValueError('几何法线端点反向；请使用作者法线模式或修正端点')
+    if cosine<-.999999:raise AntiparallelDirection('几何法线端点反向；请使用作者法线模式或修正端点')
     axis=np.cross(base,target);sine=np.linalg.norm(axis)
     if sine<1e-12:return unit(normal)
     return unit(rotate(unit(normal),axis/sine,math.atan2(sine,cosine)))

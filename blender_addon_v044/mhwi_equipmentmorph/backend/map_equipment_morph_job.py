@@ -8,10 +8,8 @@ import struct
 import numpy as np
 from .equipment_morph_export_pipeline import ROOT, PARTS, digest, pinned, read_json, uv_bytes
 
-LAYOUTS = {0xa756f2f9:24, 0xa5104ca0:28, 0xc3ac03a1:36, 0xc9690ab8:40,
-           0x818904dc:28, 0x0f06033f:32, 0xf637401c:32, 0xf471fe45:36,
-           0x3c730760:36, 0xb2fc0083:40, 0x81f58067:40, 0x83b33e3e:44,
-           0x366995a7:44, 0xb8e69244:48}
+from .vertex_formats import FORMATS
+LAYOUTS = {code: f['stride'] for code,f in FORMATS.items()}
 NEIGHBORS = tuple(itertools.product((-1, 0, 1), repeat=3))
 
 

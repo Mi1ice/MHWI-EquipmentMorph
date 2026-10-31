@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "Control.hpp"
+#include "KeyFilter.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/api.cpp"
 #include <cstdio>
 #include <limits>
@@ -17,6 +18,23 @@ MhmResult MHM_CALL CountWeights(uint64_t target,MhmWeightState* values,uint32_t 
     ++weightReads;if(target==failWeightTarget)return MHM_NOT_READY;
     return originalApi.read_weights(target,values,capacity,count,requested,applied);
 }
+struct ExpressionMock {
+    inline static morphexpression::State state;
+    inline static morphexpression::Config posted;
+    inline static MhmResult result=MHM_OK,identityResult=MHM_OK;
+    inline static uint64_t ticket=0;
+    inline static unsigned reads=0,posts=0;
+    static MhmResult MHM_CALL Read(uint32_t version,uint32_t bytes,morphexpression::State* out){
+        ++reads;if(version!=1||bytes!=sizeof(*out))return MHM_VERSION;*out=state;return MHM_OK;
+    }
+    static MhmResult MHM_CALL Post(uint32_t version,uint32_t bytes,const morphexpression::Config* value,uint64_t* out){
+        ++posts;if(version!=1||bytes!=sizeof(*value))return MHM_VERSION;if(result!=MHM_OK)return result;posted=*value;*out=++ticket;return MHM_OK;
+    }
+    static MhmResult MHM_CALL Identity(uint32_t,uint32_t,uint64_t handle,MhmAssetIdentity* out){
+        *out={};out->handle=handle;std::memset(out->model_sha256,'a',64);std::memset(out->pack_sha256,'b',64);return identityResult;
+    }
+    static void Complete(MhmResult value=MHM_OK){state.completed=ticket;state.configurationResult=value;if(value==MHM_OK)state.config=posted;}
+};
 }
 int main(){try{
     unsigned checks=0;auto check=[&](bool ok,const char* name){if(!ok)throw std::runtime_error(name);checks++;};
@@ -95,7 +113,7 @@ int main(){try{
         check(polling.Snapshot()->data.targetCount==2,"weight read reuses metadata between discovery scans");
         polling.Service(251,true);
         check(polling.Snapshot()->data.targetCount==3,"visible weight reads do not postpone equipment discovery");
-        mhmcontrol::Session session(counted);mhmcontrol::Response readback;
+        morphpanel::Session session;session.Connect(counted);morphpanel::Snapshot readback;
         check(session.Snapshot(readback)==MHM_OK,"read failure fixture discovers complete state");
         readback.keys[0].state.applied=.123f;const auto saved=readback;failWeightTarget=arm;
         check(session.Weights(readback)==MHM_NOT_READY&&readback.revision==saved.revision&&readback.keys[0].state.applied==saved.keys[0].state.applied,
@@ -111,6 +129,68 @@ int main(){try{
         }
         check(replacement->ready&&healthy&&fresh,"retired handle during fast read triggers discovery without replaying weights");
         polling.Post(Action::Release);polling.Service(268,true);Core().Detach(leg);
+    }
+    {
+        morphgui::KeyFilter filter;filter.Select(body);
+        check(filter.Matches("Example_A",false,0),"default filter includes unowned zero keys");
+        strcpy_s(filter.search,"  EXAMPLE_b \t");
+        check(filter.Matches("Example_B",true,.5f)&&!filter.Matches("Example_A",true,.5f),"search trims whitespace and folds ASCII case");
+        strcpy_s(filter.search,"胸部");check(filter.Matches("测试胸部形态",true,0),"search matches literal UTF-8 names");
+        filter.Clear();filter.mode=1;
+        check(filter.Matches("zero",true,0)&&!filter.Matches("other",false,1),"owned filter includes explicit zero and excludes other sources");
+        filter.mode=2;check(filter.Matches("other",false,1)&&!filter.Matches("own",true,0),"unowned filter is panel-specific");
+        filter.mode=3;const float tiny=std::numeric_limits<float>::denorm_min();
+        check(filter.Matches("tiny",true,tiny)&&filter.Matches("negative",true,-.1f)&&!filter.Matches("zero",true,-0.f),"nonzero filter retains exact float values including tiny and negative contributions");
+        check(!filter.Matches("external",false,1),"nonzero filter does not include an external source");
+        strcpy_s(filter.search,"Example");check(!filter.Matches("different",true,1),"name and ownership filters intersect");
+        check(filter.Visible("different",true,0,true,4,4),"active row remains visible after reaching zero or changing search");
+        check(filter.Visible("different",false,0,false,5,4),"pending release remains visible until worker acknowledgement");
+        check(!filter.Visible("different",false,0,false,5,5),"finished filtered row disappears after acknowledgement");
+        filter.Select(body);check(filter.mode==3&&filter.search[0]!=0,"same target preserves filters across panel hide and reopen");
+        filter.Select(arm);check(filter.mode==0&&!filter.search[0],"target replacement clears search and state filters");
+        morphpanel::Session session;session.Connect(api);mhmcontrol::Request set;set.action=Action::Set;set.target=body;set.key=0;set.weight=0;
+        check(session.ChangeMany({&set,1})==MHM_OK,"filter fixture owns an explicit zero");set.key=1;set.weight=tiny;
+        check(session.ChangeMany({&set,1})==MHM_OK,"filter fixture owns a precise tiny weight");morphpanel::Snapshot data;
+        check(session.Snapshot(data)==MHM_OK,"filter fixture reads full ownership");
+        filter.mode=3;std::vector<const mhmcontrol::Key*> visible;
+        for(uint32_t i=0;i<data.keyCount;i++){const auto& k=data.keys[i];if(filter.Matches(k.info.id,k.owned!=0,k.contribution))visible.push_back(&k);}
+        check(visible.size()==1&&visible[0]->target==body&&visible[0]->index==1,"filtered first row preserves original target and key index");
+        set.target=visible[0]->target;set.key=visible[0]->index;set.weight=.37f;check(session.ChangeMany({&set,1})==MHM_OK,"filtered key edit submits its original identity");
+        session.Snapshot(data);unsigned owned=0;bool zero=false,edited=false;
+        for(uint32_t i=0;i<data.keyCount;i++){const auto& k=data.keys[i];if(k.owned){owned++;zero=zero||(k.target==body&&k.index==0&&k.contribution==0);edited=edited||(k.target==body&&k.index==1&&k.contribution==.37f);}}
+        check(owned==2&&zero&&edited,"hidden owned zero remains in full snapshot for preset capture and is not changed by visible edit");session.Release();
+        morphgui::FeedbackTime feedback;
+        check(feedback.Show(1,true,10)&&feedback.Show(1,true,12.9)&&!feedback.Show(1,true,13),"success feedback expires after three seconds");
+        check(feedback.Show(2,true,20)&&feedback.Show(2,false,200),"new completion restarts success feedback and errors remain visible");
+    }
+    {
+        using namespace morphexpression;
+        using ExprAction=morphexpression::Action;
+        Client client;client.SetApi(ExpressionMock::Read,ExpressionMock::Post);client.SetIdentity(ExpressionMock::Identity);
+        ExpressionMock::state={};ExpressionMock::state.ready=1;client.Service(100);
+        check(client.Get().connected&&!client.Get().busy,"optional expression worker discovered independently of morph control");
+        client.Service(150);check(ExpressionMock::reads==1,"expression polling bounded outside render thread");
+        morphpanel::Snapshot data;data.targetCount=1;data.keyCount=2;data.targets.resize(1);data.keys.resize(2);
+        data.targets[0].info.handle=4321;data.targets[0].info.part=MHM_BODY;strcpy_s(data.targets[0].info.model_id,"synthetic/face");data.targets[0].first=0;data.targets[0].count=2;
+        for(uint32_t i=0;i<2;++i){data.keys[i].target=4321;data.keys[i].index=i;strcpy_s(data.keys[i].info.id,i?"eyes.closed":"unrelated");data.keys[i].info.maximum=i?1.f:.5f;}
+        check(client.Change({ExprAction::Map,false,4321,1},data,true)==MHM_OK&&client.Get().busy,"explicit expression mapping queued with acknowledgment");
+        check(!std::strcmp(ExpressionMock::posted.key,"eyes.closed")&&Sha(ExpressionMock::posted.modelSha)&&Sha(ExpressionMock::posted.packSha),"mapping captures key ID and exact asset identity");
+        check(client.Change({ExprAction::Enable,true},data,true)==MHM_CAPACITY,"pending expression settings cannot be overwritten");
+        client.Service(200);check(client.Get().busy&&!client.Get().state.config.mapped,"state remains saved configuration until worker acknowledges");
+        ExpressionMock::Complete();client.Service(300);check(!client.Get().busy&&client.Get().state.config.mapped,"expression mapping published after worker completion");
+        check(client.Change({ExprAction::Map,false,4320,1},data,true)==MHM_STALE,"retired target handle never replays expression mapping");
+        client.Service(400);check(client.Get().result==MHM_STALE,"local expression errors persist until another operation");
+        const auto posts=ExpressionMock::posts;check(client.Change({ExprAction::Map,false,4321,0},data,true)==MHM_INVALID&&ExpressionMock::posts==posts,"incompatible weight range rejected before expression request");
+        ExpressionMock::identityResult=MHM_STALE;check(client.Change({ExprAction::Map,false,4321,1},data,true)==MHM_STALE,"retired asset identity blocks mapping");ExpressionMock::identityResult=MHM_OK;
+        check(client.Change({ExprAction::Enable,true},data,false)==MHM_OK,"independent expression switch works without current equipment");ExpressionMock::Complete();client.Service(500);
+        check(client.Get().state.config.enabled==1,"expression enable acknowledgment retained");
+        check(client.Change({ExprAction::Clear},data,false)==MHM_OK,"mapping can be cleared while equipment absent");ExpressionMock::Complete();client.Service(600);
+        check(!client.Get().state.config.mapped&&client.Get().state.config.enabled,"clearing expression mapping preserves independent enabled switch");
+        check(client.Change({ExprAction::Enable,false},data,false)==MHM_OK,"disable request queued");ExpressionMock::Complete(MHM_NOT_READY);client.Service(700);
+        check(client.Get().result==MHM_NOT_READY&&!client.Get().busy&&client.Get().state.config.enabled,"save failure reports error and retains old expression switch");
+        ExpressionMock::state.config.enabled=2;client.Service(800);check(!client.Get().connected&&client.Get().result==MHM_VERSION,"malformed optional plugin state rejected");
+        ExpressionMock::state.config.enabled=1;ExpressionMock::state.tick=1;client.Service(2000);
+        check(!client.Get().connected&&client.Get().result==MHM_NOT_READY,"stopped expression worker not displayed as live");
     }
     std::printf("PASS: %u ImGui control checks; no windows, input automation or game process\n",checks);return 0;
 }catch(const std::exception& e){std::printf("FAIL: %s\n",e.what());return 1;}}

@@ -150,8 +150,16 @@ def recover():
 @persistent
 def after_operation(*args):recover()
 
+def recover_after_register():
+    # A script can start preview before the first timer tick after enable.
+    # Only stale copies belong to startup recovery, never that live session.
+    if not running():recover()
+    return None
+
 def register():
-    recover()
+    # addon_utils.enable() runs register under RestrictBlend: scene data is not
+    # available until registration finishes. Recover disposable copies later.
+    if not bpy.app.timers.is_registered(recover_after_register):bpy.app.timers.register(recover_after_register,first_interval=0)
     for name in ('save_pre','load_pre','undo_pre','redo_pre','render_pre'):
         handlers=getattr(bpy.app.handlers,name)
         if before_operation not in handlers:handlers.append(before_operation)
@@ -160,6 +168,7 @@ def register():
         if after_operation not in handlers:handlers.append(after_operation)
 
 def unregister():
+    if bpy.app.timers.is_registered(recover_after_register):bpy.app.timers.unregister(recover_after_register)
     stop();recover()
     if bpy.app.timers.is_registered(watch):bpy.app.timers.unregister(watch)
     for name in ('save_pre','load_pre','undo_pre','redo_pre','render_pre'):

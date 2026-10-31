@@ -2,7 +2,6 @@
 #define NOMINMAX
 #define OBSERVER_TEST
 #include "../../runtime/EquipmentMorphPerKeyCore/api.cpp"
-#include "../../runtime/EquipmentMorphPerKeyCore/group_smoothing.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/asset_pack.hpp"
 #include "../../runtime/EquipmentMorphPerKeyCore/json_log.hpp"
 #include "../../runtime/EquipmentMorphAutoBinding/LocalPlayer.hpp"
@@ -42,9 +41,9 @@ struct Part : BufferPool {
     std::vector<BufferPool> cached;
     std::optional<size_t> active,wanted;
     DrainBoundary drain;bool retiring=false,blocked=false;
-    mhm::GroupSmoothing smoother;facesmooth::SampleGate cadence;
+    facesmooth::SampleGate cadence;
     std::vector<unsigned char> payload;
-    std::vector<float> requested,lastSample;std::uint64_t smoothingRevision=0,lastRevision=0;
+    std::vector<float> requested,lastSample;std::uint64_t lastRevision=0;
 };
 std::array<Part,5> parts;
 std::mutex gate;
@@ -177,6 +176,11 @@ bool ApplyInputProof(safetyhook::Context& context,unsigned kind,std::uintptr_t o
     if(replacement!=e.input){
         bool matches=false;for(auto& buffer:part.buffers)if(buffer.wrapper==replacement)matches=privateprobe::Contract(buffer);
         if(!matches){adapter.Invalidate(0,"part_private_buffer_contract");return true;}
+    }
+    // Input can run after the launch check and after sampling outside gate.
+    // Validate the copied declaration generation at the actual use/commit path.
+    if(!DeclarationInputMatches(part.index,actual)){adapter.Invalidate(0,"equipment_part_identity_changed");return true;}
+    if(replacement!=e.input){
         context.r8=replacement;part.replacements++;
     }
     return true;
@@ -241,34 +245,54 @@ void LaunchStarting(safetyhook::Context& c) noexcept {
         }}
 }
 void PlayerGone(std::uintptr_t owner,const char* reason) noexcept {
-    std::lock_guard lock(gate);if(owner==anchorPlayer){anchorPlayer=0;for(auto& part:parts)part.adapter->Invalidate(0,reason);}
+    std::lock_guard lock(gate);if(owner==anchorPlayer){anchorPlayer=0;declarationBindings={};for(auto& part:parts)part.adapter->Invalidate(0,reason);}
 }
 void Remove(safetyhook::Context& c){PlayerGone(c.rcx,"equipment_player_removed");}
 void Destructor(safetyhook::Context& c){PlayerGone(c.rcx,"equipment_player_destroyed");}
 void ModelChanging(safetyhook::Context& c){
     std::lock_guard lock(gate);for(auto& part:parts){const auto id=part.adapter->Target();
-        if(id.Valid()&&c.rcx==id.owner&&c.rdx!=id.model)part.adapter->Invalidate(0,"equipment_part_model_replaced");}
+        if(id.Valid()&&c.rcx==id.owner&&c.rdx!=id.model){declarationBindings[part.index]={};part.adapter->Invalidate(0,"equipment_part_model_replaced");}}
 }
 bool CanSubmit(const launchpool::View& view){
     if(!view.live||view.requested!=view.applied)return false;
     for(const auto& slot:view.slots)if(slot.phase==launchpool::Phase::Preparing||slot.phase==launchpool::Phase::AwaitingStamp||slot.phase==launchpool::Phase::Uploading||slot.phase==launchpool::Phase::Ready)return false;
     return true;
 }
-std::string Weights(const std::array<float,64>& values,unsigned count){
-    std::string result="[";char text[40]{};for(unsigned i=0;i<count;i++){if(i)result+=',';std::snprintf(text,sizeof(text),"%.9g",double(values[i]));result+=text;}return result+"]";
+std::string Weights(std::span<const float> values,unsigned count){
+    if(!count||count>mhm::capacity::keys_per_target||(!values.empty()&&values.size()!=count))throw std::runtime_error("Weight log count");
+    std::string result="[";char text[40]{};for(unsigned i=0;i<count;i++){if(i)result+=',';std::snprintf(text,sizeof(text),"%.9g",double(values.empty()?0.f:values[i]));result+=text;}return result+"]";
+}
+template<class Log> void WriteLaunchRejection(Log& log,Part& part){
+    const auto rejected=[&]{std::lock_guard lock(gate);return part.adapter->LaunchFailure();}();
+    if(!rejected)return;
+    const auto& r=*rejected;const auto& e=r.expected;const auto& o=r.observed;char line[1600]{};
+    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"launch_identity_rejected\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"observed_tick\":%llu,\"mismatch_mask\":%u,\"expected_engine\":\"0x%llx\",\"observed_engine\":\"0x%llx\",\"expected_renderer\":\"0x%llx\",\"observed_renderer\":\"0x%llx\",\"expected_fence\":\"0x%llx\",\"observed_fence\":\"0x%llx\",\"expected_workers\":%u,\"observed_workers\":%u,\"expected_thread\":%u,\"observed_thread\":%u,\"expected_mode\":%u,\"observed_mode\":%u,\"before\":%llu,\"after\":%llu,\"tracked_counter\":%llu,\"last_signal\":%llu}\n",
+        part.asset->part,part.epoch,part.target,::GetTickCount64(),r.mismatch,e.engine,o.engine,e.renderer,o.renderer,e.fence,o.fence,
+        e.workers,o.workers,e.thread,o.thread,e.mode,o.mode,o.before,o.after,r.counter,r.lastSignal);
+    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Launch rejection log");
+}
+template<class Log> void WriteInputCycleRejection(Log& log,Part& part){
+    const auto rejected=[&]{std::lock_guard lock(gate);return part.adapter->InputRejection();}();
+    if(!rejected)return;
+    const auto& r=*rejected;char line[1000]{};
+    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"input_cycle_rejected\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"observed_tick\":%llu,\"cycle_open\":%s,\"sync_seen\":%s,\"dispatch\":%s,\"kind\":%u,\"launches\":%u,\"waits\":%u,\"compute_inputs\":%u,\"draw_inputs\":%u,\"dispatch_inputs\":%u,\"before\":%llu,\"after\":%llu,\"tracked_counter\":%llu,\"last_signal\":%llu}\n",
+        part.asset->part,part.epoch,part.target,::GetTickCount64(),r.open?"true":"false",r.syncSeen?"true":"false",r.dispatch?"true":"false",r.kind,r.launches,r.waits,r.compute,r.draw,r.dispatches,r.before,r.after,r.counter,r.lastSignal);
+    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Input cycle rejection log");
 }
 template<class Log> void WriteState(Log& log,Part& part,const char* event){
-    // Two 64-float arrays plus bounded integer/identity fields fit in 4096 bytes.
-    const auto [v,id,live,ready,started,reason,replacements,originalBypasses]=[&]{
+    // Snapshot references are cheap; format actual-count arrays on the worker.
+    const auto [v,id,live,ready,started,reason,replacements,originalBypasses,postSignalDraws,workers,signals,boundaries]=[&]{
         std::lock_guard lock(gate);const auto& a=*part.adapter;
-        return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason(),part.replacements,a.OriginalBypasses()};
+        return std::tuple{part.adapter->View(),a.Target(),a.Live(),a.Ready(),a.Started(),a.Reason(),part.replacements,a.OriginalBypasses(),a.PostSignalDraws(),a.Fixed().workers,a.Signals(),a.Boundaries()};
     }();
     // Remaining part fields belong to this worker. Formatting and disk IO must
     // not hold the gate also used by game callbacks.
-    char line[4096]{};
-    const auto requested=Weights(v.requested.weights,static_cast<unsigned>(part.asset->keys.size())),applied=Weights(v.applied.weights,static_cast<unsigned>(part.asset->keys.size()));
-    const auto count=std::snprintf(line,sizeof(line),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu,\"original_input_bypasses\":%llu,\"same_weight_publications\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,replacements,originalBypasses,v.sameWeightPublications);
-    if(count<0||static_cast<size_t>(count)>=sizeof(line)||!log.Write(line))throw std::runtime_error("Part state log");
+    const auto requested=Weights(v.requested.Weights(),static_cast<unsigned>(part.asset->keys.size())),applied=Weights(v.applied.Weights(),static_cast<unsigned>(part.asset->keys.size()));
+    const auto capacity=requested.size()+applied.size()+2048;
+    if(capacity>65536)throw std::runtime_error("Part state log bound");
+    std::vector<char> line(capacity);
+    const auto count=std::snprintf(line.data(),line.size(),"{\"event\":\"%s\",\"part\":%u,\"epoch\":%llu,\"target\":%llu,\"live\":%s,\"ready\":%s,\"started\":%s,\"reason\":\"%s\",\"player\":\"0x%llx\",\"owner\":\"0x%llx\",\"model\":\"0x%llx\",\"requested\":%s,\"applied\":%s,\"requested_frame\":%llu,\"applied_frame\":%llu,\"requested_revision\":%llu,\"applied_revision\":%llu,\"last_signal\":%llu,\"publication_counter\":%llu,\"active_slot\":%d,\"updates\":%llu,\"replacements\":%llu,\"original_input_bypasses\":%llu,\"post_signal_original_draws\":%llu,\"same_weight_publications\":%llu,\"observed_tick\":%llu,\"model_id\":\"%s\",\"model_sha256\":\"%s\",\"pack_sha256\":\"%s\",\"native_workers\":%u,\"cycle_open\":%s,\"completed_signals\":%llu,\"joined_boundaries\":%llu}\n",event,part.asset->part,part.epoch,part.target,live?"true":"false",ready?"true":"false",started?"true":"false",reason,id.player,id.owner,id.model,requested.c_str(),applied.c_str(),v.requested.frame,v.applied.frame,v.requested.revision,v.applied.revision,v.lastSignal,v.publicationCounter,v.active,part.updates,replacements,originalBypasses,postSignalDraws,v.sameWeightPublications,::GetTickCount64(),part.asset->model.c_str(),part.asset->modelSha.c_str(),part.asset->packSha.c_str(),workers,v.frameOpen?"true":"false",signals,boundaries);
+    if(count<0||static_cast<size_t>(count)>=line.size()||!log.Write(line.data()))throw std::runtime_error("Part state log");
 }
 
 #include "PartWorker.inc"

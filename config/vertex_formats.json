@@ -1,0 +1,2274 @@
+{
+  "schema": "mhwi-vertex-formats-v1",
+  "exporter_sources": {
+    "mod3/blender_mod3.py": "fbad29f8c6200b1f44089308ef7e7a801756cfc0fc3a00d3125d27efa12c5e43",
+    "mod3/mod3_functions.py": "652dd9850130410fb0b4cf79bcd5c9873b2c34ad7d578c1d2551022147c58fb2",
+    "mod3/mod3_parser.py": "67e3bcf7bb3a1bce9ca39ef7606a523fb7ac41722599bff02417e32358a5af6d",
+    "mod3/file_mod3.py": "b0f9ddc4820806e2b19c0a250eda6e70fa4749a73329d14217f27d1671c56844",
+    "common/blender_functions.py": "77361cf7bb2f1c2878e7dce0e2d1ea2b2b7ee4829875d0105c421b06c62de087",
+    "common/rw_functions.py": "fa7dcc7e2a7b035338a400b13be83f97b8ad0be5c86b34eb9979a4a8e3f365c3",
+    "mrl3/mrl3_dicts.py": "a2bd5a431dca9887a207d0be872e7645d4a03a20ec47393c6ea27f7c98b8df05",
+    "mrl3/dict/block_format_dict.json": "3d0a66b78303926b35584f91c8b1c89980078434ff316b5bdc960e3eeea0f24a"
+  },
+  "semantic_evidence_sha256": "61bbc1f0d1503964373f93cea614e525b44088cf3eb1fa8f6af6d91486ead012",
+  "formats": [
+    {
+      "name": "IANonSkin1UV",
+      "disk_code": "0xa756f2f9",
+      "stride": 24,
+      "uv_count": 1,
+      "weight_slots": 0,
+      "color": false,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 2,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IANonSkin2UV",
+      "disk_code": "0xa5104ca0",
+      "stride": 28,
+      "uv_count": 2,
+      "weight_slots": 0,
+      "color": false,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "UV2",
+          "offset": 24,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00601080"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IANonSkin1UVColor",
+      "disk_code": "0x818904dc",
+      "stride": 28,
+      "uv_count": 1,
+      "weight_slots": 0,
+      "color": true,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "Color",
+          "offset": 24,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 2,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00602280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IANonSkin2UVColor",
+      "disk_code": "0x0f06033f",
+      "stride": 32,
+      "uv_count": 2,
+      "weight_slots": 0,
+      "color": true,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "UV2",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "Color",
+          "offset": 28,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00601080"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IASkin4wt1UV",
+      "disk_code": "0xf637401c",
+      "stride": 32,
+      "uv_count": 1,
+      "weight_slots": 4,
+      "color": false,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "Weight",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "Bone",
+          "offset": 28,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 2,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 13,
+          "component_count": 4,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00602340"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IASkin4wt2UV",
+      "disk_code": "0xf471fe45",
+      "stride": 36,
+      "uv_count": 2,
+      "weight_slots": 4,
+      "color": false,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "UV2",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "Weight",
+          "offset": 28,
+          "size": 4
+        },
+        {
+          "field": "Bone",
+          "offset": 32,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00601080"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 13,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702340"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00802200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IASkin4wt1UVColor",
+      "disk_code": "0x3c730760",
+      "stride": 36,
+      "uv_count": 1,
+      "weight_slots": 4,
+      "color": true,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "Weight",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "Bone",
+          "offset": 28,
+          "size": 4
+        },
+        {
+          "field": "Color",
+          "offset": 32,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 2,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 13,
+          "component_count": 4,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00602340"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00802280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IASkin4wt2UVColor",
+      "disk_code": "0xb2fc0083",
+      "stride": 40,
+      "uv_count": 2,
+      "weight_slots": 4,
+      "color": true,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "UV2",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "Weight",
+          "offset": 28,
+          "size": 4
+        },
+        {
+          "field": "Bone",
+          "offset": 32,
+          "size": 4
+        },
+        {
+          "field": "Color",
+          "offset": 36,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00601080"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 13,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702340"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00802200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 36,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00902280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IASkin8wt1UV",
+      "disk_code": "0x81f58067",
+      "stride": 40,
+      "uv_count": 1,
+      "weight_slots": 8,
+      "color": false,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "Weight",
+          "offset": 24,
+          "size": 8
+        },
+        {
+          "field": "Bone",
+          "offset": 32,
+          "size": 8
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 2,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 13,
+          "component_count": 4,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00602340"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00802200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 36,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00902201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IASkin8wt2UV",
+      "disk_code": "0x83b33e3e",
+      "stride": 44,
+      "uv_count": 2,
+      "weight_slots": 8,
+      "color": false,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "UV2",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "Weight",
+          "offset": 28,
+          "size": 8
+        },
+        {
+          "field": "Bone",
+          "offset": 36,
+          "size": 8
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00601080"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 13,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702340"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00802281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 36,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00902200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 40,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00a02201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IASkin8wt1UVColor",
+      "disk_code": "0x366995a7",
+      "stride": 44,
+      "uv_count": 1,
+      "weight_slots": 8,
+      "color": true,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "Weight",
+          "offset": 24,
+          "size": 8
+        },
+        {
+          "field": "Bone",
+          "offset": 32,
+          "size": 8
+        },
+        {
+          "field": "Color",
+          "offset": 40,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 2,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 13,
+          "component_count": 4,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00602340"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00802200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 36,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00902201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 40,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00a02280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IASkin8wt2UVColor",
+      "disk_code": "0xb8e69244",
+      "stride": 48,
+      "uv_count": 2,
+      "weight_slots": 8,
+      "color": true,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "UV2",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "Weight",
+          "offset": 28,
+          "size": 8
+        },
+        {
+          "field": "Bone",
+          "offset": 36,
+          "size": 8
+        },
+        {
+          "field": "Color",
+          "offset": 44,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00601080"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 13,
+          "component_count": 4,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00702340"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00802281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 36,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00902200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 40,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00a02201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 44,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00b02280"
+        },
+        {
+          "semantic": "PositionPF",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001a80"
+        }
+      ]
+    },
+    {
+      "name": "IANonSkin3UVColor",
+      "disk_code": "0xc3ac03a1",
+      "stride": 36,
+      "uv_count": 3,
+      "weight_slots": 0,
+      "color": true,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "UV2",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "UV3",
+          "offset": 28,
+          "size": 4
+        },
+        {
+          "field": "Color",
+          "offset": 32,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00601080"
+        },
+        {
+          "semantic": "UV_Unique",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00701080"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00802280"
+        }
+      ]
+    },
+    {
+      "name": "IANonSkin4UVColor",
+      "disk_code": "0xc9690ab8",
+      "stride": 40,
+      "uv_count": 4,
+      "weight_slots": 0,
+      "color": true,
+      "fields": [
+        {
+          "field": "Position",
+          "offset": 0,
+          "size": 12
+        },
+        {
+          "field": "NorTan",
+          "offset": 12,
+          "size": 8
+        },
+        {
+          "field": "UV1",
+          "offset": 20,
+          "size": 4
+        },
+        {
+          "field": "UV2",
+          "offset": 24,
+          "size": 4
+        },
+        {
+          "field": "UV3",
+          "offset": 28,
+          "size": 4
+        },
+        {
+          "field": "UV4",
+          "offset": 32,
+          "size": 4
+        },
+        {
+          "field": "Color",
+          "offset": 36,
+          "size": 4
+        }
+      ],
+      "elements": [
+        {
+          "semantic": "Position",
+          "semantic_index": 0,
+          "component_type": 1,
+          "component_count": 3,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00001840"
+        },
+        {
+          "semantic": "Normal",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 3,
+          "offset": 12,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00301a40"
+        },
+        {
+          "semantic": "Tangent",
+          "semantic_index": 0,
+          "component_type": 9,
+          "component_count": 4,
+          "offset": 16,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00402240"
+        },
+        {
+          "semantic": "UV_Primary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 20,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00501080"
+        },
+        {
+          "semantic": "UV_Secondary",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 24,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00601080"
+        },
+        {
+          "semantic": "UV_Unique",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 28,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00701080"
+        },
+        {
+          "semantic": "UV_Extend",
+          "semantic_index": 0,
+          "component_type": 2,
+          "component_count": 2,
+          "offset": 32,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00801080"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002280"
+        },
+        {
+          "semantic": "Weight",
+          "semantic_index": 1,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002281"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 0,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002200"
+        },
+        {
+          "semantic": "Joint",
+          "semantic_index": 1,
+          "component_type": 8,
+          "component_count": 4,
+          "offset": 0,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00002201"
+        },
+        {
+          "semantic": "Color",
+          "semantic_index": 0,
+          "component_type": 10,
+          "component_count": 4,
+          "offset": 36,
+          "input_slot": 0,
+          "instance_data": false,
+          "reserved": 0,
+          "packed": "0x00902280"
+        }
+      ]
+    }
+  ]
+}

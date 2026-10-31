@@ -14,6 +14,7 @@ import struct
 from pathlib import Path
 
 from .mesh_contract import ADAPTER
+from ..capacity import MAX_DYNAMIC_KEYS, MAX_FIXED_SOURCE_VALUES, MAX_PROFILE_SOURCE_VALUES
 
 def encode(description, asset):
     d = description
@@ -44,7 +45,9 @@ def encode(description, asset):
         if obj['name'] in names:raise ValueError('Duplicate object')
         names.add(obj['name']);raw+=string(obj['name'])+sha(obj['geometry_sha256'])
         values=obj['values'];keys=set()
-        if not 0<len(values)<=256:raise ValueError(f'源网格 {obj["name"]} 的受控键与非零固定键记录为 {len(values)} 条，必须为1至256条')
+        if not 0<len(values)<=MAX_PROFILE_SOURCE_VALUES:raise ValueError(f'源网格 {obj["name"]} 的状态记录超过1至{MAX_PROFILE_SOURCE_VALUES}条保护')
+        dynamic_count=sum(bool(value['dynamic']) for value in values)
+        if dynamic_count>MAX_DYNAMIC_KEYS or len(values)-dynamic_count>MAX_FIXED_SOURCE_VALUES:raise ValueError('源网格动态／固定状态记录超过保护')
         raw+=u32(len(values))
         for value in values:
             if value['name'] in keys:raise ValueError('Duplicate source key')

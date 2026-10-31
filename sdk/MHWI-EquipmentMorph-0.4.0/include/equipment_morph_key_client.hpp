@@ -44,7 +44,9 @@ public:
         if(table.version!=MHM_API_VERSION||table.bytes!=sizeof(table)||(table.capabilities&required)!=required
            ||!table.limits||!table.target_at||!table.key_at||!table.open_source||!table.close_source||!table.submit||!table.heartbeat||!table.read_weights)return MHM_VERSION;
         MhmLimits bounds{};const auto result=table.limits(&bounds);if(result!=MHM_OK)return result;
-        if(!bounds.targets||bounds.targets>5||!bounds.keys_per_target||bounds.keys_per_target>64||!bounds.batch_updates||bounds.batch_updates>320)return MHM_CAPACITY;
+        if(!bounds.targets||bounds.targets>5||!bounds.keys_per_target||!bounds.batch_updates
+           ||bounds.keys_per_target>std::vector<MhmWeightState>().max_size()
+           ||bounds.batch_updates>std::vector<MhmUpdate>().max_size())return MHM_CAPACITY;
         Release();keys.clear();api=table;limits=bounds;return MHM_OK;
     }
     MhmResult Heartbeat(){const auto result=source?api.heartbeat(source):MHM_OK;if(result==MHM_STALE){source=0;owned.clear();}return result;}
@@ -85,9 +87,16 @@ public:
         auto candidate=owned;candidate.erase({key->target,key->index});return Publish(std::move(candidate),revision);
     }
     MhmResult Read(uint64_t target,std::vector<MhmWeightState>& output,uint64_t& requestedRevision,uint64_t& appliedRevision)const{
-        if(!api.read_weights)return MHM_NOT_READY;std::vector<MhmWeightState> values(limits.keys_per_target);uint32_t count=0;
-        const auto result=api.read_weights(target,values.data(),static_cast<uint32_t>(values.size()),&count,&requestedRevision,&appliedRevision);
-        if(result!=MHM_OK)return result;if(count>values.size())return MHM_INVALID;values.resize(count);output.swap(values);return MHM_OK;
+        if(!api.read_weights)return MHM_NOT_READY;
+        uint32_t count=0;uint64_t requested=0,applied=0;
+        const auto probe=api.read_weights(target,nullptr,0,&count,&requested,&applied);
+        if(probe!=MHM_BUFFER_SMALL)return probe==MHM_OK?MHM_INVALID:probe;
+        std::vector<MhmWeightState> values;
+        if(!count||count>limits.keys_per_target||count>values.max_size())return MHM_INVALID;
+        values.resize(count);
+        const auto result=api.read_weights(target,values.data(),count,&count,&requested,&applied);
+        if(result!=MHM_OK)return result;if(count!=values.size())return MHM_INVALID;
+        output.swap(values);requestedRevision=requested;appliedRevision=applied;return MHM_OK;
     }
 };
 }

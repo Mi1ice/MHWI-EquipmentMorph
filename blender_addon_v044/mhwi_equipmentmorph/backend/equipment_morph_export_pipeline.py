@@ -6,6 +6,8 @@ import struct
 
 import numpy as np
 from .prepare_equipment_morph_catalog import PARTS, unique_object, prepare, encode_catalog
+from ..capacity import MAX_DYNAMIC_KEYS
+from .vertex_formats import FORMATS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,7 +38,7 @@ def load_job(path):
     if not 0 < len(parts) <= 5 or len({p['part'] for p in parts}) != len(parts):
         raise ValueError('Configure one model per equipment part')
     for part in parts:
-        if part['part'] not in PARTS or not 0 < len(part['keys']) <= 64:
+        if part['part'] not in PARTS or not 0 < len(part['keys']) <= MAX_DYNAMIC_KEYS:
             raise ValueError('Invalid part or key count')
         if len({k['id'] for k in part['keys']}) != len(part['keys']):
             raise ValueError('Duplicate key identifier')
@@ -145,12 +147,7 @@ def build_part(part, capture, export):
         if matname != mapped['material']:
             raise ValueError('Mapping material changed')
         stride = row[14]
-        # Supported observed MOD3 layouts all place xyz/normal/tangent/first UV at 0/12/16/20.
-        layouts = {0xa756f2f9:24, 0xa5104ca0:28, 0xc3ac03a1:36, 0xc9690ab8:40,
-                   0x818904dc:28, 0x0f06033f:32, 0xf637401c:32, 0xf471fe45:36,
-                   0x3c730760:36, 0xb2fc0083:40, 0x81f58067:40, 0x83b33e3e:44,
-                   0x366995a7:44, 0xb8e69244:48}
-        if layouts.get(struct.unpack_from('<I', row, 24)[0]) != stride:
+        if FORMATS.get(struct.unpack_from('<I', row, 24)[0], {}).get('stride') != stride:
             raise ValueError('Unsupported vertex layout')
         start = struct.unpack_from('<I', row, 20)[0] + stride*sum(struct.unpack_from('<I', row, o)[0] for o in (16, 36))
         indices = np.asarray(mapped['disk_to_blender_vertex'])
@@ -181,12 +178,13 @@ def build_part(part, capture, export):
     files = {'basis.bin': basis, 'author-rotations.bin': rotations}
     keys = []
     for key_index, key in enumerate(part['keys']):
-        records = []
+        records = [];mapped_key = False
         for mapped in mapping['objects']:
             obj = objects[mapped['object']]
             name = key['source_key']
             if name not in obj['selected_keys']:
                 continue
+            mapped_key = True
             metadata = next(k for k in obj['keys'] if k['name'] == name)
             if metadata['relative'] != obj['basis_key'] or metadata['vertex_group'] or metadata['mute']:
                 raise ValueError('Only unmasked relative-to-basis keys supported')
@@ -200,8 +198,8 @@ def build_part(part, capture, export):
             for i in np.flatnonzero(np.any(delta != 0, axis=1)):
                 records.append((start+int(i)*stride, *map(float, delta[i])))
         raw = b''.join(struct.pack('<I3f', *r) for r in sorted(records))
-        if not raw:
-            raise ValueError('Key has no mapped deformation')
+        if not mapped_key:
+            raise ValueError('Key has no mapped source')
         if key.get('source_delta_reference') and raw != pinned(key['source_delta_reference']):
             raise ValueError('Source delta differs from companion/shading reference')
         if key.get('validated_positions'):

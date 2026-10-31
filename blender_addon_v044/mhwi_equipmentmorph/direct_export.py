@@ -11,11 +11,12 @@ import struct
 import sys
 import tempfile
 import numpy as np
+from .capacity import MAX_DYNAMIC_KEYS
 from .authoring import pin,write
 from .backend.equipment_morph_export_pipeline import digest,load_job
 from .backend.equipment_morph_package_pipeline import export_pipeline,package_id,PARTS
 from .backend.map_equipment_morph_job import model_meshes
-from .output_files import model_resource_id,retarget_model,publish
+from .output_files import model_resource_id,retarget_model,publish,checked_output,check_file_paths,PublicationCleanupError
 
 TAG='mhwi_em_source_vertex'
 
@@ -40,15 +41,17 @@ def preflight(asset):
     if asset['part'] not in PARTS:raise ValueError('无效装备部位')
     if not collection or collection.library:raise ValueError('请选择本地 MOD3 集合')
     if asset['shading'] not in ('BASELINE','GEOMETRIC'):raise ValueError('联合导出支持基准法线或逐键几何法线')
+    if asset.get('undefined_normal_policy','REJECT') not in ('REJECT','BASELINE'):raise ValueError('无效的无定义几何法线策略')
+    if asset.get('antiparallel_normal_policy','REJECT') not in ('REJECT','BASELINE'):raise ValueError('无效的反向端点法线策略')
     model_resource_id(asset['model_id'])
     package_id(asset['package'])
     load_job_validation={'schema':'mhw-equipment-morph-export-job-v2','parts':[dict(part=asset['part'],keys=asset['keys'])]}
     # Same key/part validator used by the existing package pipeline.
-    if not asset['keys'] or len(asset['keys'])>64:raise ValueError('请选择1至64个动态键')
+    if not asset['keys'] or len(asset['keys'])>MAX_DYNAMIC_KEYS:raise ValueError(f'请选择1至{MAX_DYNAMIC_KEYS}个动态键')
     names=[k['source_key'] for k in asset['keys']]
     if len(set(names))!=len(names):raise ValueError('源形态键重复')
     if any(k.get('author_shading') for k in asset['keys']):raise ValueError('联合导出不使用共享作者旋转数据')
-    objects=[o for o in collection.all_objects if o.type=='MESH'];controlled=[]
+    objects=[o for o in collection.all_objects if o.type=='MESH'];controlled=[];found=set()
     if not objects:raise ValueError('集合没有网格')
     for obj in objects:
         mesh=obj.data;shape=mesh.shape_keys
@@ -63,54 +66,91 @@ def preflight(asset):
                 if any(max(abs(b.matrix[r][c]-b.bone.matrix_local[r][c]) for r in range(4) for c in range(4))>1e-7 for b in rig.pose.bones):raise ValueError('骨架必须处于静止姿态')
         selected=[shape.key_blocks.get(n) for n in names] if shape else []
         selected=[k for k in selected if k]
+        found.update(k.name for k in selected)
         for key in selected:
             if key.value!=0 or key.mute or key.vertex_group or key.relative_key!=shape.reference_key:raise ValueError('动态键须为零、未静音、相对Basis且无顶点组：'+key.name)
         if selected:controlled.append(obj)
+    missing=set(names)-found
+    if missing:raise ValueError('已选动态键在集合中缺失：'+', '.join(sorted(missing)))
     if not controlled:raise ValueError('集合中没有选定的动态键')
+    from . import export_attributes
+    export_attributes.preflight(collection,objects)
     return objects,controlled,load_job_validation
 
 def export_model(module,asset,path):
     import bpy
     from .backend.capture_equipment_morph_job import fingerprint,coords
-    from .geometric_normals import transported
+    from .geometric_normals import transported,AntiparallelDirection
     from .normal_authoring import unit
+    from . import authored_shading
+    authored_shading.native()
     objects,controlled,_=preflight(asset)
+    normal_policy=asset.get('undefined_normal_policy','REJECT')
+    antiparallel_policy=asset.get('antiparallel_normal_policy','REJECT')
     if bpy.context.mode!='OBJECT':raise ValueError('联合导出需要对象模式')
     if bpy.data.collections.get('clonedMod3Meshes'):raise ValueError('导出器临时集合已存在，请先处理该集合')
     source_before={o.name:fingerprint(o) for o in objects}
     selection=list(bpy.context.selected_objects);active=bpy.context.view_layer.objects.active
     last=bpy.context.scene.mhw_mod3_toolpanel.lastExportCollection
     existing={kind:set(getattr(bpy.data,kind)) for kind in ('meshes','armatures')}
-    clones=[];traces={};current=[];ordered=[]
-    originals={n:getattr(module,n) for n in ('createCloneMesh','parseVertexDict','buildMod3File')}
+    clones=[];traces={};current=[];ordered=[];shading_states={}
+    originals={n:getattr(module,n) for n in ('createCloneMesh','parseVertexDict','buildMod3File','splitSharpEdges')}
     def clone(obj,*args):
         result=originals['createCloneMesh'](obj,*args);clones.append(result);current[:]=[obj,result]
         data=result.data
         if len(data.vertices)!=len(obj.data.vertices) or [tuple(p.vertices) for p in data.polygons]!=[tuple(p.vertices) for p in obj.data.polygons]:raise ValueError('求值拓扑或顶点次序改变：'+obj.name)
         if data.attributes.get(TAG):raise ValueError('源网格包含保留的追溯属性：'+obj.name)
         attr=data.attributes.new(TAG,'INT','POINT');attr.data.foreach_set('value',np.arange(len(data.vertices),dtype=np.int32))
+        state=authored_shading.capture(data);state['source_object']=obj;shading_states[result.as_pointer()]=state
         return result
+    def sharp(clone_obj,*args):
+        state=shading_states[clone_obj.as_pointer()]
+        try:
+            originals['splitSharpEdges'](clone_obj,*args)
+            if any(len(face.vertices)!=3 for face in clone_obj.data.polygons):module.triangulateMesh(clone_obj)
+            authored_shading.prepare(clone_obj,state,module.exportMatrix @ state['source_object'].matrix_world,TAG)
+        except Exception as error:
+            # The pinned editor catches sharp-edge errors. Retain the failure
+            # so parse cannot continue with an incomplete shading preparation.
+            state['error']=error
+            raise
+
     def parse(vertex_dict,info,*args):
         obj,clone_obj=current;data=clone_obj.data;attr=data.attributes.get(TAG)
         if not attr or attr.domain!='POINT' or attr.data_type!='INT':raise ValueError('拆点丢失来源属性')
         indices=np.empty(len(data.vertices),np.int32);attr.data.foreach_get('value',indices)
         if np.any(indices<0) or np.any(indices>=len(obj.data.vertices)):raise ValueError('拆点来源越界')
-        original_result=originals['parseVertexDict'](vertex_dict,info,*args)
+        state=shading_states[clone_obj.as_pointer()]
+        if 'error' in state:raise ValueError('作者角点准备失败：'+str(state['error'])) from state['error']
+        if 'desired' not in state or len(args)!=7:raise ValueError('作者角点未准备或序列化接口不匹配')
+        authored,tangent,geometry_corners=authored_shading.serialize(data,state)
+        adjusted=list(args);adjusted[2]=authored;adjusted[3]=tangent
+        original_result=originals['parseVertexDict'](vertex_dict,info,*adjusted)
         if len(vertex_dict['Position'])!=len(indices):raise ValueError('导出顶点次序不完整')
-        trace=dict(object=obj.name,indices=indices.tolist(),positions=np.asarray(vertex_dict['Position']).tolist(),normals={})
+        trace=dict(object=obj.name,indices=indices.tolist(),positions=np.asarray(vertex_dict['Position']).tolist(),normals={},
+                   source_corners=state['source_corner_indices'][geometry_corners].tolist(),authored_shading=state['report'])
         if asset['shading']=='GEOMETRIC' and obj in controlled:
-            trace['normal_mesh']=data.copy()
+            trace['normal_mesh']=state['geometry_mesh'].copy()
+            trace['normal_mesh'].transform(module.exportMatrix @ obj.matrix_world)
+            trace['geometry_source_indices']=state['geometry_source_indices']
+            trace['geometry_corners']=geometry_corners
             trace['source_object']=obj
         traces[id(info)]=trace
         return original_result
     def capture_normals(trace):
-        obj=trace.pop('source_object');copy=trace.pop('normal_mesh');indices=np.asarray(trace['indices'])
+        obj=trace.pop('source_object');copy=trace.pop('normal_mesh');indices=trace.pop('geometry_source_indices')
+        chosen=trace.pop('geometry_corners').tolist()
         try:
-            first={}
-            for loop in copy.loops:first.setdefault(loop.vertex_index,loop.index)
-            chosen=[first[i] for i in range(len(indices))]
-            copy.normals_split_custom_set([(0.,0.,0.)]*len(copy.loops));copy.update()
-            base=unit(np.asarray([tuple(n.vector) for n in copy.corner_normals]))[chosen]
+            # Clearing the storage, rather than setting zero custom vectors, avoids
+            # decoding authored normal-space data as endpoint geometric normals.
+            custom=copy.attributes.get('custom_normal')
+            if custom:copy.attributes.remove(custom)
+            copy.update()
+            def geometric():
+                values=np.asarray([tuple(n.vector) for n in copy.corner_normals],dtype=np.float64)
+                if not np.isfinite(values).all():raise ValueError('几何法线包含非有限值：'+obj.name)
+                return unit(values)[chosen] if normal_policy=='REJECT' else values[chosen]
+            base=geometric();trace['normal_corners']=chosen
             positions=np.asarray([tuple(v.co) for v in copy.vertices])
             transform=np.asarray(module.exportMatrix @ obj.matrix_world)[:3,:3]
             for key in asset['keys']:
@@ -118,7 +158,7 @@ def export_model(module,asset,path):
                 if block is None:continue
                 delta=(coords(block)-coords(obj.data.shape_keys.reference_key)).astype(np.float64)@transform.T
                 copy.vertices.foreach_set('co',(positions+delta[indices]).astype(np.float32).ravel());copy.update()
-                endpoint=unit(np.asarray([tuple(n.vector) for n in copy.corner_normals]))[chosen]
+                endpoint=geometric()
                 trace['normals'][key['id']]={'base':base.tolist(),'endpoint':endpoint.tolist()}
         finally:bpy.data.meshes.remove(copy)
     def build(model,*args):
@@ -127,7 +167,7 @@ def export_model(module,asset,path):
             for mesh in meshes:ordered.append(traces[id(mesh.meshInfo)])
         return result
     try:
-        module.createCloneMesh=clone;module.parseVertexDict=parse;module.buildMod3File=build
+        module.createCloneMesh=clone;module.parseVertexDict=parse;module.buildMod3File=build;module.splitSharpEdges=sharp
         options=dict(targetCollection=asset['collection'],selectedOnly=False,visibleOnly=False,exportAllLODs=False,
             useBlenderMaterialName=asset.get('use_blender_material_name',False),exportBoundingBoxes=False,
             autoSolveRepeatedUVs=True,preserveSharpEdges=True,invisibleMantlesModFix=True)
@@ -150,10 +190,13 @@ def export_model(module,asset,path):
         if source_before!={o.name:fingerprint(o) for o in objects}:raise ValueError('导出期间源网格数据改变')
     model=path.read_bytes();basis,rows=model_meshes(model)
     if len(rows)!=len(ordered):raise ValueError('序列化网格数量与追溯数量不同')
-    mapping=[];normal_records={k['id']:[] for k in asset['keys']};seen=set()
+    mapping=[];serialized=[];normal_records={k['id']:[] for k in asset['keys']};seen=set();fallbacks=[]
     for trace,row in zip(ordered,rows):
         count=row['count'];disk=np.ndarray((count,3),dtype='<f4',buffer=basis,offset=row['start'],strides=(row['stride'],4))
         if count!=len(trace['indices']) or not np.array_equal(disk,np.asarray(trace['positions'],dtype='<f4')):raise ValueError('序列化顶点与追溯次序不同')
+        from . import export_attributes
+        export_attributes.verify_uv_color(next(o for o in objects if o.name==trace['object']),basis,row,trace['source_corners'])
+        serialized.append(dict(object=trace['object'],mesh=row['mesh'],start=row['start'],stride=row['stride'],disk_to_blender_vertex=trace['indices'],disk_to_source_corner=trace['source_corners'],authored_shading=trace['authored_shading']))
         if trace['object'] not in {o.name for o in controlled}:continue
         if trace['object'] in seen:raise ValueError('同一源对象被多个LOD重复导出，当前不支持')
         seen.add(trace['object'])
@@ -161,37 +204,86 @@ def export_model(module,asset,path):
         for key,values in trace['normals'].items():
             for i,(base,target) in enumerate(zip(values['base'],values['endpoint'])):
                 offset=row['start']+i*row['stride']+12
-                normal=unit(struct.unpack_from('<3b',basis,offset));direction=transported(normal,base,target)
+                normal=unit(struct.unpack_from('<3b',basis,offset))
+                base_zero=np.linalg.norm(base)<1e-12;target_zero=np.linalg.norm(target)<1e-12
+                reason=None
+                if base_zero or target_zero:
+                    if normal_policy!='BASELINE':raise ValueError('几何法线无定义：'+trace['object'])
+                    reason='baseline_and_endpoint_zero' if base_zero and target_zero else ('baseline_zero' if base_zero else 'endpoint_zero')
+                else:
+                    try:direction=transported(normal,base,target)
+                    except AntiparallelDirection:
+                        if antiparallel_policy!='BASELINE':raise
+                        reason='antiparallel_endpoint'
+                if reason:
+                    fallbacks.append(dict(object=trace['object'],mesh=row['mesh'],key_id=key,source_vertex=trace['indices'][i],
+                                          serialized_vertex=i,corner=trace['normal_corners'][i],normal_offset=offset,reason=reason))
+                    continue
                 if np.linalg.norm(direction-normal)>1e-5:normal_records[key].append((offset,*(direction-normal)))
     if seen!={o.name for o in controlled}:raise ValueError('部分动态网格未由导出器输出')
     normal_data={key:b''.join(struct.pack('<I3f',*record) for record in sorted(records)) for key,records in normal_records.items()}
     return dict(schema='mhwi-direct-export-trace-v1',part=asset['part'],model_id=asset['model_id'],
         model_sha256=digest(model),fully_resolved=True,objects=mapping,exporter='MHW Model Editor 0.12',
-        mapping_method='clone-point-index-through-serializer',export_matrix=[list(r) for r in module.exportMatrix]),normal_data
+        mapping_method='clone-point-index-through-serializer',authored_shading_method='source-corner-normals-final-UV-MikkTSpace',geometric_corner_domain='before-shading-seam-split',export_matrix=[list(r) for r in module.exportMatrix],serialized_objects=serialized,
+        undefined_normal_policy=normal_policy,antiparallel_normal_policy=antiparallel_policy,geometric_normal_fallbacks=fallbacks),normal_data
 
-def export_direct(recipe,output,debug=False):
+def check_export_paths(output,assets,debug):
+    # Mirror only this fixed pipeline's longest filenames in each directory.
+    # tempfile names have eight random characters in certified Blender 5.1.2.
+    stage=(output if output.is_dir() else output.parent)/'morph-direct-stage-xxxxxxxx'
+    package=stage/'morph-package-stage-xxxxxxxx'
+    backup='morph-output-backup-xxxxxxxx'
+    final=[];paths=[]
+    for index,asset in enumerate(assets):
+        model=asset['model_id'];part=asset['part']
+        native=[Path('nativePC')/(model+suffix) for suffix in
+                ('.mod3','.morph/asset.mhmpack','.morph/model.mhmprofile','.morph/profile.json')]
+        work=Path('authoring')/str(index)
+        author=[work/'baseline_rotations.bin',work/(part+'.coordinates.json'),work/'package_job.json',
+                Path('authoring')/(part+'.keys.json')]
+        exported=Path('export')/model/'author-rotations.bin'
+        paths += [stage/p for p in native+author]+[package/p for p in native]+[package/exported]
+        # The inner publication only replaces the staged MOD3, not new profiles.
+        paths.append(stage/'nativePC'/backup/(model+'.mod3'))
+        final += native
+        if debug:final += author+[Path('generated')/exported]
+    final += [Path('result.json')] if debug else []
+    paths += [output/p for p in final]
+    # Reserve recovery space too: re-exporting must not fail while backing up.
+    if debug:paths += [(output if output.is_dir() else output.parent)/backup/p for p in final]
+    else:paths += [(output/'nativePC' if (output/'nativePC').is_dir() else output)/backup/p.relative_to('nativePC') for p in final]
+    check_file_paths(paths)
+
+def export_direct(recipe,output,debug=False,trace_callback=None):
     from .backend.capture_equipment_morph_job import capture
-    output=Path(output).resolve();assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
+    output=Path(output).absolute()
+    check_file_paths([output/'result.json'])
+    output=checked_output(output)
+    assets=[dict(a,model_id=retarget_model(a['model_id'],a.get('equipment_id',''))) for a in recipe['assets']]
     for a in assets:a['package']=a['model_id'].rsplit('/',1)[-1]
     if output.exists() and not output.is_dir():raise ValueError('输出位置必须是文件夹')
     if not 0<len(assets)<=64 or len({a['model_id'].casefold() for a in assets})!=len(assets):raise ValueError('模型资源路径重复或超过64个')
+    check_export_paths(output,assets,debug)
     module=editor_module()
     for asset in assets:preflight(asset)
     output.parent.mkdir(parents=True,exist_ok=True)
     stage_parent=output if output.is_dir() else output.parent
     stage=Path(tempfile.mkdtemp(prefix='morph-direct-stage-',dir=stage_parent))
+    committed=False;publishing_final=False
     try:
         work=stage/'authoring';work.mkdir();empty=work/'baseline_rotations.bin';empty.write_bytes(b'')
         for asset in assets:
             _,_,validation=preflight(asset)
             check=work/(asset['part']+'.keys.json');write(check,validation);load_job(check)
-        parts=[];normal_data={};models=[]
+        parts=[];normal_data={};models=[];fallbacks=[]
         for index,asset in enumerate(assets):
             work=stage/'authoring'/str(index);work.mkdir()
             empty=work/'baseline_rotations.bin';empty.write_bytes(b'')
             model=stage/'nativePC'/(asset['model_id']+'.mod3');model.parent.mkdir(parents=True,exist_ok=True)
             if model.exists():raise ValueError('两个部位使用同一输出模型路径')
             trace,normals=export_model(module,asset,model);mapping=work/(asset['part']+'.trace.json');write(mapping,trace)
+            fallbacks.extend(dict(item,model_id=asset['model_id']) for item in trace['geometric_normal_fallbacks'])
+            if trace_callback is not None:trace_callback(index,asset,trace)
             matrix=work/(asset['part']+'.coordinates.json');write(matrix,{'export_matrix':trace['export_matrix']})
             part=dict(part=asset['part'],model_id=asset['model_id'],model=pin(model),mapping=pin(mapping),keys=asset['keys'],author_rotations=pin(empty))
             job=dict(schema='mhw-equipment-morph-export-job-v2',export_reference=pin(matrix),parts=[part])
@@ -208,17 +300,28 @@ def export_direct(recipe,output,debug=False):
         shutil.rmtree(stage/'generated/nativePC')
         result.update(success=True,models=models,mapping_method='same-export-source-indices',source_data_unchanged=True,
             # Exporter creates/removes datablocks; Blender may mark the scene dirty.
-            scene_mutated=True,blend_saved=False,formal_acceptance_complete=False)
+            scene_mutated=True,blend_saved=False,formal_acceptance_complete=False,geometric_normal_fallbacks=fallbacks)
         write(stage/'result.json',result)
         # Preserve every hashed receipt byte. Absolute paths record the transient
         # run location; users repeat the paired export from the Blender collection.
         write(work/'README.json',{'replayable':False,'staging_root':str(stage),
             'reason':'archived paired-run evidence; files are now under the output directory',
             'source_indices_retained':True})
+        publishing_final=True
         if debug:publish(stage,output)
         else:publish(stage/'nativePC',output/'nativePC')
+        committed=True
         return result
+    except PublicationCleanupError as error:
+        if publishing_final:committed=error.committed;raise
+        raise RuntimeError('阶段文件写入完成但未发布最终输出；清理失败，资料保留在 '+str(stage)) from error
     finally:
         if stage.exists():
             if stage.parent!=stage_parent or not stage.name.startswith('morph-direct-stage-'):raise ValueError('临时输出清理范围错误')
-            shutil.rmtree(stage)
+            # Nested publication can retain the only real recovery bytes here.
+            # Never erase them in the outer cleanup after rollback failed.
+            if not any(stage.rglob('morph-output-backup-*')):
+                try:shutil.rmtree(stage)
+                except OSError as cleanup:
+                    message='导出文件已发布；临时资料清理未完成：' if committed else '导出未完成；临时资料清理未完成：'
+                    raise RuntimeError(message+str(stage)) from cleanup

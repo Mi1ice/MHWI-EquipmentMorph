@@ -6,7 +6,7 @@ namespace morphpreset {
 class PanelSettings {
     std::filesystem::path path;
 public:
-    explicit PanelSettings(const std::filesystem::path& presets):path(PresetPath(presets).parent_path()/L"panel-settings.json"){}
+    explicit PanelSettings(const std::filesystem::path& file):path(PresetPath(file)){}
     bool Load()const{
         NoPresetLink(path.parent_path());NoPresetLink(path);if(!std::filesystem::exists(path))return true;
         const auto size=std::filesystem::file_size(path);if(!size||size>4096)throw std::runtime_error("面板开关配置大小无效");

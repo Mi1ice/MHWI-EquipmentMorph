@@ -9,7 +9,7 @@ struct PresetImportView {
     struct Edit {bool include=false;char name[129]{};};
     std::map<std::string,Edit> edits;std::string selected,error;
     std::shared_ptr<const std::vector<morphpreset::Incoming>> seen;
-    bool opening=false;
+    bool opening=false;ui::Notice notice;
     void Submit(Control& control,morphpreset::Request request,uint64_t& waiting){waiting=control.PostPreset(std::move(request));error=waiting?"":"预设请求过多，请稍后重试";}
     void Open(Control& control,uint64_t& waiting){opening=true;Submit(control,{morphpreset::Action::ScanImports},waiting);}
     void Draw(Control& control,const ControlSnapshot& snapshot,uint64_t& waiting){
@@ -26,13 +26,13 @@ struct PresetImportView {
         ImGui::SetNextWindowSizeConstraints(ImVec2((std::min)(640.f,extent.x),(std::min)(420.f,extent.y)),extent);bool opened=true;
         if(!ImGui::BeginPopupModal("导入预设",&opened)){return;}
         ui::Wrapped("将 JSON 放入 imports 文件夹后刷新。导入使用此次预览内容，不会自动应用。",ui::Tone::Muted);
-        ui::Line("目录：nativePC/plugins/MHWEquipmentMorph/imports/",ui::Tone::Muted);
+        ui::Line("目录：nativePC/plugins/MHWEquipmentMorph/panel-v2/imports/",ui::Tone::Muted);
         ImGui::BeginDisabled(waiting!=0);
         if(ImGui::Button("刷新预览"))Submit(control,{morphpreset::Action::ScanImports},waiting);
         ui::NextButton("全选有效项");if(ImGui::Button("全选有效项"))for(const auto& item:*seen)if(item.document)edits[item.token].include=true;
         ui::NextButton("取消全选");if(ImGui::Button("取消全选"))for(auto& [token,edit]:edits){(void)token;edit.include=false;}
         ImGui::EndDisabled();
-        ui::Notice(state,waiting,error);
+        notice.Draw(state,waiting,error);
         ImGui::Separator();const float height=(std::max)(120.f,ImGui::GetContentRegionAvail().y-ImGui::GetFrameHeightWithSpacing()-8);
         ImGui::BeginDisabled(waiting!=0);
         if(ImGui::BeginChild("import-list",ImVec2(ImGui::GetContentRegionAvail().x*.44f,height),ImGuiChildFlags_Borders)){

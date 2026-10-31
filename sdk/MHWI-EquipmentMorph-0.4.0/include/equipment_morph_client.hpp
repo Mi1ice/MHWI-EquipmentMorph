@@ -49,8 +49,9 @@ public:
                 ||!table.limits||!table.target_at||!table.key_at||!table.read_weights||!table.open_source
                 ||!table.close_source||!table.submit||!table.heartbeat)return MHM_VERSION;
         MhmLimits bounds{};const auto status=table.limits(&bounds);if(status!=MHM_OK)return status;
-        if(!bounds.targets||bounds.targets>5||!bounds.keys_per_target||bounds.keys_per_target>64
-                ||!bounds.batch_updates||bounds.batch_updates>320)return MHM_CAPACITY;
+        if(!bounds.targets||bounds.targets>5||!bounds.keys_per_target||!bounds.batch_updates
+                ||bounds.keys_per_target>std::vector<MhmWeightState>().max_size()
+                ||bounds.batch_updates>std::vector<MhmUpdate>().max_size())return MHM_CAPACITY;
         Release();members.clear();api=table;limits=bounds;specs.clear();return MHM_OK;
     }
     MhmResult Refresh() {

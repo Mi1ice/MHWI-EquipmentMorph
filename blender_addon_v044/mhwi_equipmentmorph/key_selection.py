@@ -1,4 +1,5 @@
 """Candidate discovery and export-only confirmation, independent of the UI list filter."""
+from .capacity import MAX_DYNAMIC_KEYS
 
 def objects(asset,direct):
     import bpy
@@ -24,7 +25,7 @@ def discover(asset,direct):
 def confirmed(asset,direct):
     selected=[key for key in asset.keys if key.enabled]
     if not selected:raise ValueError('请先使用选中形态键，确认需要导出的键')
-    if len(selected)>64:raise ValueError('每个模型最多确认64个动态键')
+    if len(selected)>MAX_DYNAMIC_KEYS:raise ValueError(f'每个模型最多确认{MAX_DYNAMIC_KEYS}个动态键')
     sources=discover(asset,direct);aliases=set()
     for key in selected:
         if key.source not in sources:raise ValueError('已确认形态键已缺失：'+key.source)
@@ -41,7 +42,7 @@ def confirm(asset,direct):
     sources=discover(asset,direct)
     if any(k.source not in sources or not all(controllable(v) for v in sources[k.source]) for k in chosen):
         raise ValueError('选中项含缺失、非零或不支持的形态键，请刷新后重新选择')
-    if len({k.source for k in asset.keys if k.enabled or k.selected})>64:raise ValueError('每个模型最多确认64个动态键')
+    if len({k.source for k in asset.keys if k.enabled or k.selected})>MAX_DYNAMIC_KEYS:raise ValueError(f'每个模型最多确认{MAX_DYNAMIC_KEYS}个动态键')
     added=sum(not key.enabled for key in chosen)
     for key in chosen:key.enabled=True;key.selected=False
     return added

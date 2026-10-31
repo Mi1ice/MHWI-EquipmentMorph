@@ -1,5 +1,6 @@
 #pragma once
 #include "Control.hpp"
+#include "KeyFilter.hpp"
 #include <imgui.h>
 #include <cstring>
 
@@ -11,8 +12,8 @@ inline ImVec4 Color(Tone tone){
 }
 inline void Style(){
     ImGui::StyleColorsDark();auto& style=ImGui::GetStyle();
-    style.WindowPadding=ImVec2(12,12);style.FramePadding=ImVec2(8,5);style.ItemSpacing=ImVec2(8,7);style.ItemInnerSpacing=ImVec2(6,4);
-    style.CellPadding=ImVec2(7,5);style.WindowRounding=4;style.FrameRounding=3;style.GrabRounding=3;style.ScrollbarRounding=3;
+    style.WindowPadding=ImVec2(12,10);style.FramePadding=ImVec2(8,4);style.ItemSpacing=ImVec2(8,5);style.ItemInnerSpacing=ImVec2(6,4);
+    style.CellPadding=ImVec2(7,4);style.WindowRounding=4;style.FrameRounding=3;style.GrabRounding=3;style.ScrollbarRounding=3;
     auto* colors=style.Colors;colors[ImGuiCol_Text]=Color(Tone::Normal);colors[ImGuiCol_TextDisabled]=Color(Tone::Muted);
     colors[ImGuiCol_WindowBg]=ImVec4(.085f,.095f,.115f,1);colors[ImGuiCol_ChildBg]=ImVec4(.07f,.08f,.10f,1);
     colors[ImGuiCol_PopupBg]=ImVec4(.095f,.11f,.135f,1);colors[ImGuiCol_Border]=ImVec4(.24f,.29f,.35f,1);
@@ -46,13 +47,22 @@ inline void NextButton(const char* label){
     const float right=ImGui::GetCursorScreenPos().x+ImGui::GetContentRegionAvail().x;
     if(ImGui::GetItemRectMax().x+ImGui::GetStyle().ItemSpacing.x+ImGui::CalcTextSize(label).x+ImGui::GetStyle().FramePadding.x*2<=right)ImGui::SameLine();
 }
-inline void Notice(const morphpreset::State& state,uint64_t waiting,const std::string& error){
-    const auto tone=!error.empty()?Tone::Error:waiting?Tone::Muted:!state.completed?Tone::Warning:state.success?Tone::Success:Tone::Error;
-    const std::string message=!error.empty()?error:waiting?"正在处理预设，请稍候…":state.message;
-    if(message.empty())return;
-    ImGui::PushID("operation-result");
-    const bool details=(!error.empty()||(!waiting&&!state.success))&&ImGui::CalcTextSize(message.c_str()).x>ImGui::GetContentRegionAvail().x;
-    Line(message.c_str(),tone);
-    if(details&&ImGui::TreeNode("错误详情")){Wrapped(message.c_str(),tone);ImGui::TreePop();}ImGui::PopID();
+inline float ButtonWidth(const char* label){return ImGui::CalcTextSize(label).x+ImGui::GetStyle().FramePadding.x*2;}
+inline void NextItem(float width){
+    const float right=ImGui::GetCursorScreenPos().x+ImGui::GetContentRegionAvail().x;
+    if(ImGui::GetItemRectMax().x+ImGui::GetStyle().ItemSpacing.x+width<=right)ImGui::SameLine();
 }
+struct Notice {
+    FeedbackTime time;
+    void Draw(const morphpreset::State& state,uint64_t waiting,const std::string& error){
+        const bool show=time.Show(state.completed,state.success,ImGui::GetTime());
+        const auto tone=!error.empty()?Tone::Error:waiting?Tone::Muted:!state.completed?Tone::Warning:state.success?Tone::Success:Tone::Error;
+        const std::string message=!error.empty()?error:waiting?"正在处理预设，请稍候…":show?state.message:std::string{};
+        if(message.empty())return;
+        ImGui::PushID("operation-result");
+        const bool details=(!error.empty()||(!waiting&&!state.success))&&ImGui::CalcTextSize(message.c_str()).x>ImGui::GetContentRegionAvail().x;
+        Line(message.c_str(),tone);
+        if(details&&ImGui::TreeNode("错误详情")){Wrapped(message.c_str(),tone);ImGui::TreePop();}ImGui::PopID();
+    }
+};
 }
