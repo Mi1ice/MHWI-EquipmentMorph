@@ -146,6 +146,7 @@ public:
         lastSignal=value;frameOpen=false;return true;
     }
     void Invalidate(){std::lock_guard lock(gate);Disable();}
+    bool IsLive(){std::lock_guard lock(gate);return live;}
     View Get(){std::lock_guard lock(gate);return {live,frameOpen,active,requested,active<0?original:slots[static_cast<unsigned>(active)].weight,epoch,request,lastSignal,active<0?originalCounter:slots[static_cast<unsigned>(active)].publicationCounter,slots,sameWeightPublications};}
 };
 }

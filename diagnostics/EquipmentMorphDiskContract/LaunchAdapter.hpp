@@ -160,7 +160,7 @@ public:
             Bad("input_outside_launch_cycle");return passed;
         }
         const auto slot=pool.Input(before,after);
-        if(!pool.Get().live){Bad("pool_input_rejected");return passed;}
+        if(!pool.IsLive()){Bad("pool_input_rejected");return passed;}
         const auto expected=slot?handles[*slot]:actual.source;
         if((!dispatch&&passed!=actual.source)||(dispatch&&passed!=expected)){Bad("input_or_dispatch_contract");return passed;}
         if(dispatch){cycleDispatch++;dispatches++;return passed;}
