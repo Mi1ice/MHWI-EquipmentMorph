@@ -30,8 +30,9 @@ struct Snapshot {
     uintptr_t slot=0;Header header{};std::vector<uintptr_t> records,natives;std::vector<Entry> entries;std::vector<Copy> copies;
     bool SameGeneration(const Snapshot& other)const{return slot==other.slot&&header==other.header&&records==other.records&&natives==other.natives;}
     template<class Read> bool Stable(Read& read)const{
-        Header current{};if(!slot||!ReadHeader(read,slot,current)||current!=header)return false;
-        std::array<uintptr_t,4096> a{},b{};
+        Header current{};if(!slot||!ReadHeader(read,slot,current)||current!=header
+            ||records.size()!=header.count||natives.size()!=header.count)return false;
+        std::array<uintptr_t,4096> a,b;
         return Block(read,header.array,a.data(),header.count*8ull)&&Block(read,header.natives,b.data(),header.count*8ull)
             &&std::equal(records.begin(),records.end(),a.begin())&&std::equal(natives.begin(),natives.end(),b.begin())
             &&ReadHeader(read,slot,current)&&current==header;

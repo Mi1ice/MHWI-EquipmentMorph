@@ -1,8 +1,64 @@
 #pragma once
 #include "../../tools/fixtures/vertex_declaration_memory.hpp"
 namespace vertexdeclarationtests {
+struct PrefixMemory {
+    std::vector<unsigned char> root=std::vector<unsigned char>(9496),metadata=std::vector<unsigned char>(260);
+    std::vector<uintptr_t> records,natives;uintptr_t pointer=0;mhm::declarations::Snapshot snapshot;
+    explicit PrefixMemory(uint32_t count):records(count,uintptr_t{0x123000}),natives(count,uintptr_t{0x456000}){
+        using inputfasttest::Put;using inputfasttest::Address;
+        pointer=Address(root);Put(root,56,Address(metadata));Put(root,9312,Address(natives));Put(root,9492,count);
+        Put(metadata,200,Address(records));Put(metadata,256,count);
+        snapshot.slot=reinterpret_cast<uintptr_t>(&pointer);
+        snapshot.header={pointer,Address(metadata),Address(records),Address(natives),count,count};
+        snapshot.records=records;snapshot.natives=natives;
+    }
+};
+inline unsigned PrefixSafety(){
+    unsigned count=0;auto check=[&](bool ok,const char* why){if(!ok)throw std::runtime_error(why);++count;};
+    auto read=[](uintptr_t address,void* output,size_t bytes){return observer::Read(address,output,bytes);};
+    // A saved snapshot must describe exactly the prefix filled by each read.
+    for(unsigned which=0;which<2;which++)for(unsigned shape=0;shape<3;shape++){
+        PrefixMemory m(2);auto& saved=which?m.snapshot.natives:m.snapshot.records;
+        if(shape==0)saved.clear();else if(shape==1)saved.pop_back();else saved.push_back(0);
+        check(!m.snapshot.Stable(read),"declaration scratch refuses empty, short or long saved vectors");
+    }
+    for(uint32_t n:{0u,1u,4096u,4097u}){
+        PrefixMemory m(n);check(m.snapshot.Stable(read)==(n>=1&&n<=4096),"declaration scratch obeys count boundaries");
+    }
+    {
+        PrefixMemory m(4096);m.snapshot.records.push_back(0);
+        check(!m.snapshot.Stable(read),"declaration scratch refuses saved vector beyond capacity before comparing");
+    }
+    for(unsigned failed:{7u,8u})for(bool partial:{false,true}){
+        PrefixMemory m(2);unsigned calls=0;
+        auto fail=[&](uintptr_t address,void* output,size_t bytes){
+            if(++calls==failed){if(partial)std::memcpy(output,reinterpret_cast<void*>(address),bytes/2);return false;}
+            return observer::Read(address,output,bytes);
+        };
+        check(!m.snapshot.Stable(fail)&&calls==failed,"declaration scratch short-circuits failed or partially filled pointer arrays");
+    }
+    for(unsigned which=0;which<2;which++){
+        PrefixMemory m(2);unsigned calls=0;
+        auto mutate=[&](uintptr_t address,void* output,size_t bytes){
+            const bool ok=observer::Read(address,output,bytes);
+            if(++calls==(which?7u:6u))(which?m.natives:m.records)[0]^=1;
+            return ok;
+        };
+        check(!m.snapshot.Stable(mutate),"declaration scratch still detects changed pointer arrays");
+    }
+    for(unsigned which=0;which<2;which++){
+        PrefixMemory m(2);unsigned calls=0;
+        auto mutate=[&](uintptr_t address,void* output,size_t bytes){
+            const bool ok=observer::Read(address,output,bytes);
+            if(++calls==8){if(which)inputfasttest::Put(m.metadata,256,1u);else inputfasttest::Put(m.root,56,uintptr_t{0});}
+            return ok;
+        };
+        check(!m.snapshot.Stable(mutate),"declaration scratch retains final header and generation checks");
+    }
+    return count;
+}
 inline unsigned Run(){
-    unsigned count=0;auto check=[&](bool ok,const char* why){if(!ok)throw std::runtime_error(why);count++;};
+    unsigned count=PrefixSafety();auto check=[&](bool ok,const char* why){if(!ok)throw std::runtime_error(why);count++;};
     {
     inputfasttest::Fixture f;captureddeclarations::Memory m;using inputfasttest::Put;using inputfasttest::Address;
     auto& profile=equipmentnative::profiles[MHM_BODY];profile.diskContract=true;profile.diskFormats={0xf637401c};
